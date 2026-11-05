@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -97,6 +97,9 @@ $('#btnNewProj').onclick = async () => {
   const last = all[0] || {};
   const p = { id: uid(), name: '', kundeId: last.kundeId || null, firma: last.firma || '', kontakt: '', strasse: '', ort: last.ort || '', land: last.land || '',
     telefon: '', datum: new Date().toISOString().slice(0, 10), kundenLogo: last.kundenLogo || null, created: Date.now(), updated: Date.now() };
+  // zuletzt verwendeter Kunde mit allen Daten
+  const lastC = last.kundeId && ((await db.setting('customers')) || []).find(x => x.id === last.kundeId);
+  if (lastC) applyCustomerToProject(p, lastC); else p.kundeId = null;
   await db.put('projects', p);
   await openProject(p.id, true);
 };
@@ -132,6 +135,7 @@ Object.entries(fieldMap).forEach(([id, k]) => {
     if (['str', 'plz', 'ortName'].includes(k)) updateNamePrev();
     if (k === 'str') streetInput();
     if (['plz', 'ortName', 'str'].includes(k)) rememberStreetSoon();
+    projectFieldToCustomer(k);
     clearTimeout(S._saveT); S._saveT = setTimeout(() => db.put('projects', S.project), 300);
   });
 });
@@ -229,7 +233,28 @@ function setWOrt(ort, auto) {
 $('#pStr').addEventListener('blur', () => setTimeout(() => $('#strSug').classList.remove('on'), 150));
 
 // ---------------- Kunden ----------------
-// Kunde = Name + PLZ Ort + Logo. Auswahl im Projekt übernimmt alles fürs Deckblatt.
+// Kunde = Name, Straße, PLZ Ort, Land, Kontakt, Telefon, Logo. Auswahl im Projekt übernimmt alles fürs Deckblatt;
+// Änderungen an diesen Feldern im Projekt werden beim gewählten Kunden mitgespeichert.
+// [Projektfeld, Kundenfeld, Eingabe im Projekt, Eingabe im Kundenformular]
+const CF = [['firma', 'name', 'pFirma', 'cName'], ['strasse', 'strasse', 'pStrasse', 'cStrasse'], ['ort', 'ort', 'pOrt', 'cOrt'],
+  ['land', 'land', 'pLand', 'cLand'], ['kontakt', 'kontakt', 'pKontakt', 'cKontakt'], ['telefon', 'telefon', 'pTel', 'cTel']];
+function applyCustomerToProject(p, c) {
+  CF.forEach(([pk, ck]) => { p[pk] = c ? (c[ck] || '') : ''; });
+  p.kundenLogo = c ? (c.logo || null) : null;
+}
+let custSaveT = 0;
+function projectFieldToCustomer(pk) {
+  const p = S.project; if (!p || !p.kundeId) return;
+  const f = CF.find(x => x[0] === pk); if (!f) return;
+  clearTimeout(custSaveT);
+  custSaveT = setTimeout(async () => {
+    const list = (await db.setting('customers')) || [];
+    const c = list.find(x => x.id === p.kundeId); if (!c) return;
+    CF.forEach(([pk2, ck]) => { if (pk2 === 'firma' && !(p.firma || '').trim()) return; c[ck] = p[pk2] || ''; });
+    await db.setting('customers', list);
+    renderCustChips();
+  }, 600);
+}
 async function customers() { return ((await db.setting('customers')) || []).sort((a, b) => a.name.localeCompare(b.name, 'de')); }
 function custButton(c, sel) {
   const b = document.createElement('button'); if (sel) b.classList.add('sel');
@@ -252,8 +277,9 @@ async function renderCustChips() {
 async function selectCustomer(c) {
   const p = S.project;
   p.kundeId = c ? c.id : null;
-  p.firma = c ? c.name : ''; p.ort = c ? (c.ort || '') : ''; p.kundenLogo = c ? (c.logo || null) : null;
-  $('#pFirma').value = p.firma; $('#pOrt').value = p.ort;
+  applyCustomerToProject(p, c);
+  CF.forEach(([pk, , pid]) => { $('#' + pid).value = p[pk] || ''; });
+  if (c) toast(`Kunde ${c.name} übernommen`);
   p.updated = Date.now(); await db.put('projects', p);
   renderCustChips();
 }
@@ -261,7 +287,7 @@ function editCustomer(c) {
   return new Promise(res => {
     const sh = $('#custSheet'); let logo = c ? c.logo : null;
     $('#custTitle').textContent = c ? 'Kunde bearbeiten' : 'Neuer Kunde';
-    $('#cName').value = c ? c.name : ''; $('#cOrt').value = c ? (c.ort || '') : '';
+    CF.forEach(([, ck, , cid]) => { $('#' + cid).value = c ? (c[ck] || '') : ''; });
     const prev = () => { if (logo) { $('#cLogoPrev').src = URL.createObjectURL(logo); $('#cLogoPrev').hidden = false; } else $('#cLogoPrev').hidden = true; };
     prev(); $('#cLogo').value = '';
     $('#cDel').style.display = c ? '' : 'none';
@@ -271,12 +297,16 @@ function editCustomer(c) {
     $('#cSave').onclick = async () => {
       const name = $('#cName').value.trim(); if (!name) { toast('Bitte einen Namen eingeben'); return; }
       const list = (await db.setting('customers')) || [];
-      const obj = { id: c ? c.id : uid(), name, ort: $('#cOrt').value.trim(), logo };
+      const obj = { id: c ? c.id : uid(), logo };
+      CF.forEach(([, ck, , cid]) => { obj[ck] = $('#' + cid).value.trim(); });
       const i = list.findIndex(x => x.id === obj.id);
       if (i >= 0) list[i] = obj; else list.push(obj);
       await db.setting('customers', list);
       // Projekte mit diesem Kunden aktualisieren
-      for (const p of await db.all('projects')) if (p.kundeId === obj.id) { p.firma = obj.name; p.ort = obj.ort; p.kundenLogo = obj.logo; await db.put('projects', p); if (S.project && S.project.id === p.id) Object.assign(S.project, p); }
+      for (const p of await db.all('projects')) if (p.kundeId === obj.id) {
+        applyCustomerToProject(p, obj); await db.put('projects', p);
+        if (S.project && S.project.id === p.id) { Object.assign(S.project, p); CF.forEach(([pk, , pid]) => { $('#' + pid).value = p[pk] || ''; }); }
+      }
       close(obj);
     };
     $('#cDel').onclick = async () => {
@@ -874,7 +904,7 @@ $('#exBtn').onclick = async () => {
   const cs = (await db.setting('customers')) || [];
   const data = { app: 'massblatt', version: 1, exported: new Date().toISOString(),
     headerTitle: (await db.setting('headerTitle')) || '',
-    customers: await Promise.all(cs.map(async c => ({ id: c.id, name: c.name, ort: c.ort || '', logo: c.logo ? await blobToB64(c.logo) : null }))),
+    customers: await Promise.all(cs.map(async c => ({ ...c, logo: c.logo ? await blobToB64(c.logo) : null }))),
     streets: (await db.setting('streets')) || [] };
   const hl = await db.setting('headerLogo'); if (hl) data.headerLogo = await blobToB64(hl);
   const d = new Date(), p = n => String(n).padStart(2, '0');
@@ -892,7 +922,7 @@ $('#imFile').onchange = async e => {
     const cs = (await db.setting('customers')) || [];
     let nC = 0, nS = 0;
     for (const c of data.customers || []) {
-      const obj = { id: c.id || uid(), name: c.name, ort: c.ort || '', logo: c.logo ? await b64ToBlob(c.logo) : null };
+      const obj = { ...c, id: c.id || uid(), logo: c.logo ? await b64ToBlob(c.logo) : null };
       const i = cs.findIndex(x => x.name.toLowerCase() === obj.name.toLowerCase());
       if (i >= 0) cs[i] = { ...obj, id: cs[i].id }; else { cs.push(obj); } nC++;
     }
