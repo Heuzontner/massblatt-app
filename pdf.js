@@ -53,11 +53,6 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
   };
 
   // Seitennummern: Deckblatt ohne Nummer, Fotoseiten ab 1
-  const allValues = [];
-  shots.forEach(s => s.values.forEach(v => allValues.push(v)));
-  const ML_ROWS = 24;
-  const mlPages = Math.max(1, Math.ceil(allValues.length / ML_ROWS));
-  const mlStart = shots.length + 1;
   // Übersicht: je Foto eine Zeile, Höhe/Breite paarweise je Element (Fenster 1, Tür …)
   const ovRows = [];
   if (project.overview && project.overviewRows) {
@@ -76,7 +71,7 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
   }
   const OV_ROWS = 24;
   const ovPages = ovRows.length ? Math.ceil(ovRows.length / OV_ROWS) : 0;
-  const ovStart = mlStart + mlPages;
+  const ovStart = shots.length + 1; // Messliste entfällt (Manuel 05.11.)
 
   // ---------- Deckblatt ----------
   const p0 = doc.addPage([PAGE_W, PAGE_H]);
@@ -114,12 +109,8 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
     text(p0, n, 795 - font.widthOfTextAtSize(n, ts * tScale), ty, ts * tScale);
     ty += tl * tScale;
   });
-  text(p0, '2. Messliste', 46, ty, ts * tScale);
-  const mn = String(mlStart);
-  text(p0, mn, 795 - font.widthOfTextAtSize(mn, ts * tScale), ty, ts * tScale);
   if (ovPages) {
-    ty += tl * tScale;
-    text(p0, '3. Übersicht', 46, ty, ts * tScale);
+    text(p0, '2. Übersicht', 46, ty, ts * tScale);
     const on = String(ovStart);
     text(p0, on, 795 - font.widthOfTextAtSize(on, ts * tScale), ty, ts * tScale);
   }
@@ -172,21 +163,6 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
     pageNo(pg, i + 1);
   }
 
-  // ---------- Messliste ----------
-  for (let m = 0; m < mlPages; m++) {
-    const pg = doc.addPage([PAGE_W, PAGE_H]);
-    box(pg, 20, 18, 801, 40);
-    text(pg, 'Messliste :', 32, 32, 11, c(BLUE));
-    text(pg, project.name || '', 32 + font.widthOfTextAtSize('Messliste :', 11) + 6, 32, 11);
-    let y = 81;
-    const part = allValues.slice(m * ML_ROWS, (m + 1) * ML_ROWS);
-    part.forEach((v) => {
-      const cols = [[20, 560], [580, 120], [700, 121]];
-      row(pg, 20, y, cols, [`${v.cm} cm`, 'Messung', fmtDateTime(v.time)], 7.5);
-      y += 19;
-    });
-    pageNo(pg, mlStart + m);
-  }
   for (let m = 0; m < ovPages; m++) {
     const pg = doc.addPage([PAGE_W, PAGE_H]);
     box(pg, 20, 18, 801, 40);

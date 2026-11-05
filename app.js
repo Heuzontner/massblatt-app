@@ -6,7 +6,7 @@ import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 
-const VERSION = '2.1.1';
+const VERSION = '2.2.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -159,11 +159,8 @@ Object.entries(fieldMap).forEach(([id, k]) => {
 // Projektname = "Straße Nr, PLZ Ort, Geschoß, WG" (so steht er am Deckblatt)
 function updateNamePrev() {
   const p = S.project;
-  // "Kopernikusstrasse 22, 1.OG, WG 12" + 4020 Linz → "Kopernikusstrasse 22, 1.OG, WG 12, 4020 Linz"
-  const parts = (p.str || '').split(',').map(x => x.trim()).filter(Boolean);
-  const po = [p.plz, p.ortName].map(x => (x || '').trim()).filter(Boolean).join(' ');
-  if (po) parts.push(po);
-  p.name = parts.join(', ');
+  // wie in Manuels Bosch-Maßblättern: Projekt = Straße + Hausnummer, Geschoß, WG (ohne PLZ/Ort)
+  p.name = (p.str || '').split(',').map(x => x.trim()).filter(Boolean).join(', ');
   $('#pNamePrev').textContent = p.name ? 'Am PDF: ' + p.name : '';
   $('#projTitle').textContent = p.name || 'Neues Projekt';
 }
