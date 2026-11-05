@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.9.1';
+const VERSION = '1.9.2';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -718,8 +718,12 @@ function finishShot(auto) {
 }
 
 $('#edDone').onclick = () => finishShot(false);
-$('#edBack').onclick = async () => { clearTimeout(finishing); await saveShot(); renderShots(); show('proj'); };
-$('#prevA').onclick = () => stepActive(-1);
+// zurück zum Projekt: sofort wechseln, Speichern läuft im Hintergrund
+$('#edBack').onclick = () => {
+  clearTimeout(finishing); if (kb.on) setKb(false);
+  show('proj'); renderShots();
+  saveShot().then(renderShots).catch(e => toast('Speichern fehlgeschlagen: ' + e.message, 4000));
+};
 function stepActive(d) {
   clearTimeout(finishing);
   const arr = S.shot.arrows; if (!arr.length) return;
