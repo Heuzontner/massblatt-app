@@ -40,6 +40,7 @@ header.top h1 { font-size:18px; margin:0; flex:1; white-space:nowrap; overflow:h
 .shot .t { flex:1; min-width:0; }
 .shot .room { font-weight:700; font-size:18px; }
 .shot .vals { color:var(--mute); font-size:14px; margin-top:4px; line-height:1.5; }
+.shot .del { align-self:center; background:#3a1c1f; color:#ffb3b3; padding:10px 12px; }
 .shot .warn { color:var(--acc); font-size:13px; }
 .bottombar { position:fixed; left:0; right:0; bottom:0; display:flex; gap:10px; padding:10px 12px calc(env(safe-area-inset-bottom) + 10px); background:linear-gradient(transparent, var(--bg) 30%); }
 .bottombar button { flex:1; padding:16px; font-size:17px; }
@@ -255,6 +256,13 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   <button class="ghost" id="sLogoDel" style="margin-top:6px">Logo entfernen</button>
   <label class="f">Kunden</label>
   <div class="custs" id="custManage"></div>
+  <label class="f">Kunden &amp; Straßen auf anderes Handy übertragen</label>
+  <div class="row2">
+    <button class="ghost" id="exBtn">Exportieren</button>
+    <button class="ghost" id="imBtn">Importieren</button>
+  </div>
+  <input type="file" id="imFile" accept=".json,application/json" hidden>
+  <p class="mute" style="margin:6px 0 0">Exportieren erzeugt eine Datei (per WhatsApp, Mail oder Drive schicken). Am anderen Handy „Importieren“ und die Datei wählen.</p>
   <label class="f">Tür-/Fenster-Erkennung (KI)</label>
   <select id="sAi"><option value="1">An – Pfeile automatisch</option><option value="0">Aus – nur Vorlagen</option></select>
   <p class="mute" id="sAiState"></p>

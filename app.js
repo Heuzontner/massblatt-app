@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.3.1';
+const VERSION = '1.4.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -311,13 +311,21 @@ function renderShots() {
     const c = document.createElement('div'); c.className = 'card shot';
     const vals = s.arrows.filter(a => a.cm != null).map(a => `${a.cm}`).join(' · ');
     const open = s.arrows.filter(a => a.cm == null).length;
-    c.innerHTML = `<img><div class="t"><div class="room"></div><div class="vals"></div>${open ? `<div class="warn">${open} Pfeil${open > 1 ? 'e' : ''} ohne Maß</div>` : ''}</div><span style="align-self:center;color:var(--mute);font-size:22px">›</span>`;
+    c.innerHTML = `<img><div class="t"><div class="room"></div><div class="vals"></div>${open ? `<div class="warn">${open} Pfeil${open > 1 ? 'e' : ''} ohne Maß</div>` : ''}</div><button class="del" aria-label="Foto löschen">🗑</button>`;
     c.querySelector('img').src = URL.createObjectURL(s.photo);
     c.querySelector('.room').textContent = `${i + 1}. ${s.room}`;
     c.querySelector('.vals').textContent = vals ? vals + ' cm' : '–';
     c.onclick = () => openEditor(s);
+    c.querySelector('.del').onclick = e => { e.stopPropagation(); deleteShot(s); };
     el.appendChild(c);
   });
+}
+async function deleteShot(shot) {
+  if (!await confirmBox(`Foto ${S.shots.indexOf(shot) + 1} (${shot.room}) mit allen Maßen löschen?`)) return false;
+  await db.del('shots', shot.id);
+  S.shots = S.shots.filter(x => x.id !== shot.id);
+  for (let k = 0; k < S.shots.length; k++) { S.shots[k].order = k; await db.put('shots', S.shots[k]); }
+  renderShots(); toast('Foto gelöscht'); return true;
 }
 async function moveShot(i, d) {
   const j = i + d; if (j < 0 || j >= S.shots.length) return;
@@ -470,11 +478,7 @@ $('#arrSheet').onclick = async e => {
   }
   if (act === 'delshot') {
     closeArr();
-    if (!await confirmBox(`Dieses Foto (${S.shot.room}) mit allen Maßen löschen?`)) return;
-    await db.del('shots', S.shot.id);
-    S.shots = S.shots.filter(x => x.id !== S.shot.id);
-    for (let k = 0; k < S.shots.length; k++) { S.shots[k].order = k; await db.put('shots', S.shots[k]); }
-    renderShots(); show('proj'); return;
+    if (await deleteShot(S.shot)) show('proj'); return;
   }
   if (['add', 'flip', 'clear', 'del'].includes(act)) closeArr();
   saveShot(); updateCur();
@@ -732,6 +736,47 @@ $('#sAiLoad').onclick = async () => {
     $('#sAiState').textContent = 'KI-Modell: bereit (offline verfügbar)';
   } catch (e) { $('#sAiState').textContent = 'Fehler: ' + e.message; }
   b.disabled = false;
+};
+// Export/Import: Kunden (mit Logo) + gemerkte Straßen als JSON-Datei
+const blobToB64 = b => new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
+const b64ToBlob = async d => (await fetch(d)).blob();
+$('#exBtn').onclick = async () => {
+  const cs = (await db.setting('customers')) || [];
+  const data = { app: 'massblatt', version: 1, exported: new Date().toISOString(),
+    headerTitle: (await db.setting('headerTitle')) || '',
+    customers: await Promise.all(cs.map(async c => ({ id: c.id, name: c.name, ort: c.ort || '', logo: c.logo ? await blobToB64(c.logo) : null }))),
+    streets: (await db.setting('streets')) || [] };
+  const hl = await db.setting('headerLogo'); if (hl) data.headerLogo = await blobToB64(hl);
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const file = new File([JSON.stringify(data)], `massblatt-daten_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.json`, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: file.name }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+  toast(`Exportiert: ${data.customers.length} Kunden, ${data.streets.length} Straßen`);
+};
+$('#imBtn').onclick = () => $('#imFile').click();
+$('#imFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (data.app !== 'massblatt') throw new Error('keine Maßblatt-Datei');
+    const cs = (await db.setting('customers')) || [];
+    let nC = 0, nS = 0;
+    for (const c of data.customers || []) {
+      const obj = { id: c.id || uid(), name: c.name, ort: c.ort || '', logo: c.logo ? await b64ToBlob(c.logo) : null };
+      const i = cs.findIndex(x => x.name.toLowerCase() === obj.name.toLowerCase());
+      if (i >= 0) cs[i] = { ...obj, id: cs[i].id }; else { cs.push(obj); } nC++;
+    }
+    await db.setting('customers', cs);
+    const st = (await db.setting('streets')) || [];
+    for (const x of data.streets || []) {
+      if (!st.some(y => normStreet(y.street) === normStreet(x.street) && y.ort === x.ort)) { st.push(x); nS++; }
+    }
+    await db.setting('streets', st);
+    if (data.headerLogo && !(await db.setting('headerLogo'))) await db.setting('headerLogo', await b64ToBlob(data.headerLogo));
+    if (data.headerTitle && !(await db.setting('headerTitle'))) await db.setting('headerTitle', data.headerTitle);
+    renderCustManage();
+    toast(`Importiert: ${nC} Kunden, ${nS} neue Straßen`, 3000);
+  } catch (err) { toast('Import fehlgeschlagen: ' + err.message, 4000); }
 };
 $('#sLaserOff').onclick = () => { laser.disconnect(); laserUi(); };
 $$('[data-back]').forEach(b => b.onclick = () => { renderHome(); show(b.dataset.back); });
