@@ -6,7 +6,7 @@ import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 
-const VERSION = '2.2.0';
+const VERSION = '2.2.1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -123,6 +123,7 @@ async function openProject(id, isNew = false) {
     if (p.top) p.str = [p.str, p.top].filter(Boolean).join(', ');
     delete p.wort; delete p.top;
   }
+  S.autoOrt = false;
   $('#pStr').value = p.str; $('#pPlz').value = p.plz || ''; $('#pOrtName').value = p.ortName || ''; updateNamePrev();
   $('#pFirma').value = p.firma || ''; $('#pKontakt').value = p.kontakt || '';
   $('#pStrasse').value = p.strasse || ''; $('#pOrt').value = p.ort || ''; $('#pLand').value = p.land || '';
@@ -187,9 +188,7 @@ async function streetInput() {
   const box = $('#strSug');
   if (k.length < 3) { box.classList.remove('on'); return; }
   const local = (await knownStreets()).filter(x => normStreet(x.street).includes(k)).sort((a, b) => (b.used || 0) - (a.used || 0)).slice(0, 5);
-  // genau bekannte Straße (eindeutig) + Hausnummer getippt → PLZ Ort sofort eintragen
-  const exact = local.filter(x => normStreet(x.street) === k);
-  if (exact.length === 1 && houseNo(v) && !$('#pPlz').value.trim() && !$('#pOrtName').value.trim()) setWOrt(exact[0].ort, true);
+  autoOrt(local, k);
   showSug(local.map(x => ({ ...x, src: 'bekannt' })), []);
   clearTimeout(sugT);
   if (!navigator.onLine || local.length >= 3) return;
@@ -209,10 +208,27 @@ async function streetInput() {
         const key = normStreet(pr.name) + ort; if (seen.has(key)) continue; seen.add(key);
         web.push({ street: pr.name, ort, src: 'Karte' });
       }
+      if (my === sugReq && !autoOrt(local, k)) autoOrt(web, k);
       if (my === sugReq && $('#pStr') === document.activeElement) showSug(local.map(x => ({ ...x, src: 'bekannt' })), web.slice(0, 5));
     } catch (e) { /* offline oder Dienst nicht erreichbar */ }
   }, 450);
 }
+// Eindeutiger Vorschlag (nur ein Ort passt) → PLZ und Ort automatisch eintragen, ohne Antippen.
+// Überschreibt nur leere Felder oder Werte, die die App selbst eingetragen hat – nie Eingetipptes.
+function autoOrt(list, k) {
+  const plzEmpty = !$('#pPlz').value.trim() && !$('#pOrtName').value.trim();
+  if (!plzEmpty && !S.autoOrt) return false;
+  const m = list.filter(x => normStreet(x.street).startsWith(k));
+  if (!m.length) return false;
+  const orte = [...new Set(m.map(x => x.ort))];
+  if (orte.length !== 1) return false;
+  if (k.length < 5 && !m.some(x => normStreet(x.street) === k)) return false; // zu kurz getippt
+  const cur = [$('#pPlz').value.trim(), $('#pOrtName').value.trim()].filter(Boolean).join(' ');
+  if (cur !== orte[0]) { setWOrt(orte[0], true); }
+  S.autoOrt = true;
+  return true;
+}
+['pPlz', 'pOrtName'].forEach(id => $('#' + id).addEventListener('input', () => { S.autoOrt = false; }));
 function showSug(local, web) {
   const box = $('#strSug'); box.innerHTML = '';
   const all = [...local, ...web];
@@ -250,7 +266,7 @@ function setWOrt(ort, auto) {
   S.project.plz = m ? m[1] : ''; S.project.ortName = capFirst(m ? m[2] : ort);
   $('#pPlz').value = S.project.plz; $('#pOrtName').value = S.project.ortName; updateNamePrev();
   db.put('projects', S.project); rememberStreetSoon();
-  if (auto) toast('PLZ Ort eingetragen: ' + ort);
+  if (auto) toast('PLZ/Ort automatisch: ' + ort + ' (änderbar)');
 }
 $('#pStr').addEventListener('blur', () => setTimeout(() => $('#strSug').classList.remove('on'), 400));
 
