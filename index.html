@@ -160,16 +160,14 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
         <div></div>
       </div>
       <details style="margin-top:10px"><summary class="mute">Kundendaten fürs Deckblatt</summary>
+        <label class="f">Firma</label><input id="pFirma">
+        <label class="f">Straße + Hausnummer</label><input id="pStrasse">
+        <label class="f">PLZ Ort</label><input id="pOrt" placeholder="4400 Steyr">
+        <label class="f">Land</label><input id="pLand">
         <div class="row2">
-          <div><label class="f">Firma (Kunde)</label><input id="pFirma"></div>
-          <div><label class="f">PLZ Ort (Kunde)</label><input id="pOrt"></div>
+          <div><label class="f">Kontakt</label><input id="pKontakt"></div>
+          <div><label class="f">Telefon</label><input id="pTel" inputmode="tel"></div>
         </div>
-        <div class="row2">
-          <div><label class="f">Kontakt (Kunde)</label><input id="pKontakt"></div>
-          <div><label class="f">Telefon (Kunde)</label><input id="pTel"></div>
-        </div>
-        <label class="f">Straße (Kunde)</label><input id="pStrasse">
-        <label class="f">Land (Kunde)</label><input id="pLand">
       </details>
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="danger" id="btnDelProj">Projekt löschen</button>
@@ -262,11 +260,9 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
 <div class="sheet-bg" id="custSheet"><div class="sheet">
   <h2 id="custTitle">Neuer Kunde</h2>
   <label class="f">Name (z. B. WAG)</label><input id="cName">
-  <label class="f">Straße</label><input id="cStrasse">
-  <div class="row2">
-    <div><label class="f">PLZ Ort</label><input id="cOrt" placeholder="4400 Steyr"></div>
-    <div><label class="f">Land</label><input id="cLand"></div>
-  </div>
+  <label class="f">Straße + Hausnummer</label><input id="cStrasse">
+  <label class="f">PLZ Ort</label><input id="cOrt" placeholder="4400 Steyr">
+  <label class="f">Land</label><input id="cLand">
   <div class="row2">
     <div><label class="f">Kontakt</label><input id="cKontakt"></div>
     <div><label class="f">Telefon</label><input id="cTel" inputmode="tel"></div>
