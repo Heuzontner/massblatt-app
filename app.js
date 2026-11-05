@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.5.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -308,7 +308,8 @@ function renderShots() {
   const el = $('#shotList'); el.innerHTML = '';
   if (!S.shots.length) { el.innerHTML = '<div class="empty">Noch keine Fotos.<br>Unten auf „📷 Foto“ tippen: Raum wählen, fotografieren, messen.</div>'; return; }
   S.shots.forEach((s, i) => {
-    const c = document.createElement('div'); c.className = 'card shot';
+    const wrap = document.createElement('div'); wrap.className = 'swipe';
+    const c = document.createElement('div'); c.className = 'card shot'; wrap.appendChild(c);
     const vals = s.arrows.filter(a => a.cm != null).map(a => `${a.cm}`).join(' · ');
     const open = s.arrows.filter(a => a.cm == null).length;
     c.innerHTML = `<img><div class="t"><div class="room"></div><div class="vals"></div>${open ? `<div class="warn">${open} Pfeil${open > 1 ? 'e' : ''} ohne Maß</div>` : ''}</div><button class="del" aria-label="Foto löschen">🗑</button>`;
@@ -317,8 +318,32 @@ function renderShots() {
     c.querySelector('.vals').textContent = vals ? vals + ' cm' : '–';
     c.onclick = () => openEditor(s);
     c.querySelector('.del').onclick = e => { e.stopPropagation(); deleteShot(s); };
-    el.appendChild(c);
+    swipeToDelete(c, () => deleteShot(s));
+    el.appendChild(wrap);
   });
+}
+// Nach links wischen → Löschen (mit Rückfrage)
+function swipeToDelete(el, onDelete) {
+  let sx = 0, sy = 0, dx = 0, on = false, horiz = null;
+  el.addEventListener('pointerdown', e => { sx = e.clientX; sy = e.clientY; dx = 0; on = true; horiz = null; });
+  el.addEventListener('pointermove', e => {
+    if (!on) return;
+    const mx = e.clientX - sx, my = e.clientY - sy;
+    if (horiz === null && (Math.abs(mx) > 8 || Math.abs(my) > 8)) { horiz = Math.abs(mx) > Math.abs(my); if (horiz) { el.setPointerCapture(e.pointerId); el.classList.add('drag'); } }
+    if (!horiz) return;
+    dx = Math.min(0, mx); el.style.transform = `translateX(${dx}px)`;
+  });
+  const end = async () => {
+    if (!on) return; on = false; el.classList.remove('drag');
+    if (horiz) { el.dataset.swiped = '1'; setTimeout(() => delete el.dataset.swiped, 400); }
+    if (horiz && dx < -el.offsetWidth * 0.35) {
+      el.style.transform = `translateX(${-el.offsetWidth}px)`;
+      const ok = await onDelete();
+      if (!ok) el.style.transform = '';
+    } else el.style.transform = '';
+  };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+  el.addEventListener('click', e => { if (el.dataset.swiped) { e.stopPropagation(); e.preventDefault(); } }, true);
 }
 async function deleteShot(shot) {
   if (!await confirmBox(`Foto ${S.shots.indexOf(shot) + 1} (${shot.room}) mit allen Maßen löschen?`)) return false;
@@ -362,6 +387,7 @@ async function openCam() {
     S.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 3000 }, height: { ideal: 4000 } }, audio: false });
     $('#video').srcObject = S.stream;
     await $('#video').play().catch(() => { });
+    camCaps();
   } catch (e) {
     toast('Kamera nicht verfügbar – System-Kamera wird geöffnet', 3000);
     $('#fileIn').click();
@@ -370,26 +396,108 @@ async function openCam() {
 function stopCam() {
   if (S.stream) { S.stream.getTracks().forEach(t => t.stop()); S.stream = null; }
 }
+// Blitz (Taschenlampe) und HDR light – nur wo der Browser es erlaubt (Android/Chrome)
+const camOpt = { torch: false, hdr: false };
+try { Object.assign(camOpt, JSON.parse(localStorage.getItem('mb_cam') || '{}')); } catch (e) { }
+const saveCamOpt = () => { try { localStorage.setItem('mb_cam', JSON.stringify(camOpt)); } catch (e) { } };
+let caps = {};
+function camTrack() { return S.stream && S.stream.getVideoTracks()[0]; }
+async function camCaps() {
+  const t = camTrack(); caps = {};
+  try { caps = t.getCapabilities ? t.getCapabilities() : {}; } catch (e) { }
+  // manche Geräte melden Fähigkeiten erst nach kurzer Zeit
+  if (!caps.torch && !caps.exposureCompensation) { await new Promise(r => setTimeout(r, 500)); try { caps = t.getCapabilities ? t.getCapabilities() : {}; } catch (e) { } }
+  if (camOpt.torch && caps.torch) await setTorch(true);
+  camUi();
+}
+function camUi() {
+  const tb = $('#torchBtn'), hb = $('#hdrBtn');
+  tb.classList.toggle('on', !!(camOpt.torch && caps.torch)); tb.classList.toggle('off', !caps.torch);
+  hb.classList.toggle('on', !!(camOpt.hdr && caps.exposureCompensation)); hb.classList.toggle('off', !caps.exposureCompensation);
+  hb.querySelector('small').textContent = camOpt.hdr && caps.exposureCompensation ? 'an' : 'aus';
+}
+async function setTorch(on) {
+  try { await camTrack().applyConstraints({ advanced: [{ torch: on }] }); return true; } catch (e) { return false; }
+}
+$('#torchBtn').onclick = async () => {
+  if (!caps.torch) { toast('Blitz geht hier nicht (am iPhone sperrt Apple ihn für Web-Apps; am Android in Chrome geht er)', 3500); return; }
+  camOpt.torch = !camOpt.torch; await setTorch(camOpt.torch); saveCamOpt(); camUi();
+};
+$('#hdrBtn').onclick = () => {
+  if (!caps.exposureCompensation) { toast('HDR geht hier nicht (nur am Android in Chrome)', 3000); return; }
+  camOpt.hdr = !camOpt.hdr; saveCamOpt(); camUi();
+  toast(camOpt.hdr ? 'HDR an: beim Auslösen ca. 1 s ruhig halten' : 'HDR aus');
+};
+function grabFrame() {
+  const v = $('#video'); const c = document.createElement('canvas');
+  const sc = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight));
+  c.width = Math.round(v.videoWidth * sc); c.height = Math.round(v.videoHeight * sc);
+  c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); return c;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function setEv(ev) {
+  const r = caps.exposureCompensation; const v = Math.max(r.min, Math.min(r.max, ev));
+  try { await camTrack().applyConstraints({ advanced: [{ exposureMode: 'continuous', exposureCompensation: v }] }); } catch (e) { }
+}
+// 3 Bilder (dunkel/normal/hell) gewichtet nach "gut belichtet" zusammenrechnen (vereinfachte Belichtungsfusion)
+async function captureHdr() {
+  const r = caps.exposureCompensation; const step = Math.min(2, r.max, -r.min);
+  const frames = [];
+  for (const ev of [-step, 0, step]) { await setEv(ev); await sleep(450); frames.push(grabFrame()); }
+  await setEv(0);
+  const W = frames[0].width, H = frames[0].height;
+  const px = frames.map(f => f.getContext('2d').getImageData(0, 0, W, H).data);
+  // Gewichte auf kleinem, weichgezeichnetem Bild (verhindert Flecken)
+  const sw = Math.max(8, Math.round(W / 16)), sh = Math.max(8, Math.round(H / 16));
+  const wts = frames.map(f => {
+    const c = document.createElement('canvas'); c.width = sw; c.height = sh; const g = c.getContext('2d');
+    g.filter = 'blur(1px)'; g.drawImage(f, 0, 0, sw, sh);
+    const d = g.getImageData(0, 0, sw, sh).data; const w = new Float32Array(sw * sh);
+    for (let i = 0; i < sw * sh; i++) { const l = (0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]) / 255; w[i] = Math.exp(-((l - 0.5) ** 2) / 0.08) + 1e-4; }
+    return w;
+  });
+  const out = document.createElement('canvas'); out.width = W; out.height = H;
+  const og = out.getContext('2d'); const od = og.createImageData(W, H); const o = od.data;
+  for (let y = 0; y < H; y++) {
+    const fy = Math.min(sh - 1.001, (y + 0.5) * sh / H - 0.5 < 0 ? 0 : (y + 0.5) * sh / H - 0.5); const y0 = Math.floor(fy), ty = fy - y0;
+    for (let x = 0; x < W; x++) {
+      const fx = Math.min(sw - 1.001, Math.max(0, (x + 0.5) * sw / W - 0.5)); const x0 = Math.floor(fx), tx = fx - x0;
+      const i00 = y0 * sw + x0, i10 = i00 + 1, i01 = i00 + sw, i11 = i01 + 1;
+      let ws = 0, rr = 0, gg = 0, bb = 0; const p = (y * W + x) * 4;
+      for (let k = 0; k < 3; k++) {
+        const w = wts[k]; const wk = (w[i00] * (1 - tx) + w[i10] * tx) * (1 - ty) + (w[i01] * (1 - tx) + w[i11] * tx) * ty;
+        ws += wk; rr += wk * px[k][p]; gg += wk * px[k][p + 1]; bb += wk * px[k][p + 2];
+      }
+      o[p] = rr / ws; o[p + 1] = gg / ws; o[p + 2] = bb / ws; o[p + 3] = 255;
+    }
+  }
+  og.putImageData(od, 0, 0);
+  return out;
+}
 $('#camRoom').onclick = async () => { const r = await pickRoom(); if (r) { S.room = r; $('#camRoom').textContent = r; } };
 $('#camBack').onclick = () => { renderShots(); show('proj'); };
 $('#camGallery').onclick = () => $('#galIn').click();
 $('#fileIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) newShotFromBlob(f); else show('proj'); };
-$('#galIn').onchange = e => {  const f = e.target.files[0]; e.target.value = ''; if (f) newShotFromBlob(f); };
+$('#galIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) newShotFromBlob(f); };
+let shooting = false;
 $('#shutter').onclick = async () => {
   const v = $('#video');
-  if (!v.videoWidth) return;
-  let blob = null;
+  if (!v.videoWidth || shooting) return;
+  shooting = true;
   try {
-    const track = S.stream.getVideoTracks()[0];
-    if (window.ImageCapture) blob = await new ImageCapture(track).takePhoto();
-  } catch (e) { blob = null; }
-  if (!blob) {
-    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext('2d').drawImage(v, 0, 0);
-    blob = await canvasToBlob(c, 'image/jpeg', 0.92);
-  }
-  beep(true);
-  newShotFromBlob(blob);
+    let blob = null;
+    if (camOpt.hdr && caps.exposureCompensation) {
+      $('#capBusy').classList.add('on');
+      try { blob = await canvasToBlob(await captureHdr(), 'image/jpeg', 0.92); } catch (e) { blob = null; }
+      $('#capBusy').classList.remove('on');
+    } else if (!(camOpt.torch && caps.torch)) {
+      // ohne Blitz: volle Auflösung über ImageCapture (wo verfügbar)
+      try { if (window.ImageCapture) blob = await new ImageCapture(camTrack()).takePhoto(); } catch (e) { blob = null; }
+    }
+    if (!blob) blob = await canvasToBlob(grabFrame(), 'image/jpeg', 0.92); // mit Blitz: Videobild, damit das Licht anbleibt
+    beep(true);
+    await newShotFromBlob(blob);
+  } finally { shooting = false; }
 };
 
 async function newShotFromBlob(blob) {
@@ -412,6 +520,7 @@ let photoImg = null, blinkT = 0, raf = 0;
 
 async function openEditor(shot, fresh = false) {
   S.shot = shot;
+  if (kb.on) setKb(false);
   $('#edTitle').textContent = shot.room;
   photoImg = await blobToImg(shot.photo);
   show('ed');
@@ -530,7 +639,7 @@ function updateCur() {
   const v = $('#curVal');
   const num = a && (kb.on || a.cm != null);
   v.classList.toggle('hint', !num);
-  v.textContent = a ? (kb.on ? (kb.buf || '…') + ' cm' : a.cm != null ? a.cm + ' cm' : laser.state === 'verbunden' ? 'Jetzt am Laser messen' : 'Laser verbinden (oben) oder tippen') : '–';
+  v.textContent = a ? (kb.on ? (kb.buf || '…') + ' cm' : a.cm != null ? a.cm + ' cm' : laser.state === 'verbunden' ? 'Jetzt am Laser messen' : 'Laser verbinden oder ⌨') : '–';
 }
 async function saveShot() { await db.put('shots', S.shot); }
 
@@ -592,7 +701,15 @@ const kb = { on: false, buf: '' };
     el.appendChild(b);
   });
 })();
-$('#kbBtn').onclick = () => { kb.on = !kb.on; kb.buf = ''; $('#keypad').classList.toggle('on', kb.on); $('#kbBtn').textContent = kb.on ? '✕ Tastatur' : '⌨ Tippen'; setTimeout(fitCanvas, 30); updateCur(); };
+function setKb(on) { kb.on = on; kb.buf = ''; $('#keypad').classList.toggle('on', on); $('#kbBtn').classList.toggle('on', on); updateCur(); }
+$('#kbBtn').onclick = () => setKb(!kb.on);
+$('#trashA').onclick = () => {
+  const a = activeArrow(); if (!a) { toast('Kein Pfeil ausgewählt'); return; }
+  clearTimeout(finishing);
+  S.shot.arrows = S.shot.arrows.filter(x => x !== a);
+  S.active = firstOpen(); saveShot(); updateCur();
+  toast(`Pfeil gelöscht (${a.el} – ${a.kind === 'H' ? 'Höhe' : 'Breite'})`);
+};
 
 // Pfeile ziehen: Endpunkt (Kreis) oder ganzer Pfeil; Tippen = aktiv
 let drag = null;
@@ -828,5 +945,5 @@ function askPin() {
   laserUi();
   renderHome();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
-  window.__mb = { S, laser, onMeasure, applyTemplate, setArrows, arrowsFromObjects }; // für Tests
+  window.__mb = { S, laser, onMeasure, applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
 })();
