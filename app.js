@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -105,7 +105,9 @@ async function openProject(id, isNew = false) {
   S.project = await db.get('projects', id);
   S.shots = await db.shotsOf(id);
   const p = S.project;
-  $('#pName').value = p.name || ''; $('#pFirma').value = p.firma || ''; $('#pKontakt').value = p.kontakt || '';
+  if (p.str === undefined) { p.str = p.name || ''; p.wort = ''; p.top = ''; }
+  $('#pStr').value = p.str; $('#pWOrt').value = p.wort || ''; $('#pTop').value = p.top || ''; updateNamePrev();
+  $('#pFirma').value = p.firma || ''; $('#pKontakt').value = p.kontakt || '';
   $('#pStrasse').value = p.strasse || ''; $('#pOrt').value = p.ort || ''; $('#pLand').value = p.land || '';
   $('#pTel').value = p.telefon || ''; $('#pDatum').value = (p.datum || '').slice(0, 10);
   renderCustChips();
@@ -113,17 +115,106 @@ async function openProject(id, isNew = false) {
   $('#projTitle').textContent = p.name || 'Neues Projekt';
   renderShots();
   show('proj');
-  if (isNew) setTimeout(() => $('#pName').focus(), 200);
+  if (isNew) setTimeout(() => $('#pStr').focus(), 200);
 }
 
-const fieldMap = { pName: 'name', pFirma: 'firma', pKontakt: 'kontakt', pStrasse: 'strasse', pOrt: 'ort', pLand: 'land', pTel: 'telefon', pDatum: 'datum' };
+const fieldMap = { pStr: 'str', pWOrt: 'wort', pTop: 'top', pFirma: 'firma', pKontakt: 'kontakt', pStrasse: 'strasse', pOrt: 'ort', pLand: 'land', pTel: 'telefon', pDatum: 'datum' };
 Object.entries(fieldMap).forEach(([id, k]) => {
   $('#' + id).addEventListener('input', () => {
     S.project[k] = $('#' + id).value; S.project.updated = Date.now();
-    if (k === 'name') $('#projTitle').textContent = S.project.name || 'Neues Projekt';
+    if (['str', 'wort', 'top'].includes(k)) updateNamePrev();
+    if (k === 'str') streetInput();
+    if (k === 'wort' || k === 'str') rememberStreetSoon();
     clearTimeout(S._saveT); S._saveT = setTimeout(() => db.put('projects', S.project), 300);
   });
 });
+// ---------------- Adresse / Straßen merken ----------------
+// Projektname = "Straße Nr, PLZ Ort, Geschoß, WG" (so steht er am Deckblatt)
+function updateNamePrev() {
+  const p = S.project;
+  p.name = [p.str, p.wort, p.top].map(x => (x || '').trim()).filter(Boolean).join(', ');
+  $('#pNamePrev').textContent = p.name ? 'Am PDF: ' + p.name : '';
+  $('#projTitle').textContent = p.name || 'Neues Projekt';
+}
+const normStreet = s => (s || '').toLowerCase().replace(/ß/g, 'ss').replace(/stra?sse\b|str\.?(?=\s|$)/g, 'str').replace(/[^a-z0-9äöü]/g, '');
+// "Haydnstrasse 8a/3" → "Haydnstrasse"
+const streetOnly = s => (s || '').trim().replace(/\s+\d+\s*[a-zA-Z]?([\/-].*)?$/, '').trim();
+const houseNo = s => { const m = (s || '').trim().match(/\s(\d+\s*[a-zA-Z]?([\/-].*)?)$/); return m ? m[1] : ''; };
+async function knownStreets() { return (await db.setting('streets')) || []; }
+let remT = 0;
+function rememberStreetSoon() {
+  clearTimeout(remT);
+  remT = setTimeout(async () => {
+    const st = streetOnly(S.project.str), ort = (S.project.wort || '').trim();
+    if (st.length < 3 || !/^\d{4}\s+\S/.test(ort)) return;
+    const list = await knownStreets(); const k = normStreet(st);
+    const i = list.findIndex(x => normStreet(x.street) === k && x.ort === ort);
+    if (i >= 0) list[i].used = Date.now(); else list.push({ street: st, ort, used: Date.now() });
+    await db.setting('streets', list);
+  }, 1500);
+}
+let sugT = 0, sugReq = 0;
+async function streetInput() {
+  const v = $('#pStr').value, st = streetOnly(v), k = normStreet(st);
+  const box = $('#strSug');
+  if (k.length < 3) { box.classList.remove('on'); return; }
+  const local = (await knownStreets()).filter(x => normStreet(x.street).includes(k)).sort((a, b) => (b.used || 0) - (a.used || 0)).slice(0, 5);
+  // genau bekannte Straße (eindeutig) + Hausnummer getippt → PLZ Ort sofort eintragen
+  const exact = local.filter(x => normStreet(x.street) === k);
+  if (exact.length === 1 && houseNo(v) && !$('#pWOrt').value.trim()) setWOrt(exact[0].ort, true);
+  showSug(local.map(x => ({ ...x, src: 'bekannt' })), []);
+  clearTimeout(sugT);
+  if (!navigator.onLine || local.length >= 3) return;
+  const my = ++sugReq;
+  sugT = setTimeout(async () => {
+    try {
+      const u = 'https://photon.komoot.io/api/?lang=de&limit=8&osm_tag=highway&bbox=9.5,46.3,17.2,49.1&lat=48.1&lon=14.3&q=' + encodeURIComponent(st);
+      const r = await fetch(u); if (!r.ok || my !== sugReq) return;
+      const j = await r.json();
+      const seen = new Set(local.map(x => normStreet(x.street) + x.ort));
+      const web = [];
+      for (const f of j.features || []) {
+        const pr = f.properties || {};
+        if (pr.countrycode && pr.countrycode !== 'AT') continue;
+        const ort = [pr.postcode, pr.city || pr.town || pr.village || pr.locality || pr.district].filter(Boolean).join(' ');
+        if (!pr.name || !pr.postcode) continue;
+        const key = normStreet(pr.name) + ort; if (seen.has(key)) continue; seen.add(key);
+        web.push({ street: pr.name, ort, src: 'Karte' });
+      }
+      if (my === sugReq && $('#pStr') === document.activeElement) showSug(local.map(x => ({ ...x, src: 'bekannt' })), web.slice(0, 5));
+    } catch (e) { /* offline oder Dienst nicht erreichbar */ }
+  }, 450);
+}
+function showSug(local, web) {
+  const box = $('#strSug'); box.innerHTML = '';
+  const all = [...local, ...web];
+  if (!all.length) { box.classList.remove('on'); return; }
+  for (const x of all) {
+    const b = document.createElement('button');
+    b.innerHTML = '<span class="src"></span><b></b><small></small>';
+    b.querySelector('b').textContent = x.street; b.querySelector('small').textContent = x.ort;
+    b.querySelector('.src').textContent = x.src === 'bekannt' ? 'schon gehabt' : 'Karte';
+    b.onmousedown = e => e.preventDefault(); // Fokus behalten
+    b.onclick = () => {
+      const no = houseNo($('#pStr').value);
+      $('#pStr').value = x.street + ' ' + (no || '');
+      S.project.str = $('#pStr').value.trimEnd();
+      setWOrt(x.ort, false);
+      box.classList.remove('on');
+      $('#pStr').focus();
+      const el = $('#pStr'); el.setSelectionRange(el.value.length, el.value.length);
+    };
+    box.appendChild(b);
+  }
+  box.classList.add('on');
+}
+function setWOrt(ort, auto) {
+  $('#pWOrt').value = ort; S.project.wort = ort; updateNamePrev();
+  db.put('projects', S.project); rememberStreetSoon();
+  if (auto) toast('PLZ Ort eingetragen: ' + ort);
+}
+$('#pStr').addEventListener('blur', () => setTimeout(() => $('#strSug').classList.remove('on'), 150));
+
 // ---------------- Kunden ----------------
 // Kunde = Name + PLZ Ort + Logo. Auswahl im Projekt übernimmt alles fürs Deckblatt.
 async function customers() { return ((await db.setting('customers')) || []).sort((a, b) => a.name.localeCompare(b.name, 'de')); }
