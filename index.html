@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#16202b">
+<title>Maßblatt</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<style>
+@font-face { font-family: "Noto Sans"; src: url(vendor/NotoSans.woff) format("woff"); }
+:root { --bg:#10171f; --panel:#18222d; --panel2:#213040; --line:#2c3e51; --text:#e9eef3; --mute:#8fa3b6; --acc:#ffd400; --blue:#4aa3ff; --red:#ff5252; --green:#3ecf7a; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:"Noto Sans", system-ui, sans-serif; font-size:16px; overscroll-behavior:none; }
+button { font:inherit; color:inherit; border:0; border-radius:12px; background:var(--panel2); padding:12px 14px; cursor:pointer; }
+button:active { filter:brightness(1.3); }
+button.pri { background:var(--acc); color:#111; font-weight:700; }
+button.ghost { background:transparent; border:1px solid var(--line); }
+button.danger { background:#3a1c1f; color:#ffb3b3; }
+button:disabled { opacity:.4; }
+input, select { font:inherit; color:var(--text); background:var(--bg); border:1px solid var(--line); border-radius:10px; padding:10px 12px; width:100%; }
+label.f { display:block; font-size:13px; color:var(--mute); margin:10px 0 4px; }
+.screen { position:fixed; inset:0; display:none; flex-direction:column; }
+.screen.on { display:flex; }
+header.top { display:flex; align-items:center; gap:8px; padding:calc(env(safe-area-inset-top) + 8px) 12px 8px; background:var(--panel); border-bottom:1px solid var(--line); min-height:56px; }
+header.top h1 { font-size:18px; margin:0; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.scroll { flex:1; overflow:auto; padding:12px 12px 120px; }
+.laser { display:flex; align-items:center; gap:6px; padding:8px 10px; border-radius:20px; font-size:13px; background:var(--panel2); }
+.laser i { width:10px; height:10px; border-radius:50%; background:#6b7a88; display:inline-block; }
+.laser.ok i { background:var(--green); box-shadow:0 0 8px var(--green); }
+.laser.busy i { background:var(--acc); animation:bl 0.8s infinite; }
+@keyframes bl { 50% { opacity:.2 } }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px; margin-bottom:10px; }
+.plist .card { display:flex; align-items:center; gap:10px; }
+.plist .card .t { flex:1; min-width:0; }
+.plist .card .t b { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.plist .card .t small { color:var(--mute); }
+.shot { display:flex; gap:10px; align-items:flex-start; }
+.shot img { width:72px; height:96px; object-fit:cover; border-radius:8px; background:#000; flex:none; }
+.shot .t { flex:1; min-width:0; }
+.shot .room { font-weight:700; font-size:18px; }
+.shot .vals { color:var(--mute); font-size:14px; margin-top:4px; line-height:1.5; }
+.shot .warn { color:var(--acc); font-size:13px; }
+.bottombar { position:fixed; left:0; right:0; bottom:0; display:flex; gap:10px; padding:10px 12px calc(env(safe-area-inset-bottom) + 10px); background:linear-gradient(transparent, var(--bg) 30%); }
+.bottombar button { flex:1; padding:16px; font-size:17px; }
+details.card summary { font-weight:700; cursor:pointer; }
+.row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.logo-prev { height:46px; max-width:160px; object-fit:contain; background:#fff; border-radius:6px; padding:3px; display:block; margin-top:6px; }
+/* Kamera */
+#cam { background:#000; }
+#cam video { flex:1; width:100%; object-fit:cover; min-height:0; }
+#cam .camtop { position:absolute; top:0; left:0; right:0; display:flex; gap:8px; align-items:center; padding:calc(env(safe-area-inset-top) + 10px) 12px 10px; background:linear-gradient(rgba(0,0,0,.6), transparent); }
+#cam .camtop .roomchip { font-size:20px; font-weight:700; background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.3); }
+#cam .cambar { display:flex; align-items:center; justify-content:space-around; padding:16px 12px calc(env(safe-area-inset-bottom) + 18px); background:#000; }
+#shutter { width:78px; height:78px; border-radius:50%; background:#fff; border:5px solid #888; padding:0; }
+#cam .hint { position:absolute; left:0; right:0; bottom:140px; text-align:center; color:#fff; text-shadow:0 1px 3px #000; font-size:14px; }
+/* Editor */
+#ed { background:#000; }
+#ed .stage { flex:1; position:relative; min-height:0; touch-action:none; }
+#ed canvas { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
+#ed .busy { position:absolute; left:12px; right:12px; top:12px; background:rgba(0,0,0,.75); border-radius:12px; padding:10px 12px; font-size:14px; display:none; }
+#ed .busy.on { display:block; }
+#ed .busy .bar { height:6px; background:#333; border-radius:3px; margin-top:6px; overflow:hidden; }
+#ed .busy .bar div { height:100%; width:0; background:var(--acc); }
+#ed .panel { background:var(--panel); border-top:1px solid var(--line); padding:10px 12px calc(env(safe-area-inset-bottom) + 10px); }
+.chips { display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; scrollbar-width:none; }
+.chips button { flex:none; padding:8px 12px; font-size:14px; border-radius:18px; }
+.chips button.sel { background:var(--blue); color:#fff; }
+.cur { display:flex; align-items:center; gap:8px; }
+.cur .what { flex:1; }
+.cur .what small { color:var(--mute); display:block; font-size:13px; }
+.cur .what b { font-size:26px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cur .what b.hint { font-size:16px; color:var(--mute); font-weight:400; }
+.cur .what { min-width:0; }
+.cur button { padding:12px; min-width:48px; }
+.edrow { display:flex; gap:6px; margin-top:8px; }
+.edrow button { flex:1; font-size:14px; padding:10px 6px; }
+.keypad { display:none; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:8px; }
+.keypad.on { display:grid; }
+.keypad button { padding:14px 0; font-size:20px; }
+/* Sheets / Toast */
+.sheet-bg { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none; z-index:50; align-items:flex-end; }
+.sheet-bg.on { display:flex; }
+.sheet { background:var(--panel); width:100%; max-height:88vh; overflow:auto; border-radius:18px 18px 0 0; padding:16px 14px calc(env(safe-area-inset-bottom) + 16px); }
+.sheet h2 { margin:0 0 10px; font-size:18px; }
+.roomgrid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+.roomgrid button { padding:16px 0; font-size:18px; font-weight:700; }
+.roomgrid button small { display:block; font-size:10px; font-weight:400; color:var(--mute); }
+#toast { position:fixed; left:50%; top:calc(env(safe-area-inset-top) + 64px); transform:translateX(-50%); background:#000d; color:#fff; padding:10px 16px; border-radius:20px; font-size:15px; z-index:80; display:none; max-width:90vw; text-align:center; }
+#toast.on { display:block; }
+.mute { color:var(--mute); font-size:13px; }
+pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; border-radius:8px; max-height:200px; overflow:auto; }
+.empty { text-align:center; color:var(--mute); padding:40px 20px; }
+</style>
+</head>
+<body>
+
+<!-- Projektliste -->
+<section class="screen on" id="home">
+  <header class="top">
+    <h1>Maßblatt</h1>
+    <div class="laser" data-laser><i></i><span>Laser</span></div>
+    <button class="ghost" id="btnSettings" aria-label="Einstellungen">⚙</button>
+  </header>
+  <div class="scroll plist" id="projList"></div>
+  <div class="bottombar"><button class="pri" id="btnNewProj">+ Neues Projekt</button></div>
+</section>
+
+<!-- Projekt -->
+<section class="screen" id="proj">
+  <header class="top">
+    <button class="ghost" data-back="home">‹</button>
+    <h1 id="projTitle">Projekt</h1>
+    <div class="laser" data-laser><i></i><span>Laser</span></div>
+  </header>
+  <div class="scroll">
+    <details class="card" id="projDetails">
+      <summary>Projektdaten</summary>
+      <label class="f">Projekt (Adresse, Geschoß, WG)</label><input id="pName" placeholder="Haydnstrasse 8, EG, WG 1">
+      <div class="row2">
+        <div><label class="f">Firma / Auftraggeber</label><input id="pFirma" placeholder="WAG"></div>
+        <div><label class="f">Kontakt</label><input id="pKontakt"></div>
+      </div>
+      <label class="f">Straße</label><input id="pStrasse">
+      <div class="row2">
+        <div><label class="f">PLZ Ort</label><input id="pOrt" placeholder="4400 Steyr"></div>
+        <div><label class="f">Land</label><input id="pLand"></div>
+      </div>
+      <div class="row2">
+        <div><label class="f">Telefon</label><input id="pTel"></div>
+        <div><label class="f">Datum</label><input id="pDatum" type="date"></div>
+      </div>
+      <label class="f">Logo Auftraggeber (Deckblatt)</label>
+      <input type="file" id="pLogo" accept="image/*">
+      <img class="logo-prev" id="pLogoPrev" hidden>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="danger" id="btnDelProj">Projekt löschen</button>
+      </div>
+    </details>
+    <div id="shotList"></div>
+  </div>
+  <div class="bottombar">
+    <button class="ghost" id="btnPdf">PDF</button>
+    <button class="pri" id="btnShoot" style="flex:2">📷 Foto</button>
+  </div>
+</section>
+
+<!-- Kamera -->
+<section class="screen" id="cam">
+  <video id="video" playsinline muted autoplay></video>
+  <div class="camtop">
+    <button class="ghost" id="camBack" style="background:rgba(0,0,0,.5)">‹ Fertig</button>
+    <div style="flex:1"></div>
+    <button class="roomchip" id="camRoom">Raum</button>
+  </div>
+  <div class="hint" id="camHint">Tür und Fenster ganz ins Bild nehmen</div>
+  <div class="cambar">
+    <button class="ghost" id="camGallery" style="background:#222">Galerie</button>
+    <button id="shutter" aria-label="Auslösen"></button>
+    <div class="laser" data-laser style="background:#222"><i></i><span>Laser</span></div>
+  </div>
+  <input type="file" id="fileIn" accept="image/*" capture="environment" hidden>
+  <input type="file" id="galIn" accept="image/*" hidden>
+</section>
+
+<!-- Editor -->
+<section class="screen" id="ed">
+  <header class="top">
+    <button class="ghost" id="edBack">‹</button>
+    <h1 id="edTitle">Kz</h1>
+    <div class="laser" data-laser><i></i><span>Laser</span></div>
+  </header>
+  <div class="stage" id="stage"><canvas id="cv"></canvas>
+    <div class="busy" id="busy"><span id="busyTxt">Erkenne Tür/Fenster …</span><div class="bar"><div id="busyBar"></div></div></div>
+  </div>
+  <div class="panel">
+    <div class="chips" id="tplChips"></div>
+    <div class="cur">
+      <button id="prevA">‹</button>
+      <div class="what"><small id="curLbl">–</small><b id="curVal">–</b></div>
+      <button id="nextA">›</button>
+      <button id="kbBtn">⌨</button>
+    </div>
+    <div class="keypad" id="keypad"></div>
+    <div class="edrow">
+      <button id="addA">+ Pfeil</button>
+      <button id="flipA">Höhe/Breite</button>
+      <button id="delA">Pfeil weg</button>
+      <button class="pri" id="edDone">Fertig ✓</button>
+    </div>
+  </div>
+</section>
+
+<!-- Raumwahl -->
+<div class="sheet-bg" id="roomSheet"><div class="sheet">
+  <h2>Raum wählen</h2>
+  <div class="roomgrid" id="roomGrid"></div>
+  <label class="f">Eigener Name (z. B. Kz1, WC Bad)</label>
+  <div style="display:flex;gap:8px"><input id="roomCustom"><button class="pri" id="roomOk">OK</button></div>
+</div></div>
+
+<!-- Einstellungen -->
+<div class="sheet-bg" id="setSheet"><div class="sheet">
+  <h2>Einstellungen</h2>
+  <label class="f">Kopfzeile Text (PDF)</label><input id="sTitle" placeholder="Measuring Master">
+  <label class="f">Kopfzeile Logo (PDF, rechts oben)</label>
+  <input type="file" id="sLogo" accept="image/*"><img class="logo-prev" id="sLogoPrev" hidden>
+  <button class="ghost" id="sLogoDel" style="margin-top:6px">Logo entfernen</button>
+  <label class="f">Tür-/Fenster-Erkennung (KI)</label>
+  <select id="sAi"><option value="1">An – Pfeile automatisch</option><option value="0">Aus – nur Vorlagen</option></select>
+  <p class="mute" id="sAiState"></p>
+  <button class="ghost" id="sAiLoad">KI-Modell jetzt laden (~150 MB, am besten im WLAN)</button>
+  <label class="f">Laser</label>
+  <button class="ghost" id="sLaserOff">Laser trennen</button>
+  <details style="margin-top:10px"><summary class="mute">Bluetooth-Protokoll (für Fehlersuche)</summary><pre class="log" id="sLog"></pre></details>
+  <p class="mute" style="margin-top:16px">Maßblatt-App · Version <span id="ver"></span> · Daten bleiben nur auf diesem Handy.</p>
+  <button class="pri" id="setClose" style="width:100%;margin-top:8px">Schließen</button>
+</div></div>
+
+<!-- PIN-Sperre -->
+<div id="lock" style="position:fixed;inset:0;z-index:100;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px">
+  <img src="icons/icon-192.png" style="width:72px;height:72px;border-radius:16px;margin-bottom:16px">
+  <div style="font-size:20px;font-weight:700;margin-bottom:6px">Maßblatt</div>
+  <div class="mute" id="lockMsg" style="margin-bottom:16px">PIN eingeben</div>
+  <div id="lockDots" style="font-size:30px;letter-spacing:10px;min-height:44px"></div>
+  <div class="keypad on" id="lockPad" style="width:100%;max-width:320px"></div>
+</div>
+<div id="toast"></div>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="vendor/fontkit.umd.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

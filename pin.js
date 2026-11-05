@@ -1,0 +1,2 @@
+// PIN wird nur als Hash gespeichert (PBKDF2-SHA256)
+export const PIN = { salt: '9a8de56b4801f3db', iter: 200000, hash: 'cab0a304b8244269a9784ce2140c8e8aba7e708798d52763faf3e2ebd59b90c8' };
