@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.7.1';
+const VERSION = '1.8.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -746,6 +746,11 @@ const kb = { on: false, buf: '' };
 })();
 function setKb(on) { kb.on = on; kb.buf = ''; $('#keypad').classList.toggle('on', on); $('#kbBtn').classList.toggle('on', on); updateCur(); }
 $('#kbBtn').onclick = () => setKb(!kb.on);
+$('#addA').onclick = () => {
+  clearTimeout(finishing);
+  const a = newArrow(); S.shot.arrows.push(a); S.active = a.id; saveShot(); updateCur();
+  toast('Neuer Pfeil in der Bildmitte – an den Enden hinziehen');
+};
 $('#trashA').onclick = () => {
   const a = activeArrow(); if (!a) { toast('Kein Pfeil ausgewählt'); return; }
   clearTimeout(finishing);
@@ -797,7 +802,7 @@ cv.addEventListener('pointermove', e => {
 });
 const endDrag = () => { if (drag) { drag = null; $('#loupe').style.display = 'none'; saveShot(); } };
 // kein Scrollen/Zoomen der Seite im Editor
-['touchstart', 'touchmove'].forEach(t => $('#stage').addEventListener(t, e => { if (e.touches.length < 2 || drag) e.preventDefault(); }, { passive: false }));
+['touchstart', 'touchmove'].forEach(t => $('#stage').addEventListener(t, e => { if (e.target.closest('button')) return; if (e.touches.length < 2 || drag) e.preventDefault(); }, { passive: false }));
 
 function drawLoupe(px, py, r) {
   const L = $('#loupe'), lc = L.getContext('2d'), Z = 3;
