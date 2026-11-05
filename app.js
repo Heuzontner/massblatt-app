@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.8.0';
+const VERSION = '1.9.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -779,8 +779,13 @@ cv.addEventListener('pointerdown', e => {
       if (d < 34 && d < bd) { bd = d; best = { a, k: 'all' }; }
     }
   }
-  if (!best) return;
   clearTimeout(finishing);
+  if (!best) {
+    // freie Stelle: neuen Pfeil mit dem Finger aufziehen
+    const a = newArrow(); a.x1 = a.x2 = x; a.y1 = a.y2 = y;
+    S.shot.arrows.push(a);
+    best = { a, k: 'p2', isNew: true, prev: S.active };
+  }
   S.active = best.a.id; kb.buf = ''; updateCur();
   drag = { ...best, x, y, o: { ...best.a } };
   cv.setPointerCapture(e.pointerId);
@@ -794,13 +799,31 @@ cv.addEventListener('pointermove', e => {
   if (drag.k === 'p1') { a.x1 = cl(o.x1 + dx); a.y1 = cl(o.y1 + dy); }
   else if (drag.k === 'p2') { a.x2 = cl(o.x2 + dx); a.y2 = cl(o.y2 + dy); }
   else { a.x1 = cl(o.x1 + dx); a.y1 = cl(o.y1 + dy); a.x2 = cl(o.x2 + dx); a.y2 = cl(o.y2 + dy); }
+  if (drag.isNew) { const k = Math.abs((a.y2 - a.y1) * r.height) > Math.abs((a.x2 - a.x1) * r.width) ? 'H' : 'B'; if (k !== a.kind) { a.kind = k; updateCur(); } }
   // Lupe über dem Finger (nur beim Ziehen eines Endpunkts)
   if (drag.k !== 'all') {
     const px = drag.k === 'p1' ? a.x1 : a.x2, py = drag.k === 'p1' ? a.y1 : a.y2;
     drawLoupe(px, py, r);
   }
 });
-const endDrag = () => { if (drag) { drag = null; $('#loupe').style.display = 'none'; saveShot(); } };
+const endDrag = () => {
+  if (!drag) return;
+  const d = drag; drag = null; $('#loupe').style.display = 'none';
+  if (d.isNew) {
+    const a = d.a, r = cv.getBoundingClientRect();
+    const dx = (a.x2 - a.x1) * r.width, dy = (a.y2 - a.y1) * r.height;
+    if (Math.hypot(dx, dy) < 25) { // nur getippt → kein Pfeil
+      S.shot.arrows = S.shot.arrows.filter(x => x !== a); S.active = d.prev || firstOpen();
+    } else {
+      a.kind = Math.abs(dy) > Math.abs(dx) ? 'H' : 'B';
+      // Pfeile von unten nach oben bzw. links nach rechts speichern
+      if ((a.kind === 'H' && a.y1 < a.y2) || (a.kind === 'B' && a.x1 > a.x2)) [a.x1, a.y1, a.x2, a.y2] = [a.x2, a.y2, a.x1, a.y1];
+      S.active = a.id;
+    }
+    updateCur();
+  }
+  saveShot();
+};
 // kein Scrollen/Zoomen der Seite im Editor
 ['touchstart', 'touchmove'].forEach(t => $('#stage').addEventListener(t, e => { if (e.target.closest('button')) return; if (e.touches.length < 2 || drag) e.preventDefault(); }, { passive: false }));
 
