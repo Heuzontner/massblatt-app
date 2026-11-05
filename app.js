@@ -6,7 +6,7 @@ import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 
-const VERSION = '2.0.1';
+const VERSION = '2.0.2';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],

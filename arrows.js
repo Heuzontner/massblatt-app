@@ -78,11 +78,12 @@ export function drawArrows(ctx, W, H, arrows, activeId, blink = 1, forExport = f
       let la = ang; if (la > Math.PI / 2) la -= Math.PI; if (la < -Math.PI / 2) la += Math.PI;
       const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
       ctx.save(); ctx.translate(mx, my); ctx.rotate(la);
-      ctx.font = `bold ${Math.round(30 * s)}px "Noto Sans", Arial, sans-serif`;
+      // Maße 1,5× größer als ursprünglich, damit sie im Bild/PDF gut lesbar sind
+      ctx.font = `bold ${Math.round(45 * s)}px "Noto Sans", Arial, sans-serif`;
       const tw = ctx.measureText(label).width;
-      const bw = tw + 18 * s, bh = 40 * s;
+      const bw = tw + 27 * s, bh = 60 * s;
       ctx.fillStyle = a.cm != null ? '#000' : (active ? '#d32f2f' : 'rgba(0,0,0,0.55)');
-      roundRect(ctx, -bw / 2, -bh / 2, bw, bh, 6 * s); ctx.fill();
+      roundRect(ctx, -bw / 2, -bh / 2, bw, bh, 9 * s); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(label, 0, 1 * s);
       ctx.restore();
