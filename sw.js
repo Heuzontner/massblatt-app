@@ -1,5 +1,5 @@
 // Offline: App-Dateien im Cache. Das KI-Modell cached transformers.js selbst.
-const V = 'mb-1.1.0';
+const V = 'mb-1.2.0';
 const FILES = ['./', 'index.html', 'app.js', 'db.js', 'ble.js', 'arrows.js', 'pdf.js', 'detect.js', 'pin.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'vendor/pdf-lib.min.js', 'vendor/fontkit.umd.min.js', 'vendor/NotoSans.woff',
   'vendor/ort-wasm-simd-threaded.asyncify.mjs', 'vendor/ort-wasm-simd-threaded.asyncify.wasm'];

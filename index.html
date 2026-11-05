@@ -65,6 +65,11 @@ details.card summary { font-weight:700; cursor:pointer; }
 #ed .panel { background:var(--panel); border-top:1px solid var(--line); padding:10px 12px calc(env(safe-area-inset-bottom) + 10px); }
 #ed, #ed .stage, #cv { touch-action:none; user-select:none; -webkit-user-select:none; }
 #loupe { position:absolute; width:150px; height:150px; border-radius:50%; border:3px solid #fff; box-shadow:0 4px 16px #000a; pointer-events:none; display:none; left:0; top:0; }
+.custs { display:flex; flex-wrap:wrap; gap:8px; }
+.custs button { display:flex; align-items:center; gap:8px; padding:8px 12px; font-size:16px; border:2px solid transparent; }
+.custs button img { height:28px; max-width:56px; object-fit:contain; background:#fff; border-radius:4px; padding:1px; }
+.custs button.sel { border-color:var(--acc); background:#3a3410; }
+.custs button small { color:var(--mute); font-size:12px; display:block; text-align:left; }
 .tiles { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .tiles button { padding:16px 8px; font-size:16px; }
 .tiles button.sel { background:var(--blue); color:#fff; }
@@ -116,22 +121,24 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
     <details class="card" id="projDetails">
       <summary>Projektdaten</summary>
       <label class="f">Projekt (Adresse, Geschoß, WG)</label><input id="pName" placeholder="Haydnstrasse 8, EG, WG 1">
+      <label class="f">Kunde</label>
+      <div class="custs" id="custChips"></div>
       <div class="row2">
-        <div><label class="f">Firma / Auftraggeber</label><input id="pFirma" placeholder="WAG"></div>
-        <div><label class="f">Kontakt</label><input id="pKontakt"></div>
-      </div>
-      <label class="f">Straße</label><input id="pStrasse">
-      <div class="row2">
-        <div><label class="f">PLZ Ort</label><input id="pOrt" placeholder="4400 Steyr"></div>
-        <div><label class="f">Land</label><input id="pLand"></div>
-      </div>
-      <div class="row2">
-        <div><label class="f">Telefon</label><input id="pTel"></div>
         <div><label class="f">Datum</label><input id="pDatum" type="date"></div>
+        <div></div>
       </div>
-      <label class="f">Logo Auftraggeber (Deckblatt)</label>
-      <input type="file" id="pLogo" accept="image/*">
-      <img class="logo-prev" id="pLogoPrev" hidden>
+      <details style="margin-top:10px"><summary class="mute">Weitere Angaben (optional)</summary>
+        <div class="row2">
+          <div><label class="f">Firma</label><input id="pFirma"></div>
+          <div><label class="f">PLZ Ort</label><input id="pOrt"></div>
+        </div>
+        <div class="row2">
+          <div><label class="f">Kontakt</label><input id="pKontakt"></div>
+          <div><label class="f">Telefon</label><input id="pTel"></div>
+        </div>
+        <label class="f">Straße</label><input id="pStrasse">
+        <label class="f">Land</label><input id="pLand">
+      </details>
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="danger" id="btnDelProj">Projekt löschen</button>
       </div>
@@ -213,6 +220,20 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   <div style="display:flex;gap:8px"><input id="roomCustom"><button class="pri" id="roomOk">OK</button></div>
 </div></div>
 
+<!-- Kunde bearbeiten -->
+<div class="sheet-bg" id="custSheet"><div class="sheet">
+  <h2 id="custTitle">Neuer Kunde</h2>
+  <label class="f">Name (z. B. WAG)</label><input id="cName">
+  <label class="f">PLZ Ort</label><input id="cOrt" placeholder="4400 Steyr">
+  <label class="f">Logo</label>
+  <input type="file" id="cLogo" accept="image/*"><img class="logo-prev" id="cLogoPrev" hidden>
+  <div style="display:flex;gap:8px;margin-top:16px">
+    <button class="danger" id="cDel">Löschen</button>
+    <button class="ghost" id="cCancel" style="flex:1">Abbrechen</button>
+    <button class="pri" id="cSave" style="flex:1">Speichern</button>
+  </div>
+</div></div>
+
 <!-- Einstellungen -->
 <div class="sheet-bg" id="setSheet"><div class="sheet">
   <h2>Einstellungen</h2>
@@ -220,6 +241,8 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   <label class="f">Kopfzeile Logo (PDF, rechts oben)</label>
   <input type="file" id="sLogo" accept="image/*"><img class="logo-prev" id="sLogoPrev" hidden>
   <button class="ghost" id="sLogoDel" style="margin-top:6px">Logo entfernen</button>
+  <label class="f">Kunden</label>
+  <div class="custs" id="custManage"></div>
   <label class="f">Tür-/Fenster-Erkennung (KI)</label>
   <select id="sAi"><option value="1">An – Pfeile automatisch</option><option value="0">Aus – nur Vorlagen</option></select>
   <p class="mute" id="sAiState"></p>

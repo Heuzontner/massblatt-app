@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -95,7 +95,7 @@ async function renderHome() {
 $('#btnNewProj').onclick = async () => {
   const all = (await db.all('projects')).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   const last = all[0] || {};
-  const p = { id: uid(), name: '', firma: last.firma || '', kontakt: '', strasse: '', ort: last.ort || '', land: last.land || '',
+  const p = { id: uid(), name: '', kundeId: last.kundeId || null, firma: last.firma || '', kontakt: '', strasse: '', ort: last.ort || '', land: last.land || '',
     telefon: '', datum: new Date().toISOString().slice(0, 10), kundenLogo: last.kundenLogo || null, created: Date.now(), updated: Date.now() };
   await db.put('projects', p);
   await openProject(p.id, true);
@@ -108,7 +108,7 @@ async function openProject(id, isNew = false) {
   $('#pName').value = p.name || ''; $('#pFirma').value = p.firma || ''; $('#pKontakt').value = p.kontakt || '';
   $('#pStrasse').value = p.strasse || ''; $('#pOrt').value = p.ort || ''; $('#pLand').value = p.land || '';
   $('#pTel').value = p.telefon || ''; $('#pDatum').value = (p.datum || '').slice(0, 10);
-  if (p.kundenLogo) { $('#pLogoPrev').src = URL.createObjectURL(p.kundenLogo); $('#pLogoPrev').hidden = false; } else $('#pLogoPrev').hidden = true;
+  renderCustChips();
   $('#projDetails').open = isNew || !p.name;
   $('#projTitle').textContent = p.name || 'Neues Projekt';
   renderShots();
@@ -124,11 +124,77 @@ Object.entries(fieldMap).forEach(([id, k]) => {
     clearTimeout(S._saveT); S._saveT = setTimeout(() => db.put('projects', S.project), 300);
   });
 });
-$('#pLogo').onchange = async e => {
-  const f = e.target.files[0]; if (!f) return;
-  S.project.kundenLogo = f; await db.put('projects', S.project);
-  $('#pLogoPrev').src = URL.createObjectURL(f); $('#pLogoPrev').hidden = false;
-};
+// ---------------- Kunden ----------------
+// Kunde = Name + PLZ Ort + Logo. Auswahl im Projekt übernimmt alles fürs Deckblatt.
+async function customers() { return ((await db.setting('customers')) || []).sort((a, b) => a.name.localeCompare(b.name, 'de')); }
+function custButton(c, sel) {
+  const b = document.createElement('button'); if (sel) b.classList.add('sel');
+  if (c.logo) { const i = document.createElement('img'); i.src = URL.createObjectURL(c.logo); b.appendChild(i); }
+  const t = document.createElement('span'); t.innerHTML = '<b></b><small></small>';
+  t.querySelector('b').textContent = c.name; t.querySelector('small').textContent = c.ort || '';
+  b.appendChild(t); return b;
+}
+async function renderCustChips() {
+  const el = $('#custChips'); el.innerHTML = '';
+  for (const c of await customers()) {
+    const b = custButton(c, S.project.kundeId === c.id);
+    b.onclick = () => selectCustomer(S.project.kundeId === c.id ? null : c);
+    el.appendChild(b);
+  }
+  const add = document.createElement('button'); add.textContent = '+ Neuer Kunde';
+  add.onclick = async () => { const c = await editCustomer(null); if (c) selectCustomer(c); };
+  el.appendChild(add);
+}
+async function selectCustomer(c) {
+  const p = S.project;
+  p.kundeId = c ? c.id : null;
+  p.firma = c ? c.name : ''; p.ort = c ? (c.ort || '') : ''; p.kundenLogo = c ? (c.logo || null) : null;
+  $('#pFirma').value = p.firma; $('#pOrt').value = p.ort;
+  p.updated = Date.now(); await db.put('projects', p);
+  renderCustChips();
+}
+function editCustomer(c) {
+  return new Promise(res => {
+    const sh = $('#custSheet'); let logo = c ? c.logo : null;
+    $('#custTitle').textContent = c ? 'Kunde bearbeiten' : 'Neuer Kunde';
+    $('#cName').value = c ? c.name : ''; $('#cOrt').value = c ? (c.ort || '') : '';
+    const prev = () => { if (logo) { $('#cLogoPrev').src = URL.createObjectURL(logo); $('#cLogoPrev').hidden = false; } else $('#cLogoPrev').hidden = true; };
+    prev(); $('#cLogo').value = '';
+    $('#cDel').style.display = c ? '' : 'none';
+    $('#cLogo').onchange = e => { const f = e.target.files[0]; if (f) { logo = f; prev(); } };
+    const close = v => { sh.classList.remove('on'); res(v); };
+    $('#cCancel').onclick = () => close(null);
+    $('#cSave').onclick = async () => {
+      const name = $('#cName').value.trim(); if (!name) { toast('Bitte einen Namen eingeben'); return; }
+      const list = (await db.setting('customers')) || [];
+      const obj = { id: c ? c.id : uid(), name, ort: $('#cOrt').value.trim(), logo };
+      const i = list.findIndex(x => x.id === obj.id);
+      if (i >= 0) list[i] = obj; else list.push(obj);
+      await db.setting('customers', list);
+      // Projekte mit diesem Kunden aktualisieren
+      for (const p of await db.all('projects')) if (p.kundeId === obj.id) { p.firma = obj.name; p.ort = obj.ort; p.kundenLogo = obj.logo; await db.put('projects', p); if (S.project && S.project.id === p.id) Object.assign(S.project, p); }
+      close(obj);
+    };
+    $('#cDel').onclick = async () => {
+      if (!await confirmBox(`Kunde „${c.name}“ löschen? (Bestehende Projekte behalten ihre Angaben.)`)) return;
+      await db.setting('customers', ((await db.setting('customers')) || []).filter(x => x.id !== c.id));
+      close(null);
+    };
+    sh.classList.add('on');
+    if (!c) setTimeout(() => $('#cName').focus(), 200);
+  });
+}
+async function renderCustManage() {
+  const el = $('#custManage'); el.innerHTML = '';
+  for (const c of await customers()) {
+    const b = custButton(c, false);
+    b.onclick = async () => { await editCustomer(c); renderCustManage(); };
+    el.appendChild(b);
+  }
+  const add = document.createElement('button'); add.textContent = '+ Neuer Kunde';
+  add.onclick = async () => { await editCustomer(null); renderCustManage(); };
+  el.appendChild(add);
+}
 $('#btnDelProj').onclick = async () => {
   if (!await confirmBox(`Projekt „${S.project.name || 'Ohne Namen'}“ mit allen Fotos löschen?`)) return;
   for (const s of S.shots) await db.del('shots', s.id);
@@ -557,6 +623,7 @@ $('#btnSettings').onclick = async () => {
   const lg = await db.setting('headerLogo');
   if (lg) { $('#sLogoPrev').src = URL.createObjectURL(lg); $('#sLogoPrev').hidden = false; } else $('#sLogoPrev').hidden = true;
   $('#sAi').value = S.ai ? '1' : '0';
+  renderCustManage();
   $('#sAiState').textContent = 'KI-Modell: ' + modelState();
   $('#sLog').textContent = laser.log.join('\n') || '–';
   $('#ver').textContent = VERSION;
