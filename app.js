@@ -6,7 +6,7 @@ import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 
-const VERSION = '2.2.1';
+const VERSION = '2.2.2';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -515,9 +515,14 @@ window.addEventListener('devicemotion', e => {
   h.querySelector('.line').style.transform = `rotate(${lvl ? 0 : -roll}deg)`;
   h.style.opacity = Math.abs(roll) > 30 ? 0 : 1;
 });
+// Raum + Hinweis immer gemeinsam setzen (Raumhöhe ↔ Türen/Fenster)
+function setCamRoom(r) {
+  S.room = r;
+  $('#camRoom').textContent = r;
+  $('#camHint').textContent = r === 'Rh' ? 'Wand von Boden bis Decke ins Bild nehmen' : 'Tür und Fenster ganz ins Bild nehmen';
+}
 async function openCam() {
-  $('#camRoom').textContent = S.room;
-  $('#camHint').textContent = S.room === 'Rh' ? 'Wand von Boden bis Decke ins Bild nehmen' : 'Tür und Fenster ganz ins Bild nehmen';
+  setCamRoom(S.room);
   show('cam');
   try {
     S.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 3000 }, height: { ideal: 4000 } }, audio: false });
@@ -610,7 +615,7 @@ async function captureHdr() {
   og.putImageData(od, 0, 0);
   return out;
 }
-$('#camRoom').onclick = async () => { const r = await resolveRoom(await pickRoom()); if (r) { S.room = r; $('#camRoom').textContent = r; } };
+$('#camRoom').onclick = async () => { const r = await resolveRoom(await pickRoom()); if (r) setCamRoom(r); };
 $('#camBack').onclick = () => { renderShots(); show('proj'); };
 $('#camGallery').onclick = () => $('#galIn').click();
 $('#fileIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) newShotFromBlob(f); else show('proj'); };
