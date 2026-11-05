@@ -6,10 +6,10 @@ import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 
-const VERSION = '2.0.2';
+const VERSION = '2.1.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
+const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
   ['Ar', 'Abstellr.'], ['Lo', 'Loggia'], ['Eg', 'Eingang'], ['Rh', 'Raumhöhe']];
 
 const S = { project: null, shots: [], room: null, shot: null, active: null, stream: null, ai: true, wake: null };
@@ -21,15 +21,8 @@ function toast(msg, ms = 1800) {
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), ms);
 }
 function show(id) { $$('.screen').forEach(s => s.classList.toggle('on', s.id === id)); if (id !== 'cam') stopCam(); }
-function beep(ok = true) {
-  try {
-    const a = new (window.AudioContext || window.webkitAudioContext)();
-    const o = a.createOscillator(), g = a.createGain();
-    o.frequency.value = ok ? 1320 : 330; g.gain.value = 0.08; o.connect(g); g.connect(a.destination);
-    o.start(); o.stop(a.currentTime + 0.09);
-  } catch (e) { }
-  if (navigator.vibrate) navigator.vibrate(ok ? 40 : [60, 60, 60]);
-}
+// Rückmeldung nur per Vibration (am iPhone erlaubt Apple Web-Apps keine Vibration)
+function beep(ok = true) { try { if (navigator.vibrate) navigator.vibrate(ok ? 60 : [80, 60, 80]); } catch (e) { } }
 // toBlob hängt auf manchen Geräten gelegentlich → Zeitlimit, dann toDataURL
 function canvasToBlob(c, type = 'image/jpeg', q = 0.88) {
   return new Promise(res => {
@@ -79,10 +72,21 @@ document.addEventListener('click', async e => {
 });
 
 // ---------------- Projekte ----------------
+let homeSort = 'neu';
+try { homeSort = localStorage.getItem('mb_sort') || 'neu'; } catch (e) { }
+$('#projSearch').addEventListener('input', () => renderHome());
+$$('#sortChips button').forEach(b => b.onclick = () => { homeSort = b.dataset.sort; try { localStorage.setItem('mb_sort', homeSort); } catch (e) { } renderHome(); });
 async function renderHome() {
-  const list = (await db.all('projects')).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  $$('#sortChips button').forEach(b => b.classList.toggle('sel', b.dataset.sort === homeSort));
+  let list = await db.all('projects');
+  const q = normStreet($('#projSearch').value);
+  if (q) list = list.filter(p => normStreet([p.name, p.firma, p.str].join(' ')).includes(q));
+  const dateOf = p => p.datum || new Date(p.created || 0).toISOString().slice(0, 10);
+  const cmp = { neu: (a, b) => (b.updated || 0) - (a.updated || 0), datum: (a, b) => dateOf(b).localeCompare(dateOf(a)),
+    strasse: (a, b) => (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }), kunde: (a, b) => (a.firma || '').localeCompare(b.firma || '', 'de') || (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }) };
+  list.sort(cmp[homeSort] || cmp.neu);
   const el = $('#projList');
-  if (!list.length) { el.innerHTML = '<div class="empty">Noch kein Projekt.<br>Unten auf „+ Neues Projekt“ tippen.</div>'; return; }
+  if (!list.length) { el.innerHTML = q ? '<div class="empty">Nichts gefunden.</div>' : '<div class="empty">Noch kein Projekt.<br>Unten auf „+ Neues Projekt“ tippen.</div>'; return; }
   el.innerHTML = '';
   for (const p of list) {
     const n = (await db.shotsOf(p.id)).length;
@@ -436,10 +440,11 @@ async function moveShot(i, d) {
 }
 
 // ---------------- Raumwahl ----------------
+async function rooms() { const r = await db.setting('rooms'); return Array.isArray(r) && r.length ? r : DEFAULT_ROOMS; }
 function pickRoom() {
-  return new Promise(res => {
+  return new Promise(async res => {
     const sh = $('#roomSheet'); const g = $('#roomGrid'); g.innerHTML = '';
-    ROOMS.forEach(([k, t]) => {
+    (await rooms()).forEach(([k, t]) => {
       const b = document.createElement('button'); b.innerHTML = `${k}<small>${t}</small>`;
       b.onclick = () => { sh.classList.remove('on'); res(k); }; g.appendChild(b);
     });
@@ -465,9 +470,29 @@ async function resolveRoom(r) {
   return base + (Math.max(...nums) + 1);
 }
 $('#btnShoot').onclick = async () => {
+  askMotion();
   const r = await resolveRoom(await pickRoom()); if (!r) return;
   S.room = r; openCam();
 };
+// Waagrechter Strich wie bei der iPhone-Kamera: gelb, wenn das Handy gerade gehalten wird
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+let motionAsked = false;
+function askMotion() { // muss direkt in einem Tipp passieren (iPhone)
+  if (motionAsked) return; motionAsked = true;
+  try { if (window.DeviceMotionEvent && DeviceMotionEvent.requestPermission) DeviceMotionEvent.requestPermission().catch(() => { }); } catch (e) { }
+}
+let roll = 0;
+window.addEventListener('devicemotion', e => {
+  const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
+  const t = isIOS ? Math.atan2(g.x, -g.y) : Math.atan2(-g.x, g.y);
+  roll = roll * 0.7 + (t * 180 / Math.PI) * 0.3;
+  if (!$('#cam').classList.contains('on')) return;
+  const h = $('#horizon'); h.classList.add('on');
+  const lvl = Math.abs(roll) < 1;
+  h.classList.toggle('level', lvl);
+  h.querySelector('.line').style.transform = `rotate(${lvl ? 0 : -roll}deg)`;
+  h.style.opacity = Math.abs(roll) > 30 ? 0 : 1;
+});
 async function openCam() {
   $('#camRoom').textContent = S.room;
   $('#camHint').textContent = S.room === 'Rh' ? 'Wand von Boden bis Decke ins Bild nehmen' : 'Tür und Fenster ganz ins Bild nehmen';
@@ -612,6 +637,7 @@ async function openEditor(shot, fresh = false) {
   if (kb.on) setKb(false);
   $('#edTitle').textContent = shot.room;
   photoImg = await blobToImg(shot.photo);
+  $('#lightA').classList.toggle('on', !!shot.orig);
   show('ed');
   fitCanvas();
   buildChips();
@@ -742,8 +768,29 @@ function setValue(cm) {
   saveShot();
   beep(true);
   const next = S.shot.arrows.find(x => x.cm == null);
+  if (opt.big) showBig(cm, a);
+  if (opt.voice) say(`${cm}` + (next ? `. Nächster: ${arrowName(next)}` : '. Fertig'));
   if (next) { S.active = next.id; updateCur(); }
   else { S.active = a.id; updateCur(); finishShot(true); }
+}
+const arrowName = a => `${a.el === 'Maß' ? '' : a.el + ' '}${a.kind === 'H' ? 'Höhe' : 'Breite'}`;
+// Test-Optionen: großer Messmodus, Sprachansage
+const opt = { big: false, voice: false };
+try { Object.assign(opt, JSON.parse(localStorage.getItem('mb_opt') || '{}')); } catch (e) { }
+const saveOpt = () => { try { localStorage.setItem('mb_opt', JSON.stringify(opt)); } catch (e) { } document.body.classList.toggle('bigmode', !!opt.big); };
+document.body.classList.toggle('bigmode', !!opt.big);
+function showBig(cm, a) {
+  const el = $('#bigVal'); el.innerHTML = `${cm} cm<small></small>`; el.querySelector('small').textContent = arrowName(a);
+  el.classList.add('on'); clearTimeout(showBig._t); showBig._t = setTimeout(() => el.classList.remove('on'), 1400);
+}
+function say(t) {
+  try {
+    if (!window.speechSynthesis) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(t); u.lang = 'de-AT'; u.rate = 1.05;
+    const v = speechSynthesis.getVoices().find(v => v.lang && v.lang.startsWith('de')); if (v) u.voice = v;
+    speechSynthesis.speak(u);
+  } catch (e) { }
 }
 
 function onMeasure(cm) {
@@ -830,6 +877,32 @@ const kb = { on: false, buf: '' };
 })();
 function setKb(on) { kb.on = on; kb.buf = ''; $('#keypad').classList.toggle('on', on); $('#kbBtn').classList.toggle('on', on); updateCur(); }
 $('#kbBtn').onclick = () => setKb(!kb.on);
+// Aufhellen: automatische Tonwertkorrektur + Aufhellung dunkler Bereiche; Original bleibt für „zurück“ erhalten
+$('#lightA').onclick = async () => {
+  clearTimeout(finishing);
+  const shot = S.shot;
+  if (shot.orig) { shot.photo = shot.orig; delete shot.orig; toast('Original-Foto'); }
+  else {
+    const c = document.createElement('canvas'); c.width = shot.w; c.height = shot.h;
+    const g = c.getContext('2d'); g.drawImage(photoImg, 0, 0, shot.w, shot.h);
+    const id = g.getImageData(0, 0, shot.w, shot.h), d = id.data;
+    const hist = new Uint32Array(256); let sum = 0;
+    for (let i = 0; i < d.length; i += 16) { const l = (d[i] * 77 + d[i + 1] * 150 + d[i + 2] * 29) >> 8; hist[l]++; sum += l; }
+    const tot = d.length / 16; let acc = 0, lo = 0, hi = 255;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc > tot * 0.01) { lo = v; break; } }
+    acc = 0; for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc > tot * 0.01) { hi = v; break; } }
+    const mean = sum / tot, gam = mean < 70 ? 0.55 : mean < 110 ? 0.7 : 0.85;
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) lut[v] = 255 * Math.pow(Math.min(1, Math.max(0, (v - lo) / Math.max(1, hi - lo))), gam);
+    for (let i = 0; i < d.length; i += 4) { d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]; }
+    g.putImageData(id, 0, 0);
+    shot.orig = shot.photo; shot.photo = await canvasToBlob(c, 'image/jpeg', 0.9);
+    toast('Aufgehellt – nochmal ☀ = Original');
+  }
+  photoImg = await blobToImg(shot.photo);
+  $('#lightA').classList.toggle('on', !!shot.orig);
+  saveShot();
+};
 $('#trashA').onclick = () => {
   const a = activeArrow(); if (!a) { toast('Kein Pfeil ausgewählt'); return; }
   clearTimeout(finishing);
@@ -950,6 +1023,8 @@ async function makePdfFile() {
   const p = S.project;
   const headLogo = await db.setting('headerLogo');
   const proj = { ...p, headerTitle: (await db.setting('headerTitle')) || 'Measuring Master',
+    footer: (await db.setting('pdfFooter')) || '', overview: (await db.setting('pdfOverview')) !== false,
+    overviewRows: S.shots.map(s => ({ room: s.room, items: s.arrows.filter(a => a.cm != null).map(a => ({ el: a.el, kind: a.kind, cm: a.cm })) })),
     headerLogo: headLogo ? await fileToImgBytes(headLogo) : null,
     kundenLogo: p.kundenLogo ? await fileToImgBytes(p.kundenLogo) : null };
   const bytes = await buildPdf(window.PDFLib, window.fontkit, fontBytes, proj, shots);
@@ -989,11 +1064,21 @@ $('#btnExpProj').onclick = async () => {
   const p = S.project;
   const data = { app: 'massblatt-projekt', version: 1, exported: new Date().toISOString(),
     project: { ...p, kundenLogo: p.kundenLogo ? await blobToB64(p.kundenLogo) : null },
-    shots: await Promise.all(S.shots.map(async s => ({ ...s, photo: await blobToB64(s.photo) }))) };
+    shots: await Promise.all(S.shots.map(async s => { const o = { ...s, photo: await blobToB64(s.photo) }; delete o.orig; return o; })) };
   const name = fileBase(p) + ' (Projekt).json';
   const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; } }
   const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+};
+$('#btnDupProj').onclick = async () => {
+  const p = S.project;
+  if (!await confirmBox('Projekt duplizieren?', 'Duplizieren', 'Abbrechen', 'pri', 'Kunde, Straße, PLZ und Ort werden übernommen, Fotos nicht – z. B. für eine weitere Wohnung im selben Haus.')) return;
+  const n = { ...p, id: uid(), created: Date.now(), updated: Date.now(), datum: new Date().toISOString().slice(0, 10) };
+  n.str = streetOnly(p.str) + (houseNo(p.str) ? ' ' + houseNo(p.str) : '') + ', ';
+  await db.put('projects', n);
+  await openProject(n.id, true);
+  const el = $('#pStr'); el.focus(); el.setSelectionRange(el.value.length, el.value.length);
+  toast('Kopie angelegt – Geschoß/WG ergänzen');
 };
 $('#imProjBtn').onclick = () => $('#imProjFile').click();
 $('#imProjFile').onchange = async e => {
@@ -1034,6 +1119,23 @@ $('#dbxOk').onclick = async () => {
 };
 $('#dbxOff').onclick = () => { dropbox.disconnect(); dbxUi(); };
 
+async function previewPdf(file) {
+  const v = $('#pvw'), pages = $('#pvwPages'); pages.innerHTML = '<p class="mute" style="color:#ddd">Lade Vorschau …</p>';
+  $('#pvwTitle').textContent = file.name; v.classList.add('on');
+  try {
+    const pdfjs = await import('./vendor/pdf.min.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', location.href).href;
+    const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    pages.innerHTML = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const vp = page.getViewport({ scale: Math.min(2, (window.innerWidth * (window.devicePixelRatio || 1)) / 842) });
+      const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height; pages.appendChild(c);
+      await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    }
+  } catch (e) { pages.innerHTML = ''; const p = document.createElement('p'); p.style.color = '#fff'; p.textContent = 'Vorschau nicht möglich: ' + e.message; pages.appendChild(p); }
+}
+$('#pvwClose').onclick = () => { $('#pvw').classList.remove('on'); $('#pvwPages').innerHTML = ''; };
 async function sharePdf(file) {
   const url = URL.createObjectURL(file);
   const bg = document.createElement('div'); bg.className = 'sheet-bg on';
@@ -1041,14 +1143,14 @@ async function sharePdf(file) {
     <div style="display:flex;flex-direction:column;gap:8px">
       <button class="pri" data-share>Teilen (Mail, WhatsApp, Drive …)</button>
       <a data-dl style="display:block"><button class="ghost" style="width:100%">Am Handy speichern</button></a>
-      <button class="ghost" data-open>Ansehen</button>
+      <button class="ghost" data-open>Vorschau ansehen</button>
       <button class="ghost" data-close>Schließen</button></div></div>`;
   bg.querySelector('p').textContent = file.name;
   const a = bg.querySelector('[data-dl]'); a.href = url; a.download = file.name;
   const sb = bg.querySelector('[data-share]');
   if (!(navigator.canShare && navigator.canShare({ files: [file] }))) sb.style.display = 'none';
   sb.onclick = () => navigator.share({ files: [file], title: file.name }).catch(() => { });
-  bg.querySelector('[data-open]').onclick = () => window.open(url, '_blank');
+  bg.querySelector('[data-open]').onclick = () => previewPdf(file);
   bg.querySelector('[data-close]').onclick = () => bg.remove();
   document.body.appendChild(bg);
 }
@@ -1064,8 +1166,54 @@ $('#btnSettings').onclick = async () => {
   $('#sAiState').textContent = 'KI-Modell: ' + modelState();
   $('#sLog').textContent = laser.log.join('\n') || '–';
   $('#ver').textContent = VERSION;
+  $('#sFooter').value = (await db.setting('pdfFooter')) || '';
+  $('#sBig').checked = !!opt.big; $('#sVoice').checked = !!opt.voice;
+  const kl = laser.known; $('#sLasers').textContent = kl.length ? 'Gemerkt: ' + kl.map(k => `${k.name} (${new Date(k.last).toLocaleDateString('de-AT')})`).join(', ') : 'Noch kein Laser verbunden.';
+  $('#sOverview').value = (await db.setting('pdfOverview')) === false ? '0' : '1';
+  $('#sRooms').value = (await rooms()).map(([k, t]) => t ? `${k} = ${t}` : k).join('\n');
+  $('#sZoom').value = String((await db.setting('zoom')) || 1);
+  showStorage();
   $('#setSheet').classList.add('on');
 };
+$('#sBig').onchange = () => { opt.big = $('#sBig').checked; saveOpt(); if (opt.big) showBig(199, { el: 'Tür', kind: 'H' }); };
+$('#sVoice').onchange = () => { opt.voice = $('#sVoice').checked; saveOpt(); if (opt.voice) say('Sprachansage ist an. Tür Höhe, 199'); };
+const DEMO = [
+  ['📁', 'Projekt anlegen', 'Unten „+ Neues Projekt“. Straße + Hausnummer (+ Geschoß, WG), PLZ und Ort eintragen – bekannte Straßen füllen PLZ/Ort selbst aus. Kunde antippen.'],
+  ['📷', 'Raum wählen & fotografieren', '„📷 Foto“ → Raum antippen (Kz, Sz, Wz …). Tür bzw. Fenster ganz ins Bild nehmen. Der waagrechte Strich wird gelb, wenn das Handy gerade ist.'],
+  ['↕️', 'Pfeile setzen', 'Mit dem Finger über das Foto ziehen: senkrecht = Höhe, waagrecht = Breite. Enden verschieben (Lupe hilft), 🗑 löscht den ausgewählten Pfeil. Vorlagen unter „Pfeile“.'],
+  ['📏', 'Messen', 'Oben „Laser“ verbinden (Android + Chrome) und am Laser messen – der Wert springt in den blinkenden Pfeil, dann zum nächsten. Ohne Laser: ⌨ antippen und eintippen.'],
+  ['✅', 'Prüfen & weiter', 'Nach dem letzten Pfeil prüft die App die Maße und öffnet die Kamera fürs nächste Foto. „‹ Projekt“ führt zurück zur Fotoliste.'],
+  ['📄', 'PDF & Dropbox', 'In der Fotoliste „PDF“ (Vorschau, Teilen, Speichern) oder das Dropbox-Symbol – das PDF heißt wie das Projekt.'],
+];
+let demoI = 0;
+function demoShow() {
+  const [ic, h, t] = DEMO[demoI];
+  $('#demoSlide').innerHTML = '<div class="slide"><div class="ic"></div><h3></h3><p></p></div>';
+  $('#demoSlide .ic').textContent = ic; $('#demoSlide h3').textContent = `${demoI + 1}. ${h}`; $('#demoSlide p').textContent = t;
+  $('#demoDots').textContent = DEMO.map((_, i) => i === demoI ? '●' : '○').join('');
+  $('#demoPrev').disabled = demoI === 0; $('#demoNext').textContent = demoI === DEMO.length - 1 ? 'Fertig ✓' : 'Weiter ›';
+}
+$('#sDemo').onclick = () => { $('#setSheet').classList.remove('on'); demoI = 0; demoShow(); $('#demo').classList.add('on'); };
+$('#demoPrev').onclick = () => { if (demoI > 0) { demoI--; demoShow(); } };
+$('#demoNext').onclick = () => { if (demoI < DEMO.length - 1) { demoI++; demoShow(); } else $('#demo').classList.remove('on'); };
+$('#sFooter').oninput = () => db.setting('pdfFooter', $('#sFooter').value);
+$('#sOverview').onchange = () => db.setting('pdfOverview', $('#sOverview').value === '1');
+$('#sRooms').oninput = () => {
+  const list = $('#sRooms').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [k, ...t] = l.split('='); return [k.trim(), t.join('=').trim()]; }).filter(x => x[0]);
+  db.setting('rooms', list);
+};
+$('#sRoomsReset').onclick = async () => { await db.setting('rooms', null); $('#sRooms').value = DEFAULT_ROOMS.map(([k, t]) => t ? `${k} = ${t}` : k).join('\n'); };
+// Schriftgröße: nur Listen/Formulare vergrößern (nicht Foto-Bildschirm/Kamera, dort zählen Fingerpositionen)
+function applyZoom(z) { ['home', 'proj'].forEach(id => { $('#' + id).style.zoom = z; }); $$('.sheet').forEach(e => { e.style.zoom = z; }); }
+$('#sZoom').onchange = async () => { const z = parseFloat($('#sZoom').value); await db.setting('zoom', z); applyZoom(z); };
+async function showStorage() {
+  const fmt = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
+  let photos = 0, n = 0;
+  for (const s of await db.all('shots')) { photos += s.photo ? s.photo.size : 0; n++; }
+  let txt = `Fotos: ${n} Stück, ${fmt(photos)}`;
+  try { const e = await navigator.storage.estimate(); txt += ` · App gesamt: ${fmt(e.usage || 0)}` + (e.quota ? ` von ca. ${fmt(e.quota)} verfügbar` : ''); } catch (e) { }
+  $('#sStorage').textContent = txt;
+}
 $('#setClose').onclick = () => $('#setSheet').classList.remove('on');
 $('#sTitle').oninput = () => db.setting('headerTitle', $('#sTitle').value);
 $('#sLogo').onchange = async e => { const f = e.target.files[0]; if (!f) return; await db.setting('headerLogo', f); $('#sLogoPrev').src = URL.createObjectURL(f); $('#sLogoPrev').hidden = false; };
@@ -1165,6 +1313,7 @@ function askPin() {
 (async () => {
   if (!unlocked()) await askPin();
   const ai = await db.setting('ai'); S.ai = ai !== false;
+  applyZoom((await db.setting('zoom')) || 1);
   laserUi();
   renderHome();
   if ('serviceWorker' in navigator) {

@@ -1,10 +1,10 @@
 // Offline: App-Dateien im Cache. Große, unveränderliche Bibliotheken liegen in einem eigenen Cache,
 // damit ein Update nur die kleinen App-Dateien neu laden muss (schnelle Updates).
-const V = 'mb-2.0.2';
+const V = 'mb-2.1.0';
 const LIB = 'mblib-1';
 const FILES = ['./', 'index.html', 'app.js', 'db.js', 'ble.js', 'arrows.js', 'pdf.js', 'detect.js', 'pin.js', 'dropbox.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png'];
-const LIBFILES = ['vendor/pdf-lib.min.js', 'vendor/fontkit.umd.min.js', 'vendor/NotoSans.woff'];
+const LIBFILES = ['vendor/pdf-lib.min.js', 'vendor/fontkit.umd.min.js', 'vendor/NotoSans.woff', 'vendor/pdf.min.mjs', 'vendor/pdf.worker.min.mjs'];
 const isLib = u => u.hostname === 'cdn.jsdelivr.net' || u.pathname.includes('/vendor/');
 
 self.addEventListener('install', e => {

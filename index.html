@@ -9,6 +9,14 @@
 <link rel="icon" href="icons/icon-192.png">
 <style>
 @font-face { font-family: "Noto Sans"; src: url(vendor/NotoSans.woff) format("woff"); }
+@media (prefers-color-scheme: light) {
+  :root:not(.force-dark) { --bg:#eef2f6; --panel:#ffffff; --panel2:#e3e9f0; --line:#c9d3de; --text:#14202c; --mute:#5b6b7b; --acc:#f5c400; --blue:#1f78d1; }
+  :root:not(.force-dark) button.danger { background:#fbe3e3; color:#a3221b; }
+  :root:not(.force-dark) .laser { background:var(--panel2); }
+  :root:not(.force-dark) .cur b.hint { color:#9a6b00; }
+  :root:not(.force-dark) #cam .camtop button, :root:not(.force-dark) #cam .cambar button.ghost { color:#fff; }
+  :root:not(.force-dark) #toast, :root:not(.force-dark) #undoBar { background:#222e; }
+}
 :root { --bg:#10171f; --panel:#18222d; --panel2:#213040; --line:#2c3e51; --text:#e9eef3; --mute:#8fa3b6; --acc:#ffd400; --blue:#4aa3ff; --red:#ff5252; --green:#3ecf7a; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:"Noto Sans", system-ui, sans-serif; font-size:16px; overscroll-behavior:none; }
@@ -48,6 +56,9 @@ header.top h1 { font-size:18px; margin:0; flex:1; white-space:nowrap; overflow:h
 .shot .warn { color:var(--acc); font-size:13px; }
 .bottombar { z-index:10; position:fixed; left:0; right:0; bottom:0; display:flex; gap:10px; padding:10px 12px calc(env(safe-area-inset-bottom) + 10px); background:linear-gradient(transparent, var(--bg) 30%); }
 .bottombar button { flex:1; padding:16px; font-size:17px; }
+.chips2 { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+.chips2 button { padding:6px 12px; font-size:14px; border-radius:16px; }
+.chips2 button.sel { background:var(--blue); color:#fff; }
 details.card summary { font-weight:700; cursor:pointer; }
 .row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .logo-prev { height:46px; max-width:160px; object-fit:contain; background:#fff; border-radius:6px; padding:3px; display:block; margin-top:6px; }
@@ -120,6 +131,29 @@ details.card summary { font-weight:700; cursor:pointer; }
 #undoBar.on { display:flex; }
 #undoBar span { flex:1; }
 #undoBar button { background:var(--acc); color:#111; font-weight:700; padding:10px 14px; }
+#lightA { position:absolute; right:10px; bottom:10px; width:54px; height:54px; border-radius:50%; background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.4); color:#ffd400; font-size:26px; padding:0; z-index:5; }
+#lightA.on { background:#ffd400; color:#111; }
+#bigVal { position:absolute; left:50%; top:45%; transform:translate(-50%,-50%); background:rgba(0,0,0,.82); color:#fff; font-size:72px; font-weight:700; padding:10px 26px; border-radius:20px; display:none; z-index:7; pointer-events:none; white-space:nowrap; }
+#bigVal small { display:block; font-size:20px; font-weight:400; color:#ffd400; text-align:center; }
+#bigVal.on { display:block; }
+.bigmode .cur b:not(.hint) { font-size:40px !important; }
+.bigmode .cur small { font-size:16px !important; }
+#horizon { position:absolute; left:0; right:0; top:45%; height:0; pointer-events:none; display:none; }
+#horizon.on { display:block; }
+#horizon i { position:absolute; top:0; height:1px; background:rgba(255,255,255,.85); box-shadow:0 0 2px #000; }
+#horizon .ref { width:34px; }
+#horizon .ref.l { left:calc(50% - 110px); } #horizon .ref.r { left:calc(50% + 76px); }
+#horizon .line { left:calc(50% - 70px); width:140px; transform-origin:50% 50%; }
+#horizon.level i { background:#ffd400; height:2px; }
+#pvw { position:fixed; inset:0; background:#333; z-index:90; display:none; flex-direction:column; }
+#pvw.on { display:flex; }
+#pvw .pbar { display:flex; align-items:center; gap:8px; padding:calc(env(safe-area-inset-top) + 8px) 12px 8px; background:var(--panel); }
+#pvw .pages { flex:1; overflow:auto; padding:10px; display:flex; flex-direction:column; gap:10px; align-items:center; }
+#pvw canvas { width:100%; max-width:900px; background:#fff; box-shadow:0 2px 8px #0008; }
+#demo .slide { text-align:center; padding:10px 6px; }
+#demo .slide .ic { font-size:64px; margin:6px 0 10px; }
+#demo .slide h3 { margin:0 0 8px; }
+#demo .dots { text-align:center; color:var(--mute); margin:10px 0; letter-spacing:4px; }
 #toast { position:fixed; left:50%; top:calc(env(safe-area-inset-top) + 64px); transform:translateX(-50%); background:#000d; color:#fff; padding:10px 16px; border-radius:20px; font-size:15px; z-index:80; display:none; max-width:90vw; text-align:center; }
 #toast.on { display:block; }
 .mute { color:var(--mute); font-size:13px; }
@@ -136,7 +170,12 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
     <div class="laser" data-laser><i></i><span>Laser</span></div>
     <button class="ghost" id="btnSettings" aria-label="Einstellungen">⚙</button>
   </header>
-  <div class="scroll plist" id="projList"></div>
+  <div class="scroll plist">
+    <input id="projSearch" type="search" placeholder="🔍 Suchen (Straße, Kunde)" style="margin-bottom:8px">
+    <div class="chips2" id="sortChips"><span class="mute">Sortieren:</span>
+      <button data-sort="neu">Zuletzt</button><button data-sort="datum">Datum</button><button data-sort="strasse">Straße</button><button data-sort="kunde">Kunde</button></div>
+    <div id="projList"></div>
+  </div>
   <div class="bottombar"><button class="pri" id="btnNewProj">+ Neues Projekt</button></div>
 </section>
 
@@ -174,7 +213,8 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
         </div>
       </details>
       <div style="display:flex;gap:8px;margin-top:14px">
-        <button class="ghost" id="btnExpProj" style="flex:1">Projekt exportieren</button>
+        <button class="ghost" id="btnExpProj" style="flex:1">Exportieren</button>
+        <button class="ghost" id="btnDupProj" style="flex:1">Duplizieren</button>
         <button class="danger" id="btnDelProj">Projekt löschen</button>
       </div>
     </details>
@@ -195,6 +235,7 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
     <div style="flex:1"></div>
     <button class="roomchip" id="camRoom">Raum</button>
   </div>
+  <div id="horizon"><i class="ref l"></i><i class="line"></i><i class="ref r"></i></div>
   <div class="camside">
     <button id="torchBtn" aria-label="Blitz">⚡<small>Blitz</small></button>
     <button id="hdrBtn" aria-label="HDR">HDR<small>aus</small></button>
@@ -220,6 +261,8 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   </header>
   <div class="stage" id="stage"><canvas id="cv"></canvas><canvas id="loupe" width="300" height="300"></canvas>
     <button id="trashA" aria-label="Pfeil löschen">🗑</button>
+    <button id="lightA" aria-label="Aufhellen">☀</button>
+    <div id="bigVal"></div>
     <div class="keypad" id="keypad"></div>
     <div class="busy" id="busy"><span id="busyTxt">Erkenne Tür/Fenster …</span><div class="bar"><div id="busyBar"></div></div></div>
   </div>
@@ -288,6 +331,15 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   <label class="f">Kopfzeile Logo (PDF, rechts oben)</label>
   <input type="file" id="sLogo" accept="image/*"><img class="logo-prev" id="sLogoPrev" hidden>
   <button class="ghost" id="sLogoDel" style="margin-top:6px">Logo entfernen</button>
+  <label class="f">Fußzeile im PDF (z. B. deine Kontaktdaten, leer = keine)</label>
+  <input id="sFooter" placeholder="VIEWPORT 360° · office@viewport360.at · +43 …">
+  <label class="f">Übersichtsseite im PDF (alle Räume mit Tür-/Fenstermaßen)</label>
+  <select id="sOverview"><option value="1">An – am Ende des PDFs</option><option value="0">Aus</option></select>
+  <label class="f">Raum-Knöpfe (Kürzel = Bezeichnung, eine Zeile je Raum)</label>
+  <textarea id="sRooms" rows="7" style="width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px"></textarea>
+  <button class="ghost" id="sRoomsReset" style="margin-top:6px">Standard-Räume</button>
+  <label class="f">Schriftgröße der App</label>
+  <select id="sZoom"><option value="1">Normal</option><option value="1.15">Groß</option><option value="1.3">Sehr groß</option></select>
   <label class="f">Kunden</label>
   <div class="custs" id="custManage"></div>
   <label class="f">Kunden &amp; Straßen auf anderes Handy übertragen</label>
@@ -313,9 +365,16 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   <select id="sAi"><option value="1">An – Pfeile automatisch</option><option value="0">Aus – nur Vorlagen</option></select>
   <p class="mute" id="sAiState"></p>
   <button class="ghost" id="sAiLoad">KI-Modell jetzt laden (~150 MB, am besten im WLAN)</button>
+  <label class="f">Messen (zum Testen)</label>
+  <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sBig" style="width:auto"> Großer Messmodus (Wert riesig anzeigen)</label>
+  <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sVoice" style="width:auto"> Sprachansage (Pfeil und Messwert ansagen)</label>
   <label class="f">Laser</label>
+  <p class="mute" id="sLasers" style="margin:0 0 6px"></p>
   <button class="ghost" id="sLaserOff">Laser trennen</button>
   <details style="margin-top:10px"><summary class="mute">Bluetooth-Protokoll (für Fehlersuche)</summary><pre class="log" id="sLog"></pre></details>
+  <label class="f">Speicher</label>
+  <p class="mute" id="sStorage" style="margin:0">…</p>
+  <button class="ghost" id="sDemo" style="width:100%;margin-top:14px">▶ Kurze Demo ansehen</button>
   <p class="mute" style="margin-top:16px">Maßblatt-App · Version <span id="ver"></span> · Daten bleiben nur auf diesem Handy.</p>
   <button class="pri" id="setClose" style="width:100%;margin-top:8px">Schließen</button>
 </div></div>
@@ -328,6 +387,11 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   <div id="lockDots" style="font-size:30px;letter-spacing:10px;min-height:44px"></div>
   <div class="keypad on" id="lockPad" style="width:100%;max-width:320px"></div>
 </div>
+<!-- PDF-Vorschau -->
+<div id="pvw"><div class="pbar"><button class="ghost" id="pvwClose">‹ Zurück</button><b style="flex:1" id="pvwTitle">Vorschau</b></div><div class="pages" id="pvwPages"></div></div>
+<!-- Demo -->
+<div class="sheet-bg" id="demo"><div class="sheet"><div id="demoSlide"></div><div class="dots" id="demoDots"></div>
+  <div style="display:flex;gap:8px"><button class="ghost" id="demoPrev" style="flex:1">‹ Zurück</button><button class="pri" id="demoNext" style="flex:1">Weiter ›</button></div></div></div>
 <div id="toast"></div>
 <script src="vendor/pdf-lib.min.js"></script>
 <script src="vendor/fontkit.umd.min.js"></script>

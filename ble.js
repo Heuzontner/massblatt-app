@@ -12,9 +12,31 @@ export class Laser extends EventTarget {
   _set(state, msg) { this.state = state; this.dispatchEvent(new CustomEvent('state', { detail: { state, msg } })); }
   _log(s) { this.log.push(new Date().toLocaleTimeString() + ' ' + s); if (this.log.length > 200) this.log.shift(); }
 
+  // gemerkte Laser (Name, ID, zuletzt verbunden)
+  get known() { try { return JSON.parse(localStorage.getItem('mb_lasers') || '[]'); } catch (e) { return []; } }
+  _remember(d) {
+    const list = this.known.filter(x => x.id !== d.id);
+    list.unshift({ id: d.id, name: d.name || 'Laser', last: Date.now() });
+    try { localStorage.setItem('mb_lasers', JSON.stringify(list.slice(0, 5))); } catch (e) { }
+  }
   async connect() {
     if (!this.supported) throw new Error('Dieses Gerät/dieser Browser kann kein Web-Bluetooth. Bitte Chrome auf Android verwenden.');
     this._set('suche');
+    // schon bekannter Laser? → ohne Auswahlfenster verbinden (wo der Browser das erlaubt)
+    if (navigator.bluetooth.getDevices) {
+      try {
+        const devs = await navigator.bluetooth.getDevices();
+        for (const k of this.known) {
+          const d = devs.find(x => x.id === k.id);
+          if (!d) continue;
+          try {
+            this.device = d;
+            d.addEventListener('gattserverdisconnected', () => this._onDisconnect());
+            await this._open(); return;
+          } catch (e) { this._log('bekannter Laser nicht erreichbar: ' + e.message); this.device = null; }
+        }
+      } catch (e) { }
+    }
     this.device = await navigator.bluetooth.requestDevice({
       filters: [{ namePrefix: 'GLM' }, { namePrefix: 'Bosch' }, { services: [SVC] }],
       optionalServices: [SVC],
@@ -32,6 +54,7 @@ export class Laser extends EventTarget {
     await this.chr.startNotifications();
     await this._write(START);
     this._log('verbunden: ' + (this.device.name || '?'));
+    this._remember(this.device);
     this._set('verbunden', this.device.name || 'Laser');
   }
 

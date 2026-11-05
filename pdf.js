@@ -58,6 +58,25 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
   const ML_ROWS = 24;
   const mlPages = Math.max(1, Math.ceil(allValues.length / ML_ROWS));
   const mlStart = shots.length + 1;
+  // Übersicht: je Foto eine Zeile, Höhe/Breite paarweise je Element (Fenster 1, Tür …)
+  const ovRows = [];
+  if (project.overview && project.overviewRows) {
+    for (const r of project.overviewRows) {
+      const by = new Map();
+      for (const it of r.items) { const k = it.el || 'Maß'; if (!by.has(k)) by.set(k, []); by.get(k).push(it); }
+      const parts = [];
+      for (const [el, its] of by) {
+        if (el === 'Raumhöhe') { parts.push(`Raumhöhe ${its.map(x => x.cm).join('/')} cm`); continue; }
+        const hs = its.filter(x => x.kind === 'H').map(x => x.cm), bs = its.filter(x => x.kind === 'B').map(x => x.cm);
+        const n = Math.max(hs.length, bs.length);
+        for (let i = 0; i < n; i++) parts.push(`${el}${n > 1 ? ' ' + (i + 1) : ''}: ${hs[i] ?? '–'} × ${bs[i] ?? '–'}`);
+      }
+      ovRows.push([r.room, parts.join('   ·   ') || '–']);
+    }
+  }
+  const OV_ROWS = 24;
+  const ovPages = ovRows.length ? Math.ceil(ovRows.length / OV_ROWS) : 0;
+  const ovStart = mlStart + mlPages;
 
   // ---------- Deckblatt ----------
   const p0 = doc.addPage([PAGE_W, PAGE_H]);
@@ -98,6 +117,12 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
   text(p0, '2. Messliste', 46, ty, ts * tScale);
   const mn = String(mlStart);
   text(p0, mn, 795 - font.widthOfTextAtSize(mn, ts * tScale), ty, ts * tScale);
+  if (ovPages) {
+    ty += tl * tScale;
+    text(p0, '3. Übersicht', 46, ty, ts * tScale);
+    const on = String(ovStart);
+    text(p0, on, 795 - font.widthOfTextAtSize(on, ts * tScale), ty, ts * tScale);
+  }
 
   // ---------- Fotoseiten ----------
   const pageNo = (page, n) => {
@@ -161,6 +186,23 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
       y += 19;
     });
     pageNo(pg, mlStart + m);
+  }
+  for (let m = 0; m < ovPages; m++) {
+    const pg = doc.addPage([PAGE_W, PAGE_H]);
+    box(pg, 20, 18, 801, 40);
+    text(pg, 'Übersicht :', 32, 32, 11, c(BLUE));
+    text(pg, project.name || '', 32 + font.widthOfTextAtSize('Übersicht :', 11) + 6, 32, 11);
+    text(pg, 'Maße in cm, Höhe × Breite', 600, 34, 8, rgb(0.4, 0.4, 0.4));
+    let y = 81;
+    for (const [room, txt] of ovRows.slice(m * OV_ROWS, (m + 1) * OV_ROWS)) {
+      const cols = [[20, 110], [130, 691]];
+      row(pg, 20, y, cols, [room, fit(txt, 8, 670)], 8);
+      y += 19;
+    }
+    pageNo(pg, ovStart + m);
+  }
+  if (project.footer) {
+    for (const pg of doc.getPages()) pg.drawText(fit(project.footer, 7.5, 700), { x: 22, y: 9, size: 7.5, font, color: rgb(0.45, 0.45, 0.45) });
   }
   return await doc.save();
 }
