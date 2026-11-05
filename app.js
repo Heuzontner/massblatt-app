@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.5.0';
+const VERSION = '1.5.1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -944,6 +944,11 @@ function askPin() {
   const ai = await db.setting('ai'); S.ai = ai !== false;
   laserUi();
   renderHome();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
+    // neue Version übernommen → einmal neu laden
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
+  }
   window.__mb = { S, laser, onMeasure, applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
 })();
