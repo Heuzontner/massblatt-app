@@ -154,6 +154,11 @@ details.card summary { font-weight:700; cursor:pointer; }
 #demo .slide .ic { font-size:64px; margin:6px 0 10px; }
 #demo .slide h3 { margin:0 0 8px; }
 #demo .dots { text-align:center; color:var(--mute); margin:10px 0; letter-spacing:4px; }
+.stat { width:100%; border-collapse:collapse; margin:6px 0 14px; font-size:15px; }
+.stat th, .stat td { padding:7px 6px; border-bottom:1px solid var(--line); text-align:right; }
+.stat th:first-child, .stat td:first-child { text-align:left; }
+.stat th { color:var(--mute); font-weight:400; font-size:13px; }
+.locked #btnShoot, .locked .shot .del { opacity:.4; }
 #toast { position:fixed; left:50%; top:calc(env(safe-area-inset-top) + 64px); transform:translateX(-50%); background:#000d; color:#fff; padding:10px 16px; border-radius:20px; font-size:15px; z-index:80; display:none; max-width:90vw; text-align:center; }
 #toast.on { display:block; }
 .mute { color:var(--mute); font-size:13px; }
@@ -187,10 +192,11 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
     <div class="laser" data-laser><i></i><span>Laser</span></div>
   </header>
   <div class="scroll">
+    <div class="card" id="lockBar" style="display:none;align-items:center;gap:10px;border-color:var(--acc)"><span style="flex:1" id="lockTxt">🔒 Gesperrt</span><button class="ghost" id="unlockBtn">Entsperren</button></div>
     <details class="card" id="projDetails">
       <summary>Projektdaten</summary>
       <label class="f">Straße + Hausnummer (+ Geschoß, WG)</label>
-      <div class="sugwrap"><input id="pStr" placeholder="Haydnstrasse 8, EG, WG 1" autocomplete="off"><div class="sug" id="strSug"></div></div>
+      <div class="sugwrap" style="display:flex;gap:6px"><input id="pStr" placeholder="Haydnstrasse 8, EG, WG 1" autocomplete="off" style="flex:1"><button class="ghost" id="gpsBtn" aria-label="Adresse per Standort" style="padding:0 12px">📍</button><a id="navBtn" target="_blank" rel="noopener" style="display:none"><button class="ghost" style="padding:0 12px;height:100%">🧭</button></a><div class="sug" id="strSug"></div></div>
       <div class="row2" style="grid-template-columns:1fr 2fr">
         <div><label class="f">PLZ</label><input id="pPlz" placeholder="4400" inputmode="numeric" maxlength="5"></div>
         <div><label class="f">Ort</label><input id="pOrtName" placeholder="Steyr"></div>
@@ -222,6 +228,7 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   </div>
   <div class="bottombar">
     <button class="ghost" id="btnPdf">PDF</button>
+    <button class="ghost" id="btnMail" aria-label="Per Mail senden" style="font-size:22px">✉</button>
     <button class="ghost" id="btnDbx" aria-label="In Dropbox speichern"><svg width="26" height="22" viewBox="0 0 43 40" style="vertical-align:middle"><path fill="#4aa3ff" d="M12.5 0 0 8.1l8.6 6.9 12.6-7.8L12.5 0zM0 21.8l12.5 8.1 8.7-7.2-12.6-7.8L0 21.8zm21.2.9 8.7 7.2 12.5-8.1-8.6-6.9-12.6 7.8zm21.2-14.6L29.9 0l-8.7 7.2 12.6 7.8 8.6-6.9zM21.3 24.4l-8.8 7.2-3.7-2.4v2.7l12.5 7.5 12.5-7.5v-2.7l-3.7 2.4-8.8-7.2z"/></svg></button>
     <button class="pri" id="btnShoot" style="flex:2">📷 Foto</button>
   </div>
@@ -315,7 +322,9 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
     <div><label class="f">Kontakt</label><input id="cKontakt"></div>
     <div><label class="f">Telefon</label><input id="cTel" inputmode="tel"></div>
   </div>
+  <label class="f">Dropbox-Unterordner (leer = Kundenname)</label><input id="cDbx" placeholder="z. B. WAG">
   <label class="f">Logo</label>
+  <label style="display:flex;gap:8px;align-items:center;margin:0 0 6px;font-size:14px"><input type="checkbox" id="cCut" checked style="width:auto"> Hintergrund automatisch entfernen</label>
   <input type="file" id="cLogo" accept="image/*"><img class="logo-prev" id="cLogoPrev" hidden>
   <div style="display:flex;gap:8px;margin-top:16px">
     <button class="danger" id="cDel">Löschen</button>
@@ -338,6 +347,11 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   <label class="f">Raum-Knöpfe (Kürzel = Bezeichnung, eine Zeile je Raum)</label>
   <textarea id="sRooms" rows="7" style="width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px"></textarea>
   <button class="ghost" id="sRoomsReset" style="margin-top:6px">Standard-Räume</button>
+  <label class="f">Navigations-Knopf 🧭 beim Projekt</label>
+  <select id="sNav"><option value="">Aus</option><option value="google">Google Maps</option><option value="apple">Apple Karten</option></select>
+  <label class="f">Maße in der App anzeigen in</label>
+  <select id="sUnit"><option value="cm">cm</option><option value="mm">mm</option></select>
+  <p class="mute" style="margin:4px 0 0">Das PDF bleibt in cm wie bei Bosch.</p>
   <label class="f">Schriftgröße der App</label>
   <select id="sZoom"><option value="1">Normal</option><option value="1.15">Groß</option><option value="1.3">Sehr groß</option></select>
   <label class="f">Kunden</label>
@@ -372,6 +386,7 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   <p class="mute" id="sLasers" style="margin:0 0 6px"></p>
   <button class="ghost" id="sLaserOff">Laser trennen</button>
   <details style="margin-top:10px"><summary class="mute">Bluetooth-Protokoll (für Fehlersuche)</summary><pre class="log" id="sLog"></pre></details>
+  <button class="ghost" id="sStats" style="width:100%;margin-top:14px">📊 Statistik</button>
   <label class="f">Speicher</label>
   <p class="mute" id="sStorage" style="margin:0">…</p>
   <label class="f">Updates</label>
@@ -390,6 +405,9 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   <div id="lockDots" style="font-size:30px;letter-spacing:10px;min-height:44px"></div>
   <div class="keypad on" id="lockPad" style="width:100%;max-width:320px"></div>
 </div>
+<!-- Statistik -->
+<div class="sheet-bg" id="statSheet"><div class="sheet"><h2>📊 Statistik</h2><div id="statBody"></div>
+  <button class="pri" id="statClose" style="width:100%;margin-top:12px">Schließen</button></div></div>
 <!-- PDF-Vorschau -->
 <div id="pvw"><div class="pbar"><button class="ghost" id="pvwClose">‹ Zurück</button><b style="flex:1" id="pvwTitle">Vorschau</b></div><div class="pages" id="pvwPages"></div></div>
 <!-- Demo -->

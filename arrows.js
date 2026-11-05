@@ -43,12 +43,14 @@ export function newArrow() {
 }
 
 // Zeichnet Pfeile im Bosch-Stil (gelb, schwarzer Rand, schwarzes Etikett mit weißer Schrift)
-export function drawArrows(ctx, W, H, arrows, activeId, blink = 1, forExport = false) {
+export function drawArrows(ctx, W, H, arrows, activeId, blink = 1, forExport = false, fmt = null) {
   const s = Math.max(W, H) / 1600;
   for (const a of arrows) {
     const x1 = a.x1 * W, y1 = a.y1 * H, x2 = a.x2 * W, y2 = a.y2 * H;
     const active = !forExport && a.id === activeId;
-    const col = active ? `rgba(255,${Math.round(120 + 115 * blink)},0,1)` : '#ffe600';
+    // in der App farbig je Art (Tür gelb, Fenster blau, Raumhöhe grün); im PDF immer gelb wie bei Bosch
+    const base = forExport ? '#ffe600' : (a.el || '').startsWith('Fenster') ? '#3fb2ff' : a.el === 'Raumhöhe' ? '#4cd964' : '#ffe600';
+    const col = active ? `rgba(255,${Math.round(120 + 115 * blink)},0,1)` : base;
     const lw = 7 * s;
     const ang = Math.atan2(y2 - y1, x2 - x1);
     const head = 26 * s;
@@ -73,7 +75,7 @@ export function drawArrows(ctx, W, H, arrows, activeId, blink = 1, forExport = f
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
     }
     // Etikett
-    const label = a.cm != null ? `${a.cm} cm` : (forExport ? null : (active ? '? cm' : a.kind === 'H' ? 'Höhe' : 'Breite'));
+    const label = a.cm != null ? (fmt ? fmt(a) : `${a.cm} cm`) : (forExport ? null : (active ? '? cm' : a.kind === 'H' ? 'Höhe' : 'Breite'));
     if (label) {
       let la = ang; if (la > Math.PI / 2) la -= Math.PI; if (la < -Math.PI / 2) la += Math.PI;
       const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;

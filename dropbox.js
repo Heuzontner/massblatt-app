@@ -50,10 +50,11 @@ export const dropbox = {
   },
 
   // lädt die Datei hoch; gleicher Name → Dropbox hängt (1), (2) … an
-  async upload(file) {
+  async upload(file, sub = '') {
     const c = load();
     let folder = (c.folder || '/Maßblätter').replace(/\/+$/, ''); if (!folder.startsWith('/')) folder = '/' + folder;
-    const path = folder + '/' + file.name;
+    sub = (sub || '').replace(/[\\:*?"<>|]+/g, ' ').replace(/^\/+|\/+$/g, '').trim();
+    const path = folder + (sub ? '/' + sub : '') + '/' + file.name;
     const arg = JSON.stringify({ path, mode: 'add', autorename: true, mute: false });
     const r = await fetch('https://content.dropboxapi.com/2/files/upload', {
       method: 'POST',

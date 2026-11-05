@@ -6,7 +6,7 @@ import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 
-const VERSION = '2.2.3';
+const VERSION = '2.3.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -59,7 +59,7 @@ laser.addEventListener('state', e => {
   if (e.detail.state === 'verbunden') toast('Laser verbunden ✓');
   if (e.detail.state === 'getrennt') toast('Laser getrennt – verbinde neu …');
 });
-laser.addEventListener('measure', e => onMeasure(e.detail.cm));
+laser.addEventListener('measure', e => onMeasure(e.detail.cm, Math.round(e.detail.meters * 1000)));
 document.addEventListener('click', async e => {
   const el = e.target.closest('[data-laser]');
   if (!el) return;
@@ -132,6 +132,7 @@ async function openProject(id, isNew = false) {
   $('#projDetails').open = isNew || !p.name;
   $('#projTitle').textContent = p.name || 'Neues Projekt';
   renderShots();
+  lockUi(); navUi();
   show('proj');
   if (isNew) setTimeout(() => $('#pStr').focus(), 200);
 }
@@ -270,6 +271,90 @@ function setWOrt(ort, auto) {
 }
 $('#pStr').addEventListener('blur', () => setTimeout(() => $('#strSug').classList.remove('on'), 400));
 
+// ---------------- Adresse per Standort (draußen und drinnen; drinnen hilft WLAN-Ortung) ----------------
+$('#gpsBtn').onclick = () => {
+  if (isLocked()) return;
+  if (!navigator.geolocation) { toast('Standort wird hier nicht unterstützt'); return; }
+  toast('Suche Standort …', 15000);
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const { latitude: la, longitude: lo, accuracy: acc } = pos.coords;
+    try {
+      const r = await fetch(`https://photon.komoot.io/reverse?lat=${la}&lon=${lo}&lang=de&limit=8&radius=0.15`);
+      const j = await r.json();
+      const seen = new Set(), list = [];
+      for (const f of j.features || []) {
+        const pr = f.properties || {}; const st = pr.street || (pr.osm_key === 'highway' ? pr.name : '');
+        if (!st || !pr.postcode) continue;
+        const line = (st + (pr.housenumber ? ' ' + pr.housenumber : '')).replace(/ß/g, 'ss');
+        const ort = [pr.postcode, pr.city || pr.town || pr.village || pr.locality || pr.district].filter(Boolean).join(' ');
+        if (seen.has(line + ort)) continue; seen.add(line + ort);
+        list.push({ line, ort });
+      }
+      if (!list.length) { toast('Keine Adresse gefunden – bitte eintippen', 3500); return; }
+      toast(`Standort ± ${Math.round(acc)} m${acc > 60 ? ' (ungenau, bitte prüfen)' : ''}`, 3000);
+      const box = $('#strSug'); box.innerHTML = '';
+      for (const x of list.slice(0, 6)) {
+        const b = document.createElement('button');
+        b.innerHTML = '<span class="src">📍 hier</span><b></b><small></small>';
+        b.querySelector('b').textContent = x.line; b.querySelector('small').textContent = x.ort;
+        let done = false;
+        const pick = e => {
+          if (e) e.preventDefault(); if (done) return; done = true;
+          const cur = $('#pStr').value, rest = cur.includes(',') ? cur.slice(cur.indexOf(',')) : ', ';
+          $('#pStr').value = x.line + rest; S.project.str = $('#pStr').value;
+          setWOrt(x.ort, false); S.autoOrt = true; box.classList.remove('on');
+          const el = $('#pStr'); el.focus(); el.setSelectionRange(el.value.length, el.value.length);
+          toast('Übernommen – Geschoß/WG ergänzen');
+        };
+        b.addEventListener('pointerdown', pick); b.addEventListener('click', pick);
+        box.appendChild(b);
+      }
+      box.classList.add('on');
+    } catch (e) { toast('Adresssuche braucht Internet', 3500); }
+  }, err => toast(err.code === 1 ? 'Standort nicht erlaubt – in den Handy-Einstellungen freigeben' : 'Kein Standort gefunden', 4000),
+  { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+};
+function navUi() {
+  const p = S.project, a = $('#navBtn');
+  const q = [p.str && streetOnly(p.str) + (houseNo(p.str) ? ' ' + houseNo(p.str) : ''), [p.plz, p.ortName].filter(Boolean).join(' '), 'Österreich'].filter(Boolean).join(', ');
+  if (!opt.nav || !p.str) { a.style.display = 'none'; return; }
+  a.style.display = '';
+  a.href = opt.nav === 'apple' ? 'https://maps.apple.com/?daddr=' + encodeURIComponent(q) : 'https://www.google.com/maps/dir/?api=1&destination=' + encodeURIComponent(q);
+}
+['pStr', 'pPlz', 'pOrtName'].forEach(id => $('#' + id).addEventListener('change', () => navUi()));
+
+// Logo freistellen: unbunter Hintergrund, der mit dem Bildrand zusammenhängt, wird durchsichtig; danach zuschneiden
+async function cutoutLogo(blob) {
+  try {
+    const im = await blobToImg(blob);
+    const sc = Math.min(1, 800 / Math.max(im.width, im.height)); const W = Math.round(im.width * sc), H = Math.round(im.height * sc);
+    const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.drawImage(im, 0, 0, W, H);
+    const id = g.getImageData(0, 0, W, H), d = id.data;
+    const lum = i => 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    const sat = i => Math.max(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]) - Math.min(d[i * 4], d[i * 4 + 1], d[i * 4 + 2]);
+    const seen = new Uint8Array(W * H), q = [];
+    for (let x = 0; x < W; x++) for (const i of [x, (H - 1) * W + x]) if (!seen[i] && sat(i) < 40 && d[i * 4 + 3] > 0) { seen[i] = 1; q.push(i); }
+    for (let y = 0; y < H; y++) for (const i of [y * W, y * W + W - 1]) if (!seen[i] && sat(i) < 40 && d[i * 4 + 3] > 0) { seen[i] = 1; q.push(i); }
+    if (q.length < (W + H)) return blob; // Rand ist nicht überwiegend Hintergrund → unverändert
+    let n = 0;
+    while (q.length) {
+      const i = q.pop(); n++; d[i * 4 + 3] = 0; const x = i % W, y = (i / W) | 0;
+      for (const j of [x > 0 ? i - 1 : -1, x < W - 1 ? i + 1 : -1, y > 0 ? i - W : -1, y < H - 1 ? i + W : -1]) {
+        if (j < 0 || seen[j]) continue;
+        if (sat(j) < 40 && Math.abs(lum(j) - lum(i)) < 10) { seen[j] = 1; q.push(j); }
+      }
+    }
+    if (n > W * H * 0.97) return blob; // fast alles entfernt → lieber Original
+    g.putImageData(id, 0, 0);
+    let x0 = W, y0 = H, x1 = 0, y1 = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (d[(y * W + x) * 4 + 3]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    const o = document.createElement('canvas'); o.width = x1 - x0 + 1; o.height = y1 - y0 + 1;
+    o.getContext('2d').drawImage(c, x0, y0, o.width, o.height, 0, 0, o.width, o.height);
+    toast('Logo freigestellt');
+    return await canvasToBlob(o, 'image/png');
+  } catch (e) { return blob; }
+}
+
 // ---------------- Kunden ----------------
 // Kunde = Name, Straße, PLZ Ort, Land, Kontakt, Telefon, Logo. Auswahl im Projekt übernimmt alles fürs Deckblatt;
 // Änderungen an diesen Feldern im Projekt werden beim gewählten Kunden mitgespeichert.
@@ -326,10 +411,11 @@ function editCustomer(c) {
     const sh = $('#custSheet'); let logo = c ? c.logo : null;
     $('#custTitle').textContent = c ? 'Kunde bearbeiten' : 'Neuer Kunde';
     CF.forEach(([, ck, , cid]) => { $('#' + cid).value = c ? (c[ck] || '') : ''; });
+    $('#cDbx').value = c ? (c.dbx || '') : '';
     const prev = () => { if (logo) { $('#cLogoPrev').src = URL.createObjectURL(logo); $('#cLogoPrev').hidden = false; } else $('#cLogoPrev').hidden = true; };
     prev(); $('#cLogo').value = '';
     $('#cDel').style.display = c ? '' : 'none';
-    $('#cLogo').onchange = e => { const f = e.target.files[0]; if (f) { logo = f; prev(); } };
+    $('#cLogo').onchange = async e => { const f = e.target.files[0]; if (!f) return; logo = $('#cCut').checked ? await cutoutLogo(f) : f; prev(); };
     const close = v => { sh.classList.remove('on'); res(v); };
     $('#cCancel').onclick = () => close(null);
     $('#cSave').onclick = async () => {
@@ -337,6 +423,7 @@ function editCustomer(c) {
       const list = (await db.setting('customers')) || [];
       const obj = { id: c ? c.id : uid(), logo };
       CF.forEach(([, ck, , cid]) => { obj[ck] = $('#' + cid).value.trim(); });
+      obj.dbx = $('#cDbx').value.trim();
       const i = list.findIndex(x => x.id === obj.id);
       if (i >= 0) list[i] = obj; else list.push(obj);
       await db.setting('customers', list);
@@ -404,15 +491,15 @@ function renderShots() {
   S.shots.forEach((s, i) => {
     const wrap = document.createElement('div'); wrap.className = 'swipe';
     const c = document.createElement('div'); c.className = 'card shot'; wrap.appendChild(c);
-    const vals = s.arrows.filter(a => a.cm != null).map(a => `${a.cm}`).join(' · ');
+    const vals = s.arrows.filter(a => a.cm != null).map(a => opt.mm ? `${a.mm != null ? a.mm : a.cm * 10}` : `${a.cm}`).join(' · ');
     const open = s.arrows.filter(a => a.cm == null).length;
     c.innerHTML = `<img><div class="t"><div class="room"></div><div class="vals"></div>${open ? `<div class="warn">${open} Pfeil${open > 1 ? 'e' : ''} ohne Maß</div>` : ''}</div><button class="del" aria-label="Foto löschen">🗑</button>`;
     c.querySelector('img').src = URL.createObjectURL(s.photo);
     c.querySelector('.room').textContent = `${i + 1}. ${s.room}`;
-    c.querySelector('.vals').textContent = vals ? vals + ' cm' : '–';
-    c.onclick = () => openEditor(s);
-    c.querySelector('.del').onclick = e => { e.stopPropagation(); deleteShot(s); };
-    swipeToDelete(c, () => deleteShot(s));
+    c.querySelector('.vals').textContent = vals ? vals + (opt.mm ? ' mm' : ' cm') : '–';
+    c.onclick = () => { if (!isLocked()) openEditor(s); };
+    c.querySelector('.del').onclick = e => { e.stopPropagation(); if (!isLocked()) deleteShot(s); };
+    swipeToDelete(c, () => isLocked() ? false : deleteShot(s));
     el.appendChild(wrap);
   });
 }
@@ -493,6 +580,7 @@ async function resolveRoom(r) {
 }
 $('#btnShoot').onclick = async () => {
   askMotion();
+  if (isLocked()) return;
   const r = await resolveRoom(await pickRoom()); if (!r) return;
   S.room = r; openCam();
 };
@@ -694,7 +782,7 @@ function loop() {
     if (!$('#ed').classList.contains('on')) return;
     blinkT = (Math.sin(t / 180) + 1) / 2;
     ctx.drawImage(photoImg, 0, 0, cv.width, cv.height);
-    drawArrows(ctx, cv.width, cv.height, S.shot.arrows, S.active, blinkT);
+    drawArrows(ctx, cv.width, cv.height, S.shot.arrows, S.active, blinkT, false, fmtVal);
     raf = requestAnimationFrame(draw);
   };
   raf = requestAnimationFrame(draw);
@@ -781,33 +869,35 @@ function updateCur() {
   const v = $('#curVal');
   const num = a && (kb.on || a.cm != null);
   v.classList.toggle('hint', !num);
-  v.textContent = a ? (kb.on ? (kb.buf || '…') + ' cm' : a.cm != null ? a.cm + ' cm' : laser.state === 'verbunden' ? 'Jetzt am Laser messen' : 'Laser verbinden oder ⌨') : '–';
+  v.textContent = a ? (kb.on ? (kb.buf || '…') + (opt.mm ? ' mm' : ' cm') : a.cm != null ? fmtVal(a) : laser.state === 'verbunden' ? 'Jetzt am Laser messen' : 'Laser verbinden oder ⌨') : '–';
 }
 async function saveShot() { await db.put('shots', S.shot); }
 
-function setValue(cm) {
+// Anzeige in cm oder mm (nur App; gespeichert wird cm wie bei Bosch, mm zusätzlich wenn vom Laser bekannt)
+const fmtVal = a => opt.mm ? `${a.mm != null ? a.mm : a.cm * 10} mm` : `${a.cm} cm`;
+function setValue(cm, mm) {
   let a = activeArrow();
   if (!a || a.cm != null) { const o = S.shot.arrows.find(x => x.cm == null); if (o) a = o; }
   if (!a) { // kein Pfeil offen → neuen anlegen
     if (!S.shot.arrows.length) { a = newArrow(); S.shot.arrows.push(a); } else { a = activeArrow() || S.shot.arrows[S.shot.arrows.length - 1]; }
   }
-  a.cm = cm; a.time = new Date().toISOString();
+  a.cm = cm; a.mm = mm != null ? mm : cm * 10; a.time = new Date().toISOString();
   saveShot();
   beep(true);
   const next = S.shot.arrows.find(x => x.cm == null);
-  if (opt.big) showBig(cm, a);
-  if (opt.voice) say(`${cm}` + (next ? `. Nächster: ${arrowName(next)}` : '. Fertig'));
+  if (opt.big) showBig(a);
+  if (opt.voice) say(`${opt.mm ? a.mm : cm}` + (next ? `. Nächster: ${arrowName(next)}` : '. Fertig'));
   if (next) { S.active = next.id; updateCur(); }
   else { S.active = a.id; updateCur(); finishShot(true); }
 }
 const arrowName = a => `${a.el === 'Maß' ? '' : a.el + ' '}${a.kind === 'H' ? 'Höhe' : 'Breite'}`;
 // Test-Optionen: großer Messmodus, Sprachansage
-const opt = { big: false, voice: false };
+const opt = { big: false, voice: false, mm: false, nav: '' };
 try { Object.assign(opt, JSON.parse(localStorage.getItem('mb_opt') || '{}')); } catch (e) { }
 const saveOpt = () => { try { localStorage.setItem('mb_opt', JSON.stringify(opt)); } catch (e) { } document.body.classList.toggle('bigmode', !!opt.big); };
 document.body.classList.toggle('bigmode', !!opt.big);
-function showBig(cm, a) {
-  const el = $('#bigVal'); el.innerHTML = `${cm} cm<small></small>`; el.querySelector('small').textContent = arrowName(a);
+function showBig(a) {
+  const el = $('#bigVal'); el.innerHTML = `${fmtVal(a)}<small></small>`; el.querySelector('small').textContent = arrowName(a);
   el.classList.add('on'); clearTimeout(showBig._t); showBig._t = setTimeout(() => el.classList.remove('on'), 1400);
 }
 function say(t) {
@@ -820,8 +910,8 @@ function say(t) {
   } catch (e) { }
 }
 
-function onMeasure(cm) {
-  if ($('#ed').classList.contains('on') && S.shot) { setValue(cm); return; }
+function onMeasure(cm, mm) {
+  if ($('#ed').classList.contains('on') && S.shot) { if (S.project && S.project.locked) { toast('Projekt gesperrt – zuerst entsperren'); return; } setValue(cm, mm); return; }
   toast(`${cm} cm gemessen – erst ein Foto machen`, 2000); beep(false);
 }
 
@@ -895,8 +985,8 @@ const kb = { on: false, buf: '' };
     b.onclick = () => {
       if (k === '⌫') kb.buf = kb.buf.slice(0, -1);
       else if (k === 'C') kb.buf = '';
-      else if (k === 'OK') { const v = parseInt(kb.buf, 10); kb.buf = ''; if (v > 0) setValue(v); }
-      else if (kb.buf.length < 4) kb.buf += k;
+      else if (k === 'OK') { const v = parseInt(kb.buf, 10); kb.buf = ''; if (v > 0) { if (opt.mm) setValue(Math.round(v / 10), v); else setValue(v); } }
+      else if (kb.buf.length < (opt.mm ? 5 : 4)) kb.buf += k;
       updateCur();
     };
     el.appendChild(b);
@@ -1063,27 +1153,103 @@ function fileBase(p) {
   return n.slice(0, 120);
 }
 function openCount() { return S.shots.reduce((n, s) => n + s.arrows.filter(a => a.cm == null).length, 0); }
+// Projekt-Check vor PDF/Dropbox/Mail: Raumhöhe, Eingangstür, unplausible oder fehlende Maße
+function projectIssues() {
+  const out = [];
+  const has = r => S.shots.some(s => s.room === r && s.arrows.some(a => a.cm != null));
+  if (!has('Rh') && !S.shots.some(s => s.arrows.some(a => a.el === 'Raumhöhe' && a.cm != null))) out.push('Raumhöhe (Rh) fehlt');
+  if (!has('Eg')) out.push('Eingangstür (Eg) fehlt');
+  for (const sh of S.shots) for (const x of shotIssues(sh)) out.push(`${sh.room}: ${x.m}`);
+  return out;
+}
+async function preExport(what) {
+  if (!S.shots.length) { toast('Noch keine Fotos'); return false; }
+  const iss = projectIssues();
+  if (!iss.length) return true;
+  return await confirmBox(`Vor dem ${what} bitte prüfen`, 'Trotzdem', 'Abbrechen', 'ghost', iss.map(x => '• ' + x).join('\n'));
+}
+// nach dem Export sperren (gegen versehentliche Änderungen)
+async function lockProject(how) {
+  S.project.locked = { at: Date.now(), how }; await db.put('projects', S.project); lockUi();
+}
+function lockUi() {
+  const l = S.project && S.project.locked;
+  $('#proj').classList.toggle('locked', !!l);
+  $('#lockBar').style.display = l ? 'flex' : 'none';
+  if (l) $('#lockTxt').textContent = `🔒 Gesperrt – ${l.how} am ${new Date(l.at).toLocaleDateString('de-AT')} ${new Date(l.at).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })}`;
+  $$('#projDetails input, #projDetails button, #custChips button').forEach(e => { if (e.id !== 'btnExpProj' && e.id !== 'btnDupProj') e.disabled = !!l; });
+}
+$('#unlockBtn').onclick = async () => { delete S.project.locked; await db.put('projects', S.project); lockUi(); toast('Entsperrt'); };
+const isLocked = () => { if (S.project && S.project.locked) { toast('Projekt ist gesperrt (exportiert) – oben „Entsperren“'); return true; } return false; };
+
 $('#btnPdf').onclick = async () => {
-  if (!S.shots.length) { toast('Noch keine Fotos'); return; }
-  const open = openCount();
-  if (open) toast(`Hinweis: ${open} Pfeil(e) ohne Maß werden weggelassen`, 2500);
+  if (!await preExport('PDF')) return;
   const b = $('#btnPdf'); b.disabled = true; b.textContent = 'Erstelle …';
   try { await sharePdf(await makePdfFile()); }
   catch (e) { console.error(e); toast('PDF-Fehler: ' + e.message, 5000); }
   finally { b.disabled = false; b.textContent = 'PDF'; }
 };
+$('#btnMail').onclick = async () => {
+  if (!await preExport('Mailen')) return;
+  const b = $('#btnMail'); b.disabled = true;
+  try {
+    const file = await makePdfFile();
+    const subject = 'Massblatt ' + (S.project.name || fileBase(S.project));
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: subject, text: subject }); await lockProject('gemailt'); }
+      catch (e) { if (e.name !== 'AbortError') throw e; }
+    } else {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+      location.href = 'mailto:?subject=' + encodeURIComponent(subject);
+      toast('PDF gespeichert – im Mail bitte anhängen', 4000);
+    }
+  } catch (e) { toast('Mail-Fehler: ' + e.message, 5000); }
+  finally { b.disabled = false; }
+};
+// Dropbox: Unterordner je Kunde, ohne Netz in die Warteschlange
+async function custFolder() {
+  const c = S.project.kundeId && ((await db.setting('customers')) || []).find(x => x.id === S.project.kundeId);
+  return c ? (c.dbx || c.name || '') : (S.project.firma || '');
+}
+async function queueAdd(file, sub) {
+  const q = (await db.setting('dbxQueue')) || [];
+  q.push({ name: file.name, blob: file, sub, time: Date.now() });
+  await db.setting('dbxQueue', q);
+}
+let queueBusy = false;
+async function processQueue() {
+  if (queueBusy || !navigator.onLine || !dropbox.connected) return;
+  const q = (await db.setting('dbxQueue')) || []; if (!q.length) return;
+  queueBusy = true; let ok = 0;
+  const rest = [];
+  for (const it of q) {
+    try { await dropbox.upload(new File([it.blob], it.name, { type: 'application/pdf' }), it.sub); ok++; }
+    catch (e) { rest.push(it); }
+  }
+  await db.setting('dbxQueue', rest); queueBusy = false;
+  if (ok) toast(`${ok} wartende PDF${ok > 1 ? 's' : ''} in Dropbox hochgeladen ✓`, 3500);
+}
+window.addEventListener('online', () => setTimeout(processQueue, 1500));
 $('#btnDbx').onclick = async () => {
-  if (!S.shots.length) { toast('Noch keine Fotos'); return; }
   if (!dropbox.connected) { toast('Dropbox zuerst in ⚙ Einstellungen verbinden', 3000); $('#btnSettings').click(); return; }
-  const open = openCount();
-  const ok = await confirmBox('PDF in Dropbox speichern?', 'Ja, hochladen', 'Abbrechen', 'pri',
-    `Ordner: ${dropbox.cfg.folder || '/Maßblätter'}` + (open ? `\n${open} Pfeil(e) ohne Maß werden weggelassen.` : ''));
+  if (!await preExport('Hochladen')) return;
+  const sub = await custFolder();
+  const base = (dropbox.cfg.folder || '/Maßblätter').replace(/\/+$/, '');
+  const ok = await confirmBox('PDF in Dropbox speichern?', 'Ja, hochladen', 'Abbrechen', 'pri', `Ordner: ${base}${sub ? '/' + sub : ''}`);
   if (!ok) return;
   const b = $('#btnDbx'); b.disabled = true;
-  toast('Lade in Dropbox hoch …', 10000);
-  try { const path = await dropbox.upload(await makePdfFile()); toast('In Dropbox gespeichert ✓ ' + path, 3500); beep(true); }
-  catch (e) { console.error(e); toast('Dropbox-Fehler: ' + e.message, 6000); beep(false); }
-  finally { b.disabled = false; }
+  let file;
+  try {
+    file = await makePdfFile();
+    if (!navigator.onLine) throw new TypeError('offline');
+    toast('Lade in Dropbox hoch …', 10000);
+    const path = await dropbox.upload(file, sub); toast('In Dropbox gespeichert ✓ ' + path, 3500); beep(true);
+    await lockProject('in Dropbox');
+  } catch (e) {
+    console.error(e);
+    if (file && (e instanceof TypeError || !navigator.onLine)) { await queueAdd(file, sub); await lockProject('in Dropbox (wartet auf Netz)'); toast('Kein Netz – wird automatisch hochgeladen, sobald wieder Netz da ist', 4500); }
+    else { toast('Dropbox-Fehler: ' + e.message, 6000); beep(false); }
+  } finally { b.disabled = false; }
 };
 
 // ---------------- Projekt exportieren / importieren (inkl. Fotos) ----------------
@@ -1100,7 +1266,7 @@ $('#btnExpProj').onclick = async () => {
 $('#btnDupProj').onclick = async () => {
   const p = S.project;
   if (!await confirmBox('Projekt duplizieren?', 'Duplizieren', 'Abbrechen', 'pri', 'Kunde, Straße, PLZ und Ort werden übernommen, Fotos nicht – z. B. für eine weitere Wohnung im selben Haus.')) return;
-  const n = { ...p, id: uid(), created: Date.now(), updated: Date.now(), datum: new Date().toISOString().slice(0, 10) };
+  const n = { ...p, id: uid(), created: Date.now(), updated: Date.now(), datum: new Date().toISOString().slice(0, 10) }; delete n.locked;
   n.str = streetOnly(p.str) + (houseNo(p.str) ? ' ' + houseNo(p.str) : '') + ', ';
   await db.put('projects', n);
   await openProject(n.id, true);
@@ -1131,7 +1297,8 @@ $('#imProjFile').onchange = async e => {
 async function dbxUi() {
   const c = dropbox.cfg;
   $('#dbxKey').value = c.appKey || ''; $('#dbxFolder').value = c.folder || '';
-  $('#dbxState').textContent = dropbox.connected ? 'Verbunden ✓' : 'Nicht verbunden';
+  const qn = ((await db.setting('dbxQueue')) || []).length;
+  $('#dbxState').textContent = (dropbox.connected ? 'Verbunden ✓' : 'Nicht verbunden') + (qn ? ` · ${qn} PDF wartet auf Netz` : '');
   $('#dbxSetup').style.display = dropbox.connected ? 'none' : '';
   $('#dbxOff').style.display = dropbox.connected ? '' : 'none';
   if (!dropbox.connected && c.appKey) { try { $('#dbxAuth').href = await dropbox.authUrl(); } catch (e) { } } else $('#dbxAuth').removeAttribute('href');
@@ -1174,9 +1341,10 @@ async function sharePdf(file) {
       <button class="ghost" data-close>Schließen</button></div></div>`;
   bg.querySelector('p').textContent = file.name;
   const a = bg.querySelector('[data-dl]'); a.href = url; a.download = file.name;
+  a.addEventListener('click', () => lockProject('gespeichert'));
   const sb = bg.querySelector('[data-share]');
   if (!(navigator.canShare && navigator.canShare({ files: [file] }))) sb.style.display = 'none';
-  sb.onclick = () => navigator.share({ files: [file], title: file.name }).catch(() => { });
+  sb.onclick = () => navigator.share({ files: [file], title: file.name }).then(() => lockProject('geteilt')).catch(() => { });
   bg.querySelector('[data-open]').onclick = () => previewPdf(file);
   bg.querySelector('[data-close]').onclick = () => bg.remove();
   document.body.appendChild(bg);
@@ -1195,6 +1363,7 @@ $('#btnSettings').onclick = async () => {
   $('#ver').textContent = VERSION;
   $('#sFooter').value = (await db.setting('pdfFooter')) || '';
   $('#sBig').checked = !!opt.big; $('#sVoice').checked = !!opt.voice;
+  $('#sNav').value = opt.nav || ''; $('#sUnit').value = opt.mm ? 'mm' : 'cm';
   const kl = laser.known; $('#sLasers').textContent = kl.length ? 'Gemerkt: ' + kl.map(k => `${k.name} (${new Date(k.last).toLocaleDateString('de-AT')})`).join(', ') : 'Noch kein Laser verbunden.';
   $('#sOverview').value = (await db.setting('pdfOverview')) === false ? '0' : '1';
   $('#sRooms').value = (await rooms()).map(([k, t]) => t ? `${k} = ${t}` : k).join('\n');
@@ -1202,7 +1371,7 @@ $('#btnSettings').onclick = async () => {
   showStorage();
   $('#setSheet').classList.add('on');
 };
-$('#sBig').onchange = () => { opt.big = $('#sBig').checked; saveOpt(); if (opt.big) showBig(199, { el: 'Tür', kind: 'H' }); };
+$('#sBig').onchange = () => { opt.big = $('#sBig').checked; saveOpt(); if (opt.big) showBig({ el: 'Tür', kind: 'H', cm: 199, mm: 1990 }); };
 $('#sVoice').onchange = () => { opt.voice = $('#sVoice').checked; saveOpt(); if (opt.voice) say('Sprachansage ist an. Tür Höhe, 199'); };
 const DEMO = [
   ['📁', 'Projekt anlegen', 'Unten „+ Neues Projekt“. Straße + Hausnummer (+ Geschoß, WG), PLZ und Ort eintragen – bekannte Straßen füllen PLZ/Ort selbst aus. Kunde antippen.'],
@@ -1225,6 +1394,30 @@ $('#demoPrev').onclick = () => { if (demoI > 0) { demoI--; demoShow(); } };
 $('#demoNext').onclick = () => { if (demoI < DEMO.length - 1) { demoI++; demoShow(); } else $('#demo').classList.remove('on'); };
 // Update-Knopf: vorbereitet, Funktion wird erst zum Schluss freigegeben (Manuel 05.11.)
 $('#sUpdate').onclick = () => toast('Noch nicht aktiv – Updates kommen derzeit automatisch', 2500);
+$('#sNav').onchange = () => { opt.nav = $('#sNav').value; saveOpt(); };
+$('#sUnit').onchange = () => { opt.mm = $('#sUnit').value === 'mm'; saveOpt(); };
+// ---------------- Statistik ----------------
+$('#sStats').onclick = async () => {
+  const now = new Date(), ym = now.toISOString().slice(0, 7), y = String(now.getFullYear());
+  const rows = new Map(); const tot = { m: 0, y: 0, g: 0 };
+  for (const p of await db.all('projects')) {
+    if (!(await db.shotsOf(p.id)).length) continue; // nur Projekte mit Fotos zählen
+    const d = (p.datum || new Date(p.created || 0).toISOString()).slice(0, 10), k = p.firma || 'ohne Kunde';
+    if (!rows.has(k)) rows.set(k, { m: 0, y: 0, g: 0 });
+    const r = rows.get(k);
+    r.g++; tot.g++;
+    if (d.startsWith(y)) { r.y++; tot.y++; }
+    if (d.startsWith(ym)) { r.m++; tot.m++; }
+  }
+  const mon = now.toLocaleDateString('de-AT', { month: 'long' });
+  let h = `<table class="stat"><tr><th>Wohnungen</th><th>${mon}</th><th>${y}</th><th>Gesamt</th></tr><tr><td><b>Alle</b></td><td><b>${tot.m}</b></td><td><b>${tot.y}</b></td><td><b>${tot.g}</b></td></tr></table>`;
+  h += `<table class="stat"><tr><th>Pro Kunde</th><th>${mon}</th><th>${y}</th><th>Gesamt</th></tr>`;
+  [...rows.entries()].sort((a, b) => b[1].g - a[1].g).forEach(([k, r]) => { h += `<tr><td></td><td>${r.m}</td><td>${r.y}</td><td>${r.g}</td></tr>`.replace('<td></td>', '<td>' + k.replace(/[<>&]/g, '') + '</td>'); });
+  h += '</table><p class="mute">Gezählt werden Projekte mit mindestens einem Foto, nach Projektdatum. Nur auf diesem Handy.</p>';
+  $('#statBody').innerHTML = h;
+  $('#setSheet').classList.remove('on'); $('#statSheet').classList.add('on');
+};
+$('#statClose').onclick = () => $('#statSheet').classList.remove('on');
 $('#sFooter').oninput = () => db.setting('pdfFooter', $('#sFooter').value);
 $('#sOverview').onchange = () => db.setting('pdfOverview', $('#sOverview').value === '1');
 $('#sRooms').oninput = () => {
@@ -1245,7 +1438,7 @@ async function showStorage() {
 }
 $('#setClose').onclick = () => $('#setSheet').classList.remove('on');
 $('#sTitle').oninput = () => db.setting('headerTitle', $('#sTitle').value);
-$('#sLogo').onchange = async e => { const f = e.target.files[0]; if (!f) return; await db.setting('headerLogo', f); $('#sLogoPrev').src = URL.createObjectURL(f); $('#sLogoPrev').hidden = false; };
+$('#sLogo').onchange = async e => { let f = e.target.files[0]; if (!f) return; f = await cutoutLogo(f); await db.setting('headerLogo', f); $('#sLogoPrev').src = URL.createObjectURL(f); $('#sLogoPrev').hidden = false; };
 $('#sLogoDel').onclick = async () => { await db.setting('headerLogo', null); $('#sLogoPrev').hidden = true; };
 $('#sAi').onchange = async () => { S.ai = $('#sAi').value === '1'; await db.setting('ai', S.ai); };
 $('#sAiLoad').onclick = async () => {
@@ -1343,6 +1536,7 @@ function askPin() {
   if (!unlocked()) await askPin();
   const ai = await db.setting('ai'); S.ai = ai !== false;
   applyZoom((await db.setting('zoom')) || 1);
+  setTimeout(processQueue, 3000);
   laserUi();
   renderHome();
   if ('serviceWorker' in navigator) {
