@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.3.0';
+const VERSION = '1.3.1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -575,7 +575,7 @@ function stepActive(d) {
 const kb = { on: false, buf: '' };
 (function buildKeypad() {
   const el = $('#keypad');
-  ['1', '2', '3', '⌫', '4', '5', '6', 'C', '7', '8', '9', '', '', '0', '', 'OK'].forEach(k => {
+  ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'OK', '0', '⌫'].forEach(k => {
     const b = document.createElement('button'); b.textContent = k; if (!k) b.style.visibility = 'hidden';
     if (k === 'OK') b.className = 'pri';
     b.onclick = () => {
@@ -751,7 +751,7 @@ function askPin() {
     lock.style.display = 'flex';
     const dots = () => { $('#lockDots').textContent = '•'.repeat(buf.length); };
     pad.innerHTML = '';
-    ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'OK'].forEach(k => {
+    ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'OK', '0', '⌫'].forEach(k => {
       const b = document.createElement('button'); b.textContent = k; if (k === 'OK') b.className = 'pri';
       b.onclick = async () => {
         if (k === '⌫') buf = buf.slice(0, -1);
