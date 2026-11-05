@@ -6,7 +6,7 @@ import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 
-const VERSION = '2.1.0';
+const VERSION = '2.1.1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -159,10 +159,10 @@ Object.entries(fieldMap).forEach(([id, k]) => {
 // Projektname = "Straße Nr, PLZ Ort, Geschoß, WG" (so steht er am Deckblatt)
 function updateNamePrev() {
   const p = S.project;
-  // "Kopernikusstrasse 22, 1.OG, WG 12" + 4020 Linz → "Kopernikusstrasse 22, 4020 Linz, 1.OG, WG 12"
+  // "Kopernikusstrasse 22, 1.OG, WG 12" + 4020 Linz → "Kopernikusstrasse 22, 1.OG, WG 12, 4020 Linz"
   const parts = (p.str || '').split(',').map(x => x.trim()).filter(Boolean);
   const po = [p.plz, p.ortName].map(x => (x || '').trim()).filter(Boolean).join(' ');
-  if (po) parts.splice(parts.length ? 1 : 0, 0, po);
+  if (po) parts.push(po);
   p.name = parts.join(', ');
   $('#pNamePrev').textContent = p.name ? 'Am PDF: ' + p.name : '';
   $('#projTitle').textContent = p.name || 'Neues Projekt';
@@ -225,8 +225,11 @@ function showSug(local, web) {
     b.innerHTML = '<span class="src"></span><b></b><small></small>';
     b.querySelector('b').textContent = x.street; b.querySelector('small').textContent = x.ort;
     b.querySelector('.src').textContent = x.src === 'bekannt' ? 'schon gehabt' : 'Karte';
-    b.onmousedown = e => e.preventDefault(); // Fokus behalten
-    b.onclick = () => {
+    // gleich beim Antippen übernehmen (am iPhone kommt der Klick sonst manchmal nicht an, weil das Feld vorher den Fokus verliert)
+    let done = false;
+    const choose = e => {
+      if (e) e.preventDefault();
+      if (done) return; done = true;
       const cur = $('#pStr').value, no = houseNo(cur), rest = cur.includes(',') ? cur.slice(cur.indexOf(',')) : '';
       $('#pStr').value = x.street.replace(/ß/g, 'ss') + ' ' + (no || '') + (no ? rest : '');
       S.project.str = $('#pStr').value.trimEnd();
@@ -234,19 +237,25 @@ function showSug(local, web) {
       box.classList.remove('on');
       $('#pStr').focus();
       const el = $('#pStr'); el.setSelectionRange(el.value.length, el.value.length);
+      toast(`Übernommen: ${x.street.replace(/ß/g, 'ss')}, ${x.ort}`);
     };
+    b.addEventListener('pointerdown', choose);
+    b.addEventListener('mousedown', e => e.preventDefault());
+    b.addEventListener('click', choose);
     box.appendChild(b);
   }
   box.classList.add('on');
 }
+const capFirst = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+$('#pOrtName').addEventListener('change', () => { const v = capFirst($('#pOrtName').value.trim()); if (v !== $('#pOrtName').value) { $('#pOrtName').value = v; S.project.ortName = v; updateNamePrev(); db.put('projects', S.project); rememberStreetSoon(); } });
 function setWOrt(ort, auto) {
   const m = (ort || '').match(/^(\d{4,5})\s*(.*)$/);
-  S.project.plz = m ? m[1] : ''; S.project.ortName = m ? m[2] : ort;
+  S.project.plz = m ? m[1] : ''; S.project.ortName = capFirst(m ? m[2] : ort);
   $('#pPlz').value = S.project.plz; $('#pOrtName').value = S.project.ortName; updateNamePrev();
   db.put('projects', S.project); rememberStreetSoon();
   if (auto) toast('PLZ Ort eingetragen: ' + ort);
 }
-$('#pStr').addEventListener('blur', () => setTimeout(() => $('#strSug').classList.remove('on'), 150));
+$('#pStr').addEventListener('blur', () => setTimeout(() => $('#strSug').classList.remove('on'), 400));
 
 // ---------------- Kunden ----------------
 // Kunde = Name, Straße, PLZ Ort, Land, Kontakt, Telefon, Logo. Auswahl im Projekt übernimmt alles fürs Deckblatt;
