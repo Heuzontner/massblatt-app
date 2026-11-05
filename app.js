@@ -6,7 +6,7 @@ import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 
-const VERSION = '2.2.2';
+const VERSION = '2.2.3';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -1223,6 +1223,8 @@ function demoShow() {
 $('#sDemo').onclick = () => { $('#setSheet').classList.remove('on'); demoI = 0; demoShow(); $('#demo').classList.add('on'); };
 $('#demoPrev').onclick = () => { if (demoI > 0) { demoI--; demoShow(); } };
 $('#demoNext').onclick = () => { if (demoI < DEMO.length - 1) { demoI++; demoShow(); } else $('#demo').classList.remove('on'); };
+// Update-Knopf: vorbereitet, Funktion wird erst zum Schluss freigegeben (Manuel 05.11.)
+$('#sUpdate').onclick = () => toast('Noch nicht aktiv – Updates kommen derzeit automatisch', 2500);
 $('#sFooter').oninput = () => db.setting('pdfFooter', $('#sFooter').value);
 $('#sOverview').onchange = () => db.setting('pdfOverview', $('#sOverview').value === '1');
 $('#sRooms').oninput = () => {
