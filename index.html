@@ -146,11 +146,11 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   <div class="scroll">
     <details class="card" id="projDetails">
       <summary>Projektdaten</summary>
-      <label class="f">Straße + Hausnummer</label>
-      <div class="sugwrap"><input id="pStr" placeholder="Haydnstrasse 8" autocomplete="off"><div class="sug" id="strSug"></div></div>
-      <div class="row2">
-        <div><label class="f">PLZ Ort</label><input id="pWOrt" placeholder="4400 Steyr"></div>
-        <div><label class="f">Geschoß, WG</label><input id="pTop" placeholder="EG, WG 1"></div>
+      <label class="f">Straße + Hausnummer (+ Geschoß, WG)</label>
+      <div class="sugwrap"><input id="pStr" placeholder="Haydnstrasse 8, EG, WG 1" autocomplete="off"><div class="sug" id="strSug"></div></div>
+      <div class="row2" style="grid-template-columns:1fr 2fr">
+        <div><label class="f">PLZ</label><input id="pPlz" placeholder="4400" inputmode="numeric" maxlength="5"></div>
+        <div><label class="f">Ort</label><input id="pOrtName" placeholder="Steyr"></div>
       </div>
       <p class="mute" id="pNamePrev" style="margin:6px 0 0"></p>
       <label class="f">Kunde</label>
@@ -161,8 +161,8 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
       </div>
       <details style="margin-top:10px"><summary class="mute">Weitere Angaben (optional)</summary>
         <div class="row2">
-          <div><label class="f">Firma</label><input id="pFirma"></div>
-          <div><label class="f">PLZ Ort</label><input id="pOrt"></div>
+          <div><label class="f">Firma (Kunde)</label><input id="pFirma"></div>
+          <div><label class="f">PLZ Ort (Kunde)</label><input id="pOrt"></div>
         </div>
         <div class="row2">
           <div><label class="f">Kontakt</label><input id="pKontakt"></div>
