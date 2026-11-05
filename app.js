@@ -6,7 +6,7 @@ import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 
-const VERSION = '2.0.0';
+const VERSION = '2.0.1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -132,6 +132,15 @@ async function openProject(id, isNew = false) {
 }
 
 const fieldMap = { pStr: 'str', pPlz: 'plz', pOrtName: 'ortName', pFirma: 'firma', pKontakt: 'kontakt', pStrasse: 'strasse', pOrt: 'ort', pLand: 'land', pTel: 'telefon', pDatum: 'datum' };
+const SS_FIELDS = ['pStr', 'pStrasse', 'cStrasse'];
+function fixSz(el) {
+  if (!el.value.includes('ß')) return;
+  const pos = el.selectionStart, before = el.value.slice(0, pos);
+  el.value = el.value.replace(/ß/g, 'ss');
+  const np = before.replace(/ß/g, 'ss').length;
+  try { el.setSelectionRange(np, np); } catch (e) { }
+}
+SS_FIELDS.forEach(id => $('#' + id).addEventListener('input', () => fixSz($('#' + id)), true));
 Object.entries(fieldMap).forEach(([id, k]) => {
   $('#' + id).addEventListener('input', () => {
     S.project[k] = $('#' + id).value; S.project.updated = Date.now();
@@ -215,7 +224,7 @@ function showSug(local, web) {
     b.onmousedown = e => e.preventDefault(); // Fokus behalten
     b.onclick = () => {
       const cur = $('#pStr').value, no = houseNo(cur), rest = cur.includes(',') ? cur.slice(cur.indexOf(',')) : '';
-      $('#pStr').value = x.street + ' ' + (no || '') + (no ? rest : '');
+      $('#pStr').value = x.street.replace(/ß/g, 'ss') + ' ' + (no || '') + (no ? rest : '');
       S.project.str = $('#pStr').value.trimEnd();
       setWOrt(x.ort, false);
       box.classList.remove('on');

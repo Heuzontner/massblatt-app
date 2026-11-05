@@ -1,6 +1,6 @@
 // Offline: App-Dateien im Cache. Große, unveränderliche Bibliotheken liegen in einem eigenen Cache,
 // damit ein Update nur die kleinen App-Dateien neu laden muss (schnelle Updates).
-const V = 'mb-2.0.0';
+const V = 'mb-2.0.1';
 const LIB = 'mblib-1';
 const FILES = ['./', 'index.html', 'app.js', 'db.js', 'ble.js', 'arrows.js', 'pdf.js', 'detect.js', 'pin.js', 'dropbox.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png'];
