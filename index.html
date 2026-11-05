@@ -46,7 +46,7 @@ header.top h1 { font-size:18px; margin:0; flex:1; white-space:nowrap; overflow:h
 .swipe .card.drag { transition:none; }
 .shot .del { align-self:center; background:#3a1c1f; color:#ffb3b3; padding:10px 12px; }
 .shot .warn { color:var(--acc); font-size:13px; }
-.bottombar { position:fixed; left:0; right:0; bottom:0; display:flex; gap:10px; padding:10px 12px calc(env(safe-area-inset-bottom) + 10px); background:linear-gradient(transparent, var(--bg) 30%); }
+.bottombar { z-index:10; position:fixed; left:0; right:0; bottom:0; display:flex; gap:10px; padding:10px 12px calc(env(safe-area-inset-bottom) + 10px); background:linear-gradient(transparent, var(--bg) 30%); }
 .bottombar button { flex:1; padding:16px; font-size:17px; }
 details.card summary { font-weight:700; cursor:pointer; }
 .row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
@@ -116,6 +116,10 @@ details.card summary { font-weight:700; cursor:pointer; }
 .roomgrid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
 .roomgrid button { padding:16px 0; font-size:18px; font-weight:700; }
 .roomgrid button small { display:block; font-size:10px; font-weight:400; color:var(--mute); }
+#undoBar { position:fixed; left:12px; right:12px; bottom:calc(env(safe-area-inset-bottom) + 90px); background:#000e; color:#fff; border-radius:14px; padding:8px 8px 8px 14px; display:none; align-items:center; gap:10px; z-index:85; font-size:15px; }
+#undoBar.on { display:flex; }
+#undoBar span { flex:1; }
+#undoBar button { background:var(--acc); color:#111; font-weight:700; padding:10px 14px; }
 #toast { position:fixed; left:50%; top:calc(env(safe-area-inset-top) + 64px); transform:translateX(-50%); background:#000d; color:#fff; padding:10px 16px; border-radius:20px; font-size:15px; z-index:80; display:none; max-width:90vw; text-align:center; }
 #toast.on { display:block; }
 .mute { color:var(--mute); font-size:13px; }
@@ -170,6 +174,7 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
         </div>
       </details>
       <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="ghost" id="btnExpProj" style="flex:1">Projekt exportieren</button>
         <button class="danger" id="btnDelProj">Projekt löschen</button>
       </div>
     </details>
@@ -177,6 +182,7 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   </div>
   <div class="bottombar">
     <button class="ghost" id="btnPdf">PDF</button>
+    <button class="ghost" id="btnDbx" aria-label="In Dropbox speichern"><svg width="26" height="22" viewBox="0 0 43 40" style="vertical-align:middle"><path fill="#4aa3ff" d="M12.5 0 0 8.1l8.6 6.9 12.6-7.8L12.5 0zM0 21.8l12.5 8.1 8.7-7.2-12.6-7.8L0 21.8zm21.2.9 8.7 7.2 12.5-8.1-8.6-6.9-12.6 7.8zm21.2-14.6L29.9 0l-8.7 7.2 12.6 7.8 8.6-6.9zM21.3 24.4l-8.8 7.2-3.7-2.4v2.7l12.5 7.5 12.5-7.5v-2.7l-3.7 2.4-8.8-7.2z"/></svg></button>
     <button class="pri" id="btnShoot" style="flex:2">📷 Foto</button>
   </div>
 </section>
@@ -291,6 +297,18 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   </div>
   <input type="file" id="imFile" accept=".json,application/json" hidden>
   <p class="mute" style="margin:6px 0 0">Exportieren erzeugt eine Datei (per WhatsApp, Mail oder Drive schicken). Am anderen Handy „Importieren“ und die Datei wählen.</p>
+  <label class="f">Projekt aus Datei wiederherstellen</label>
+  <button class="ghost" id="imProjBtn" style="width:100%">Projekt importieren</button>
+  <input type="file" id="imProjFile" accept=".json,.massblatt,application/json" hidden>
+  <label class="f">Dropbox (PDF direkt hochladen)</label>
+  <p class="mute" id="dbxState" style="margin:0 0 6px"></p>
+  <div id="dbxSetup">
+    <input id="dbxKey" placeholder="App-Key (von dropbox.com/developers)">
+    <a id="dbxAuth" target="_blank" rel="noopener" style="display:block;margin-top:8px"><button class="ghost" style="width:100%">1. Bei Dropbox anmelden (Code holen)</button></a>
+    <div style="display:flex;gap:8px;margin-top:8px"><input id="dbxCode" placeholder="2. Code hier einfügen"><button class="pri" id="dbxOk">OK</button></div>
+  </div>
+  <label class="f">Dropbox-Ordner</label><input id="dbxFolder" placeholder="/Maßblätter">
+  <button class="ghost" id="dbxOff" style="margin-top:8px">Dropbox trennen</button>
   <label class="f">Tür-/Fenster-Erkennung (KI)</label>
   <select id="sAi"><option value="1">An – Pfeile automatisch</option><option value="0">Aus – nur Vorlagen</option></select>
   <p class="mute" id="sAiState"></p>

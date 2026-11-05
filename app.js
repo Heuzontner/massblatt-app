@@ -4,8 +4,9 @@ import { TEMPLATES, arrowsFromObjects, newArrow, drawArrows } from './arrows.js'
 import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
+import { dropbox } from './dropbox.js';
 
-const VERSION = '1.9.3';
+const VERSION = '2.0.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -38,6 +39,8 @@ function canvasToBlob(c, type = 'image/jpeg', q = 0.88) {
     try { c.toBlob(b => { if (done) return; if (!b) return fb(); done = true; clearTimeout(t); res(b); }, type, q); } catch (e) { fb(); }
   });
 }
+const blobToB64 = b => new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
+const b64ToBlob = async d => (await fetch(d)).blob();
 const blobToImg = b => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(b); });
 async function fileToImgBytes(blob) {
   // beliebiges Bild → PNG-Bytes (für pdf-lib)
@@ -336,12 +339,25 @@ $('#btnDelProj').onclick = async () => {
   renderHome(); show('home');
 };
 
-function confirmBox(msg) {
+// Hinweis mit „Rückgängig“-Knopf (6 s)
+function undoToast(msg, undo) {
+  let bar = $('#undoBar');
+  if (!bar) { bar = document.createElement('div'); bar.id = 'undoBar'; document.body.appendChild(bar); }
+  bar.innerHTML = '<span></span><button>Rückgängig</button>';
+  bar.querySelector('span').textContent = msg;
+  bar.classList.add('on');
+  clearTimeout(undoToast._t);
+  undoToast._t = setTimeout(() => bar.classList.remove('on'), 6000);
+  bar.querySelector('button').onclick = async () => { bar.classList.remove('on'); clearTimeout(undoToast._t); await undo(); };
+}
+function confirmBox(msg, yesLabel = 'Löschen', noLabel = 'Abbrechen', yesClass = 'danger', detail = '') {
   return new Promise(res => {
     const bg = document.createElement('div'); bg.className = 'sheet-bg on';
-    bg.innerHTML = `<div class="sheet"><h2></h2><div style="display:flex;gap:8px"><button class="ghost" style="flex:1">Abbrechen</button><button class="danger" style="flex:1">Löschen</button></div></div>`;
+    bg.innerHTML = `<div class="sheet"><h2></h2><p class="mute" style="white-space:pre-line;font-size:15px"></p><div style="display:flex;gap:8px"><button class="ghost" style="flex:1"></button><button style="flex:1"></button></div></div>`;
     bg.querySelector('h2').textContent = msg;
+    const pd = bg.querySelector('p'); if (detail) pd.textContent = detail; else pd.remove();
     const [no, yes] = bg.querySelectorAll('button');
+    no.textContent = noLabel; yes.textContent = yesLabel; yes.className = yesClass;
     no.onclick = () => { bg.remove(); res(false); }; yes.onclick = () => { bg.remove(); res(true); };
     document.body.appendChild(bg);
   });
@@ -390,10 +406,18 @@ function swipeToDelete(el, onDelete) {
 }
 async function deleteShot(shot) {
   if (!await confirmBox(`Foto ${S.shots.indexOf(shot) + 1} (${shot.room}) mit allen Maßen löschen?`)) return false;
+  const idx = S.shots.indexOf(shot), pid = S.project.id;
   await db.del('shots', shot.id);
   S.shots = S.shots.filter(x => x.id !== shot.id);
   for (let k = 0; k < S.shots.length; k++) { S.shots[k].order = k; await db.put('shots', S.shots[k]); }
-  renderShots(); toast('Foto gelöscht'); return true;
+  renderShots();
+  undoToast(`Foto ${shot.room} gelöscht`, async () => {
+    if (!S.project || S.project.id !== pid) return;
+    S.shots.splice(idx, 0, shot);
+    for (let k = 0; k < S.shots.length; k++) { S.shots[k].order = k; await db.put('shots', S.shots[k]); }
+    renderShots(); toast('Foto wiederhergestellt');
+  });
+  return true;
 }
 async function moveShot(i, d) {
   const j = i + d; if (j < 0 || j >= S.shots.length) return;
@@ -418,8 +442,21 @@ function pickRoom() {
 }
 
 // ---------------- Kamera ----------------
+// Raum schon im Projekt? → fragen: selber Raum oder neuer (Kz → Kz2, Kz3 …)
+async function resolveRoom(r) {
+  if (!r || r === 'Rh' || r === 'Eg') return r;
+  const base = r.replace(/\d+$/, '');
+  const re = new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d*)$');
+  const same = S.shots.filter(s => re.test(s.room));
+  if (!same.length) return r;
+  const last = same[same.length - 1].room;
+  const yes = await confirmBox(`Handelt es sich um denselben Raum „${last}“?`, 'Ja, derselbe', 'Nein, neuer Raum', 'pri');
+  if (yes) return last;
+  const nums = same.map(s => parseInt(s.room.match(re)[1] || '1', 10));
+  return base + (Math.max(...nums) + 1);
+}
 $('#btnShoot').onclick = async () => {
-  const r = await pickRoom(); if (!r) return;
+  const r = await resolveRoom(await pickRoom()); if (!r) return;
   S.room = r; openCam();
 };
 async function openCam() {
@@ -517,7 +554,7 @@ async function captureHdr() {
   og.putImageData(od, 0, 0);
   return out;
 }
-$('#camRoom').onclick = async () => { const r = await pickRoom(); if (r) { S.room = r; $('#camRoom').textContent = r; } };
+$('#camRoom').onclick = async () => { const r = await resolveRoom(await pickRoom()); if (r) { S.room = r; $('#camRoom').textContent = r; } };
 $('#camBack').onclick = () => { renderShots(); show('proj'); };
 $('#camGallery').onclick = () => $('#galIn').click();
 $('#fileIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) newShotFromBlob(f); else show('proj'); };
@@ -705,9 +742,43 @@ function onMeasure(cm) {
   toast(`${cm} cm gemessen – erst ein Foto machen`, 2000); beep(false);
 }
 
+// Plausibilität: grobe Grenzen in cm (Türen wie im Maßblatt-Leser: H 180–245, B 50–145)
+function checkArrow(a, room) {
+  if (a.cm == null) return null;
+  const v = a.cm, H = a.kind === 'H';
+  if (a.el === 'Raumhöhe' || room === 'Rh') return v < 200 || v > 400 ? `Raumhöhe ${v} cm (üblich 200–400)` : null;
+  if (a.el === 'Tür') {
+    if (H && (v < 180 || v > 250)) return `Tür-Höhe ${v} cm (üblich 180–250)`;
+    if (!H && (v < 50 || v > 150)) return `Tür-Breite ${v} cm (üblich 50–150)`;
+    return null;
+  }
+  if (a.el.startsWith('Fenster')) {
+    if (H && (v < 30 || v > 300)) return `Fenster-Höhe ${v} cm (üblich 30–300)`;
+    if (!H && (v < 30 || v > 400)) return `Fenster-Breite ${v} cm (üblich 30–400)`;
+    return null;
+  }
+  return v < 10 || v > 600 ? `${H ? 'Höhe' : 'Breite'} ${v} cm ungewöhnlich` : null;
+}
+function shotIssues(shot) {
+  const out = [];
+  shot.arrows.forEach(a => { const m = checkArrow(a, shot.room); if (m) out.push({ a, m }); });
+  const door = shot.arrows.filter(a => a.el === 'Tür' && a.cm != null);
+  const dh = door.find(a => a.kind === 'H'), dw = door.find(a => a.kind === 'B');
+  if (dh && dw && dw.cm >= dh.cm) out.push({ a: dw, m: `Tür breiter (${dw.cm}) als hoch (${dh.cm}) – Höhe/Breite vertauscht?` });
+  const open = shot.arrows.filter(a => a.cm == null);
+  if (open.length) out.push({ a: open[0], m: `${open.length} Pfeil${open.length > 1 ? 'e' : ''} ohne Maß` });
+  return out;
+}
 let finishing = 0;
-function finishShot(auto) {
+async function finishShot(auto) {
   clearTimeout(finishing);
+  const iss = shotIssues(S.shot);
+  if (iss.length) {
+    beep(false);
+    const go2 = await confirmBox('Bitte prüfen', 'Trotzdem weiter', 'Korrigieren', 'ghost', iss.map(x => '• ' + x.m).join('\n'));
+    if (!go2) { S.active = iss[0].a.id; updateCur(); return; }
+    auto = false;
+  }
   const go = async () => {
     await saveShot();
     if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
@@ -753,9 +824,13 @@ $('#kbBtn').onclick = () => setKb(!kb.on);
 $('#trashA').onclick = () => {
   const a = activeArrow(); if (!a) { toast('Kein Pfeil ausgewählt'); return; }
   clearTimeout(finishing);
-  S.shot.arrows = S.shot.arrows.filter(x => x !== a);
+  const shot = S.shot, idx = shot.arrows.indexOf(a);
+  shot.arrows = shot.arrows.filter(x => x !== a);
   S.active = firstOpen(); saveShot(); updateCur();
-  toast(`Pfeil gelöscht (${a.el} – ${a.kind === 'H' ? 'Höhe' : 'Breite'})`);
+  undoToast(`Pfeil gelöscht (${a.kind === 'H' ? 'Höhe' : 'Breite'}${a.cm != null ? ', ' + a.cm + ' cm' : ''})`, () => {
+    shot.arrows.splice(idx, 0, a); db.put('shots', shot);
+    if (S.shot === shot) { S.active = a.id; updateCur(); }
+  });
 };
 
 // Pfeile ziehen: Endpunkt (Kreis) oder ganzer Pfeil; Tippen = aktiv
@@ -851,35 +926,105 @@ function segDist(px, py, x1, y1, x2, y2) {
 }
 
 // ---------------- PDF ----------------
+async function makePdfFile() {
+  const fontBytes = new Uint8Array(await (await fetch('vendor/NotoSans.woff')).arrayBuffer());
+  const shots = [];
+  for (const s of S.shots) {
+    const im = await blobToImg(s.photo);
+    const c = document.createElement('canvas'); c.width = s.w; c.height = s.h;
+    const g = c.getContext('2d'); g.drawImage(im, 0, 0, s.w, s.h);
+    const measured = s.arrows.filter(a => a.cm != null);
+    drawArrows(g, s.w, s.h, measured, null, 1, true);
+    const jb = await canvasToBlob(c, 'image/jpeg', 0.85);
+    shots.push({ room: s.room, jpg: new Uint8Array(await jb.arrayBuffer()), values: measured.map(a => ({ cm: a.cm, time: new Date(a.time) })) });
+  }
+  const p = S.project;
+  const headLogo = await db.setting('headerLogo');
+  const proj = { ...p, headerTitle: (await db.setting('headerTitle')) || 'Measuring Master',
+    headerLogo: headLogo ? await fileToImgBytes(headLogo) : null,
+    kundenLogo: p.kundenLogo ? await fileToImgBytes(p.kundenLogo) : null };
+  const bytes = await buildPdf(window.PDFLib, window.fontkit, fontBytes, proj, shots);
+  return new File([bytes], fileBase(p) + '.pdf', { type: 'application/pdf' });
+}
+// Dateiname = Projektname (Straße + Hausnummer, Geschoß, WG), z. B. "Kopernikusstrasse 22, 1.OG, WG 12.pdf"
+function fileBase(p) {
+  const n = ((p.str || p.name || '').trim() || 'Wohnung').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return n.slice(0, 120);
+}
+function openCount() { return S.shots.reduce((n, s) => n + s.arrows.filter(a => a.cm == null).length, 0); }
 $('#btnPdf').onclick = async () => {
   if (!S.shots.length) { toast('Noch keine Fotos'); return; }
-  const open = S.shots.reduce((n, s) => n + s.arrows.filter(a => a.cm == null).length, 0);
+  const open = openCount();
   if (open) toast(`Hinweis: ${open} Pfeil(e) ohne Maß werden weggelassen`, 2500);
   const b = $('#btnPdf'); b.disabled = true; b.textContent = 'Erstelle …';
-  try {
-    const fontBytes = new Uint8Array(await (await fetch('vendor/NotoSans.woff')).arrayBuffer());
-    const shots = [];
-    for (const s of S.shots) {
-      const im = await blobToImg(s.photo);
-      const c = document.createElement('canvas'); c.width = s.w; c.height = s.h;
-      const g = c.getContext('2d'); g.drawImage(im, 0, 0, s.w, s.h);
-      const measured = s.arrows.filter(a => a.cm != null);
-      drawArrows(g, s.w, s.h, measured, null, 1, true);
-      const jb = await canvasToBlob(c, 'image/jpeg', 0.85);
-      shots.push({ room: s.room, jpg: new Uint8Array(await jb.arrayBuffer()), values: measured.map(a => ({ cm: a.cm, time: new Date(a.time) })) });
-    }
-    const p = S.project;
-    const headLogo = await db.setting('headerLogo');
-    const proj = { ...p, headerTitle: (await db.setting('headerTitle')) || 'Measuring Master',
-      headerLogo: headLogo ? await fileToImgBytes(headLogo) : null,
-      kundenLogo: p.kundenLogo ? await fileToImgBytes(p.kundenLogo) : null };
-    const bytes = await buildPdf(window.PDFLib, window.fontkit, fontBytes, proj, shots);
-    const name = 'Massblatt_' + (p.name || 'Wohnung').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '_').slice(0, 80) + '.pdf';
-    const file = new File([bytes], name, { type: 'application/pdf' });
-    await sharePdf(file);
-  } catch (e) { console.error(e); toast('PDF-Fehler: ' + e.message, 5000); }
+  try { await sharePdf(await makePdfFile()); }
+  catch (e) { console.error(e); toast('PDF-Fehler: ' + e.message, 5000); }
   finally { b.disabled = false; b.textContent = 'PDF'; }
 };
+$('#btnDbx').onclick = async () => {
+  if (!S.shots.length) { toast('Noch keine Fotos'); return; }
+  if (!dropbox.connected) { toast('Dropbox zuerst in ⚙ Einstellungen verbinden', 3000); $('#btnSettings').click(); return; }
+  const open = openCount();
+  const ok = await confirmBox('PDF in Dropbox speichern?', 'Ja, hochladen', 'Abbrechen', 'pri',
+    `Ordner: ${dropbox.cfg.folder || '/Maßblätter'}` + (open ? `\n${open} Pfeil(e) ohne Maß werden weggelassen.` : ''));
+  if (!ok) return;
+  const b = $('#btnDbx'); b.disabled = true;
+  toast('Lade in Dropbox hoch …', 10000);
+  try { const path = await dropbox.upload(await makePdfFile()); toast('In Dropbox gespeichert ✓ ' + path, 3500); beep(true); }
+  catch (e) { console.error(e); toast('Dropbox-Fehler: ' + e.message, 6000); beep(false); }
+  finally { b.disabled = false; }
+};
+
+// ---------------- Projekt exportieren / importieren (inkl. Fotos) ----------------
+$('#btnExpProj').onclick = async () => {
+  const p = S.project;
+  const data = { app: 'massblatt-projekt', version: 1, exported: new Date().toISOString(),
+    project: { ...p, kundenLogo: p.kundenLogo ? await blobToB64(p.kundenLogo) : null },
+    shots: await Promise.all(S.shots.map(async s => ({ ...s, photo: await blobToB64(s.photo) }))) };
+  const name = fileBase(p) + ' (Projekt).json';
+  const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: name }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+};
+$('#imProjBtn').onclick = () => $('#imProjFile').click();
+$('#imProjFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (data.app !== 'massblatt-projekt') throw new Error('keine Projekt-Datei (Kunden-Dateien unter „Kunden & Straßen“ importieren)');
+    const old = await db.get('projects', data.project.id);
+    const p = { ...data.project, kundenLogo: data.project.kundenLogo ? await b64ToBlob(data.project.kundenLogo) : null, updated: Date.now() };
+    if (old) { // schon vorhanden → als Kopie anlegen
+      if (!await confirmBox(`Projekt „${p.name}“ gibt es schon. Als Kopie importieren?`, 'Als Kopie', 'Abbrechen', 'pri')) return;
+      p.id = uid(); p.name = (p.name || '') + ' (Kopie)'; p.str = (p.str || '') + ' (Kopie)';
+    }
+    await db.put('projects', p);
+    for (const s of data.shots) await db.put('shots', { ...s, id: old ? uid() : s.id, projectId: p.id, photo: await b64ToBlob(s.photo) });
+    $('#setSheet').classList.remove('on');
+    toast(`Projekt importiert: ${data.shots.length} Fotos`, 3000);
+    renderHome(); openProject(p.id);
+  } catch (err) { toast('Import fehlgeschlagen: ' + err.message, 5000); }
+};
+
+// ---------------- Dropbox einrichten (⚙) ----------------
+async function dbxUi() {
+  const c = dropbox.cfg;
+  $('#dbxKey').value = c.appKey || ''; $('#dbxFolder').value = c.folder || '';
+  $('#dbxState').textContent = dropbox.connected ? 'Verbunden ✓' : 'Nicht verbunden';
+  $('#dbxSetup').style.display = dropbox.connected ? 'none' : '';
+  $('#dbxOff').style.display = dropbox.connected ? '' : 'none';
+  if (!dropbox.connected && c.appKey) { try { $('#dbxAuth').href = await dropbox.authUrl(); } catch (e) { } } else $('#dbxAuth').removeAttribute('href');
+}
+$('#dbxKey').onchange = () => { dropbox.setAppKey($('#dbxKey').value); dbxUi(); };
+$('#dbxAuth').onclick = e => { if (!$('#dbxAuth').href) { e.preventDefault(); toast('Zuerst den App-Key eintragen'); } };
+$('#dbxFolder').oninput = () => dropbox.setFolder($('#dbxFolder').value);
+$('#dbxOk').onclick = async () => {
+  try { await dropbox.finishAuth($('#dbxCode').value); $('#dbxCode').value = ''; toast('Dropbox verbunden ✓'); }
+  catch (e) { toast('Dropbox: ' + e.message, 5000); }
+  dbxUi();
+};
+$('#dbxOff').onclick = () => { dropbox.disconnect(); dbxUi(); };
+
 async function sharePdf(file) {
   const url = URL.createObjectURL(file);
   const bg = document.createElement('div'); bg.className = 'sheet-bg on';
@@ -905,6 +1050,7 @@ $('#btnSettings').onclick = async () => {
   const lg = await db.setting('headerLogo');
   if (lg) { $('#sLogoPrev').src = URL.createObjectURL(lg); $('#sLogoPrev').hidden = false; } else $('#sLogoPrev').hidden = true;
   $('#sAi').value = S.ai ? '1' : '0';
+  dbxUi();
   renderCustManage();
   $('#sAiState').textContent = 'KI-Modell: ' + modelState();
   $('#sLog').textContent = laser.log.join('\n') || '–';
@@ -925,8 +1071,6 @@ $('#sAiLoad').onclick = async () => {
   b.disabled = false;
 };
 // Export/Import: Kunden (mit Logo) + gemerkte Straßen als JSON-Datei
-const blobToB64 = b => new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
-const b64ToBlob = async d => (await fetch(d)).blob();
 $('#exBtn').onclick = async () => {
   const cs = (await db.setting('customers')) || [];
   const data = { app: 'massblatt', version: 1, exported: new Date().toISOString(),
