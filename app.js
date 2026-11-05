@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.9.0';
+const VERSION = '1.9.1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -746,11 +746,6 @@ const kb = { on: false, buf: '' };
 })();
 function setKb(on) { kb.on = on; kb.buf = ''; $('#keypad').classList.toggle('on', on); $('#kbBtn').classList.toggle('on', on); updateCur(); }
 $('#kbBtn').onclick = () => setKb(!kb.on);
-$('#addA').onclick = () => {
-  clearTimeout(finishing);
-  const a = newArrow(); S.shot.arrows.push(a); S.active = a.id; saveShot(); updateCur();
-  toast('Neuer Pfeil in der Bildmitte – an den Enden hinziehen');
-};
 $('#trashA').onclick = () => {
   const a = activeArrow(); if (!a) { toast('Kein Pfeil ausgewählt'); return; }
   clearTimeout(finishing);

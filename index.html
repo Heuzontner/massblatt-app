@@ -98,7 +98,6 @@ details.card summary { font-weight:700; cursor:pointer; }
 .edbar #kbBtn.on { background:var(--blue); color:#fff; }
 .edbar #edDone { font-size:16px; padding:0 14px; }
 .edbar .cur { flex:1; min-width:0; }
-#addA { position:absolute; right:10px; bottom:10px; width:54px; height:54px; border-radius:50%; background:rgba(30,110,200,.9); color:#fff; font-size:30px; font-weight:700; padding:0; box-shadow:0 2px 8px #0008; z-index:5; }
 #trashA { position:absolute; left:10px; bottom:10px; width:54px; height:54px; border-radius:50%; background:rgba(160,20,30,.85); font-size:22px; padding:0; box-shadow:0 2px 8px #0008; z-index:5; }
 #ed .keypad { position:absolute; left:50%; bottom:8px; transform:translateX(-50%); width:min(280px, 70vw); background:rgba(16,23,31,.92); padding:8px; border-radius:14px; gap:5px; margin:0; z-index:6; box-shadow:0 4px 18px #000a; }
 #ed .keypad button { padding:9px 0; font-size:17px; }
@@ -215,7 +214,6 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   </header>
   <div class="stage" id="stage"><canvas id="cv"></canvas><canvas id="loupe" width="300" height="300"></canvas>
     <button id="trashA" aria-label="Pfeil löschen">🗑</button>
-    <button id="addA" aria-label="Pfeil dazu">＋</button>
     <div class="keypad" id="keypad"></div>
     <div class="busy" id="busy"><span id="busyTxt">Erkenne Tür/Fenster …</span><div class="bar"><div id="busyBar"></div></div></div>
   </div>
