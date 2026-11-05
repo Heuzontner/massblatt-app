@@ -57,24 +57,23 @@ details.card summary { font-weight:700; cursor:pointer; }
 /* Editor */
 #ed { background:#000; }
 #ed .stage { flex:1; position:relative; min-height:0; touch-action:none; }
-#ed canvas { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
+#ed #cv { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
 #ed .busy { position:absolute; left:12px; right:12px; top:12px; background:rgba(0,0,0,.75); border-radius:12px; padding:10px 12px; font-size:14px; display:none; }
 #ed .busy.on { display:block; }
 #ed .busy .bar { height:6px; background:#333; border-radius:3px; margin-top:6px; overflow:hidden; }
 #ed .busy .bar div { height:100%; width:0; background:var(--acc); }
 #ed .panel { background:var(--panel); border-top:1px solid var(--line); padding:10px 12px calc(env(safe-area-inset-bottom) + 10px); }
-.chips { display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; scrollbar-width:none; }
-.chips button { flex:none; padding:8px 12px; font-size:14px; border-radius:18px; }
-.chips button.sel { background:var(--blue); color:#fff; }
-.cur { display:flex; align-items:center; gap:8px; }
-.cur .what { flex:1; }
-.cur .what small { color:var(--mute); display:block; font-size:13px; }
-.cur .what b { font-size:26px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.cur .what b.hint { font-size:16px; color:var(--mute); font-weight:400; }
-.cur .what { min-width:0; }
-.cur button { padding:12px; min-width:48px; }
-.edrow { display:flex; gap:6px; margin-top:8px; }
-.edrow button { flex:1; font-size:14px; padding:10px 6px; }
+#ed, #ed .stage, #cv { touch-action:none; user-select:none; -webkit-user-select:none; }
+#loupe { position:absolute; width:150px; height:150px; border-radius:50%; border:3px solid #fff; box-shadow:0 4px 16px #000a; pointer-events:none; display:none; left:0; top:0; }
+.tiles { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.tiles button { padding:16px 8px; font-size:16px; }
+.tiles button.sel { background:var(--blue); color:#fff; }
+.bigrow { display:grid; grid-template-columns:1fr 1fr 1.3fr; gap:8px; margin-top:10px; }
+.bigrow button { padding:18px 6px; font-size:17px; }
+.cur { text-align:center; }
+.cur small { display:block; color:var(--mute); font-size:15px; }
+.cur b { display:block; font-size:34px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cur b.hint { font-size:18px; font-weight:400; color:var(--acc); line-height:1.9; }
 .keypad { display:none; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:8px; }
 .keypad.on { display:grid; }
 .keypad button { padding:14px 0; font-size:20px; }
@@ -169,27 +168,42 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
     <button class="ghost" id="edBack">‹</button>
     <h1 id="edTitle">Kz</h1>
     <div class="laser" data-laser><i></i><span>Laser</span></div>
+    <button id="arrowsBtn" class="ghost">Pfeile</button>
   </header>
-  <div class="stage" id="stage"><canvas id="cv"></canvas>
+  <div class="stage" id="stage"><canvas id="cv"></canvas><canvas id="loupe" width="300" height="300"></canvas>
     <div class="busy" id="busy"><span id="busyTxt">Erkenne Tür/Fenster …</span><div class="bar"><div id="busyBar"></div></div></div>
   </div>
   <div class="panel">
-    <div class="chips" id="tplChips"></div>
-    <div class="cur">
-      <button id="prevA">‹</button>
-      <div class="what"><small id="curLbl">–</small><b id="curVal">–</b></div>
-      <button id="nextA">›</button>
-      <button id="kbBtn">⌨</button>
-    </div>
+    <div class="cur"><small id="curLbl">–</small><b id="curVal">–</b></div>
     <div class="keypad" id="keypad"></div>
-    <div class="edrow">
-      <button id="addA">+ Pfeil</button>
-      <button id="flipA">Höhe/Breite</button>
-      <button id="delA">Pfeil weg</button>
-      <button class="pri" id="edDone">Fertig ✓</button>
+    <div class="bigrow">
+      <button id="prevA">‹ Zurück</button>
+      <button id="kbBtn">⌨ Tippen</button>
+      <button class="pri" id="edDone">✓ Fertig</button>
     </div>
   </div>
 </section>
+
+<!-- Pfeile-Menü -->
+<div class="sheet-bg" id="arrSheet"><div class="sheet">
+  <h2>Pfeile neu setzen</h2>
+  <div class="tiles" id="tplTiles"></div>
+  <h2 style="margin-top:16px">Ausgewählter Pfeil</h2>
+  <div class="tiles">
+    <button data-act="add">+ Pfeil dazu</button>
+    <button data-act="flip">Höhe ⇄ Breite</button>
+    <button data-act="clear">Maß löschen</button>
+    <button data-act="del" class="danger">Pfeil löschen</button>
+  </div>
+  <h2 style="margin-top:16px">Foto</h2>
+  <div class="tiles">
+    <button data-act="room">Raum ändern</button>
+    <button data-act="up">▲ nach vorne</button>
+    <button data-act="down">▼ nach hinten</button>
+    <button data-act="delshot" class="danger">Foto löschen</button>
+  </div>
+  <button class="ghost" style="width:100%;margin-top:14px" data-act="close">Schließen</button>
+</div></div>
 
 <!-- Raumwahl -->
 <div class="sheet-bg" id="roomSheet"><div class="sheet">

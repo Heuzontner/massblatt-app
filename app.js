@@ -5,7 +5,7 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 
-const VERSION = '1.0.1';
+const VERSION = '1.1.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -154,15 +154,11 @@ function renderShots() {
     const c = document.createElement('div'); c.className = 'card shot';
     const vals = s.arrows.filter(a => a.cm != null).map(a => `${a.cm}`).join(' · ');
     const open = s.arrows.filter(a => a.cm == null).length;
-    c.innerHTML = `<img><div class="t"><div class="room"></div><div class="vals"></div>${open ? `<div class="warn">${open} Pfeil${open > 1 ? 'e' : ''} ohne Maß</div>` : ''}</div>
-      <div style="display:flex;flex-direction:column;gap:4px"><button class="ghost" data-up>▲</button><button class="ghost" data-dn>▼</button></div>`;
+    c.innerHTML = `<img><div class="t"><div class="room"></div><div class="vals"></div>${open ? `<div class="warn">${open} Pfeil${open > 1 ? 'e' : ''} ohne Maß</div>` : ''}</div><span style="align-self:center;color:var(--mute);font-size:22px">›</span>`;
     c.querySelector('img').src = URL.createObjectURL(s.photo);
     c.querySelector('.room').textContent = `${i + 1}. ${s.room}`;
     c.querySelector('.vals').textContent = vals ? vals + ' cm' : '–';
-    c.querySelector('.t').onclick = () => openEditor(s);
-    c.querySelector('img').onclick = () => openEditor(s);
-    c.querySelector('[data-up]').onclick = () => moveShot(i, -1);
-    c.querySelector('[data-dn]').onclick = () => moveShot(i, 1);
+    c.onclick = () => openEditor(s);
     el.appendChild(c);
   });
 }
@@ -289,15 +285,43 @@ function loop() {
 }
 
 function buildChips() {
-  const el = $('#tplChips'); el.innerHTML = '';
+  const el = $('#tplTiles'); el.innerHTML = '';
   const items = ['KI erkennen', ...Object.keys(TEMPLATES)];
   items.forEach(k => {
     const b = document.createElement('button'); b.textContent = k === 'KI erkennen' ? '✨ KI erkennen' : k;
     b.classList.toggle('sel', S.shot.tpl === k);
-    b.onclick = () => k === 'KI erkennen' ? runDetect() : applyTemplate(k);
+    b.onclick = () => { closeArr(); k === 'KI erkennen' ? runDetect() : applyTemplate(k); };
     el.appendChild(b);
   });
 }
+const closeArr = () => $('#arrSheet').classList.remove('on');
+$('#arrowsBtn').onclick = () => { clearTimeout(finishing); buildChips(); $('#arrSheet').classList.add('on'); };
+$('#arrSheet').onclick = async e => {
+  if (e.target.id === 'arrSheet') return closeArr();
+  const act = e.target.closest('[data-act]')?.dataset.act; if (!act) return;
+  const a = activeArrow();
+  if (act === 'close') return closeArr();
+  if (act === 'add') { const n = newArrow(); S.shot.arrows.push(n); S.active = n.id; }
+  if (act === 'flip' && a) a.kind = a.kind === 'H' ? 'B' : 'H';
+  if (act === 'clear' && a) { a.cm = null; a.time = null; }
+  if (act === 'del' && a) { S.shot.arrows = S.shot.arrows.filter(x => x !== a); S.active = firstOpen(); }
+  if (act === 'room') { closeArr(); const r = await pickRoom(); if (r) { S.shot.room = r; S.room = r; $('#edTitle').textContent = r; } }
+  if (act === 'up' || act === 'down') {
+    const i = S.shots.findIndex(x => x.id === S.shot.id);
+    await moveShot(i, act === 'up' ? -1 : 1);
+    toast(`Foto ist jetzt Nr. ${S.shots.findIndex(x => x.id === S.shot.id) + 1}`);
+  }
+  if (act === 'delshot') {
+    closeArr();
+    if (!await confirmBox(`Dieses Foto (${S.shot.room}) mit allen Maßen löschen?`)) return;
+    await db.del('shots', S.shot.id);
+    S.shots = S.shots.filter(x => x.id !== S.shot.id);
+    for (let k = 0; k < S.shots.length; k++) { S.shots[k].order = k; await db.put('shots', S.shots[k]); }
+    renderShots(); show('proj'); return;
+  }
+  if (['add', 'flip', 'clear', 'del'].includes(act)) closeArr();
+  saveShot(); updateCur();
+};
 
 function setArrows(arrs, tpl) {
   // bereits gemessene Werte in gleicher Reihenfolge übernehmen
@@ -331,7 +355,7 @@ async function runDetect() {
     }
   } catch (e) {
     console.error(e);
-    toast('KI nicht verfügbar (' + (e.message || e) + ') – Vorlage gesetzt', 4000);
+    toast(navigator.onLine ? 'KI gerade nicht verfügbar – Vorlage gesetzt' : 'Offline und KI noch nicht geladen – Vorlage gesetzt', 3000);
     if (!S.shot.arrows.length) applyTemplate('Tür');
   } finally { busy.classList.remove('on'); }
 }
@@ -341,11 +365,11 @@ function activeArrow() { return S.shot.arrows.find(a => a.id === S.active); }
 function updateCur() {
   const a = activeArrow();
   const i = S.shot.arrows.indexOf(a);
-  $('#curLbl').textContent = a ? `${i + 1}/${S.shot.arrows.length} · ${a.el} – ${a.kind === 'H' ? 'Höhe' : 'Breite'}` : 'Kein Pfeil – „+ Pfeil“ oder Vorlage wählen';
+  $('#curLbl').textContent = a ? `${a.el} · ${a.kind === 'H' ? 'Höhe' : 'Breite'}   (${i + 1} von ${S.shot.arrows.length})` : 'Kein Pfeil – oben „Pfeile“ antippen';
   const v = $('#curVal');
   const num = a && (kb.on || a.cm != null);
   v.classList.toggle('hint', !num);
-  v.textContent = a ? (kb.on ? (kb.buf || '…') + ' cm' : a.cm != null ? a.cm + ' cm' : laser.state === 'verbunden' ? 'Jetzt am Laser messen' : 'Laser antippen oder ⌨ tippen') : '–';
+  v.textContent = a ? (kb.on ? (kb.buf || '…') + ' cm' : a.cm != null ? a.cm + ' cm' : laser.state === 'verbunden' ? 'Jetzt am Laser messen' : 'Laser verbinden (oben) oder tippen') : '–';
 }
 async function saveShot() { await db.put('shots', S.shot); }
 
@@ -383,21 +407,12 @@ function finishShot(auto) {
 $('#edDone').onclick = () => finishShot(false);
 $('#edBack').onclick = async () => { clearTimeout(finishing); await saveShot(); renderShots(); show('proj'); };
 $('#prevA').onclick = () => stepActive(-1);
-$('#nextA').onclick = () => stepActive(1);
 function stepActive(d) {
   clearTimeout(finishing);
   const arr = S.shot.arrows; if (!arr.length) return;
   const i = Math.max(0, arr.findIndex(a => a.id === S.active));
   S.active = arr[(i + d + arr.length) % arr.length].id; kb.buf = ''; updateCur();
 }
-$('#addA').onclick = () => { const a = newArrow(); S.shot.arrows.push(a); S.active = a.id; saveShot(); updateCur(); };
-$('#flipA').onclick = () => { const a = activeArrow(); if (!a) return; a.kind = a.kind === 'H' ? 'B' : 'H'; saveShot(); updateCur(); };
-$('#delA').onclick = () => {
-  const a = activeArrow(); if (!a) return;
-  if (a.cm != null) { a.cm = null; a.time = null; } // erst Wert löschen, beim zweiten Tippen den Pfeil
-  else S.shot.arrows = S.shot.arrows.filter(x => x !== a);
-  S.active = firstOpen(); saveShot(); updateCur();
-};
 
 // Ziffernblock
 const kb = { on: false, buf: '' };
@@ -416,11 +431,12 @@ const kb = { on: false, buf: '' };
     el.appendChild(b);
   });
 })();
-$('#kbBtn').onclick = () => { kb.on = !kb.on; kb.buf = ''; $('#keypad').classList.toggle('on', kb.on); setTimeout(fitCanvas, 30); updateCur(); };
+$('#kbBtn').onclick = () => { kb.on = !kb.on; kb.buf = ''; $('#keypad').classList.toggle('on', kb.on); $('#kbBtn').textContent = kb.on ? '✕ Tastatur' : '⌨ Tippen'; setTimeout(fitCanvas, 30); updateCur(); };
 
 // Pfeile ziehen: Endpunkt (Kreis) oder ganzer Pfeil; Tippen = aktiv
 let drag = null;
 cv.addEventListener('pointerdown', e => {
+  e.preventDefault();
   const r = cv.getBoundingClientRect();
   const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
   const rw = r.width, rh = r.height;
@@ -428,13 +444,13 @@ cv.addEventListener('pointerdown', e => {
   for (const a of S.shot.arrows) {
     for (const [k, px, py] of [['p1', a.x1, a.y1], ['p2', a.x2, a.y2]]) {
       const d = Math.hypot((px - x) * rw, (py - y) * rh);
-      if (d < 34 && d < bd) { bd = d; best = { a, k }; }
+      if (d < 48 && d < bd) { bd = d; best = { a, k }; }
     }
   }
   if (!best) {
     for (const a of S.shot.arrows) {
       const d = segDist(x * rw, y * rh, a.x1 * rw, a.y1 * rh, a.x2 * rw, a.y2 * rh);
-      if (d < 26 && d < bd) { bd = d; best = { a, k: 'all' }; }
+      if (d < 34 && d < bd) { bd = d; best = { a, k: 'all' }; }
     }
   }
   if (!best) return;
@@ -448,11 +464,37 @@ cv.addEventListener('pointermove', e => {
   const r = cv.getBoundingClientRect();
   const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
   const dx = x - drag.x, dy = y - drag.y, a = drag.a, o = drag.o, cl = v => Math.min(1, Math.max(0, v));
+  e.preventDefault();
   if (drag.k === 'p1') { a.x1 = cl(o.x1 + dx); a.y1 = cl(o.y1 + dy); }
   else if (drag.k === 'p2') { a.x2 = cl(o.x2 + dx); a.y2 = cl(o.y2 + dy); }
   else { a.x1 = cl(o.x1 + dx); a.y1 = cl(o.y1 + dy); a.x2 = cl(o.x2 + dx); a.y2 = cl(o.y2 + dy); }
+  // Lupe über dem Finger (nur beim Ziehen eines Endpunkts)
+  if (drag.k !== 'all') {
+    const px = drag.k === 'p1' ? a.x1 : a.x2, py = drag.k === 'p1' ? a.y1 : a.y2;
+    drawLoupe(px, py, r);
+  }
 });
-const endDrag = () => { if (drag) { drag = null; saveShot(); } };
+const endDrag = () => { if (drag) { drag = null; $('#loupe').style.display = 'none'; saveShot(); } };
+// kein Scrollen/Zoomen der Seite im Editor
+['touchstart', 'touchmove'].forEach(t => $('#stage').addEventListener(t, e => { if (e.touches.length < 2 || drag) e.preventDefault(); }, { passive: false }));
+
+function drawLoupe(px, py, r) {
+  const L = $('#loupe'), lc = L.getContext('2d'), Z = 3;
+  const sr = $('#stage').getBoundingClientRect();
+  const fx = r.left - sr.left + px * r.width, fy = r.top - sr.top + py * r.height;
+  // über dem Finger; wenn oben kein Platz, daneben
+  let lx = fx - 75, ly = fy - 190;
+  if (ly < 4) { ly = Math.max(4, fy - 75); lx = fx > sr.width / 2 ? fx - 230 : fx + 80; }
+  lx = Math.max(4, Math.min(sr.width - 154, lx));
+  L.style.left = lx + 'px'; L.style.top = ly + 'px'; L.style.display = 'block';
+  const W = L.width, H = L.height;
+  // Ausschnitt aus dem Arbeits-Canvas (enthält Foto + Pfeile)
+  const sx = px * cv.width, sy = py * cv.height, sw = (W / Z) * (cv.width / r.width) / 2;
+  lc.fillStyle = '#000'; lc.fillRect(0, 0, W, H);
+  lc.drawImage(cv, sx - sw, sy - sw, sw * 2, sw * 2, 0, 0, W, H);
+  lc.strokeStyle = '#ff2d2d'; lc.lineWidth = 3;
+  lc.beginPath(); lc.moveTo(W / 2, H / 2 - 30); lc.lineTo(W / 2, H / 2 + 30); lc.moveTo(W / 2 - 30, H / 2); lc.lineTo(W / 2 + 30, H / 2); lc.stroke();
+}
 cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
 function segDist(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1, dy = y2 - y1, l = dx * dx + dy * dy;
