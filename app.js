@@ -8,9 +8,9 @@ import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '2.6.0';
+const VERSION = '2.7.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Magnet: losgelassene Pfeilenden rasten an der nächsten Bildkante ein (⚙ abschaltbar)', 'Maß-Etiketten weichen sich aus; Etikett antippen = Lage wechseln (Mitte / Anfang / Ende)', '👁 im Foto blendet die Pfeile kurz aus; Option: Breiten-Pfeile gestrichelt', 'Neue Vorlagen „Tür + 2 Fenster“ und „Balkontür + Fenster“', 'Kamera: Gerät in ⚙ wählbar, Tipp ins Bild stellt Belichtung/Fokus (Android), Auslöser kurz gesperrt gegen Doppelfotos'];
+const NEWS = ['Zweiter gleicher Raum: aus „Kz“ wird automatisch Kz1, der neue heißt Kz2 (wie in den alten Maßblättern)', 'Bekannte Straße eingeben → Hausnummern der bisherigen Projekte als Vorschlag', 'Ampel im Projekt und in der Liste: grün vollständig, gelb Rh/Eg/Kunde/Hausnummer fehlt, rot Pfeile ohne Maß', 'Papierkorb: gelöschte Projekte bleiben 30 Tage wiederherstellbar; Aufräumen in ⚙ archiviert alte exportierte Projekte', '📍-Vorschläge mit Entfernung; 📋 holt eine kopierte Adresse aus der Zwischenablage; Kunden zusammenführen in ⚙ Kunden'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -165,19 +165,28 @@ document.addEventListener('click', async e => {
 });
 
 // ---------------- Projekte ----------------
-let homeSort = 'neu', showArch = false, selMode = false;
+// Projekte ohne Papierkorb (gelöschte bleiben 30 Tage als p.deleted liegen)
+const TRASH_DAYS = 30;
+async function liveProjects() { return (await db.all('projects')).filter(p => !p.deleted); }
+async function purgeTrash() {
+  const lim = Date.now() - TRASH_DAYS * 864e5; let n = 0;
+  for (const p of await db.all('projects')) if (p.deleted && p.deleted < lim) { for (const sh of await db.shotsOf(p.id)) await db.del('shots', sh.id); await db.del('projects', p.id); n++; }
+  if (n) log('Papierkorb geleert', n);
+}
+let homeSort = 'neu', showArch = false, showTrash = false, selMode = false;
 const selIds = new Set();
 try { homeSort = localStorage.getItem('mb_sort') || 'neu'; } catch (e) { }
 $('#projSearch').addEventListener('input', () => renderHome());
 $$('#sortChips button[data-sort]').forEach(b => b.onclick = () => { homeSort = b.dataset.sort; try { localStorage.setItem('mb_sort', homeSort); } catch (e) { } renderHome(); });
-$('#archChip').onclick = () => { showArch = !showArch; renderHome(); };
+$('#archChip').onclick = () => { showArch = !showArch; showTrash = false; renderHome(); };
+$('#trashChip').onclick = () => { showTrash = !showTrash; showArch = false; renderHome(); };
 function setSelMode(on) { selMode = on; selIds.clear(); $('.plist').classList.toggle('sel', on); $('#selChip').classList.toggle('sel', on); updateSelBar(); renderHome(); }
 $('#selChip').onclick = () => setSelMode(!selMode);
 $('#selCancel').onclick = () => setSelMode(false);
 function updateSelBar() { $('#selPdf').textContent = `PDF aus ${selIds.size} Projekt${selIds.size === 1 ? '' : 'en'}`; $('#selPdf').disabled = !selIds.size; }
 $('#selPdf').onclick = async () => {
   if (!selIds.size) return;
-  const all = await db.all('projects');
+  const all = await liveProjects();
   const sel = all.filter(p => selIds.has(p.id)).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }));
   const empty = [];
   for (const p of sel) if (!(await db.shotsOf(p.id)).length) empty.push(p.name || 'Ohne Namen');
@@ -195,16 +204,21 @@ $('#selPdf').onclick = async () => {
 let allShotCounts = null;
 async function renderHome() {
   $$('#sortChips button[data-sort]').forEach(b => b.classList.toggle('sel', b.dataset.sort === homeSort));
-  $('#archChip').classList.toggle('sel', showArch);
+  $('#archChip').classList.toggle('sel', showArch); $('#trashChip').classList.toggle('sel', showTrash);
   let list = await db.all('projects');
   const q = normStreet($('#projSearch').value);
+  const trash = list.filter(p => p.deleted); list = list.filter(p => !p.deleted);
+  const tc = $('#trashChip'); tc.style.display = trash.length ? '' : 'none'; tc.textContent = `🗑 Papierkorb (${trash.length})`;
   const archN = list.filter(p => p.archived).length;
   $('#archChip').textContent = `📦 Archiv${archN ? ' (' + archN + ')' : ''}`;
-  if (q) list = list.filter(p => normStreet([p.name, p.firma, p.str].join(' ')).includes(q));
-  const inArch = list.filter(p => p.archived).length;
-  list = list.filter(p => !!p.archived === showArch);
-  // Fotoanzahl in einem Durchgang (statt einer Abfrage je Projekt)
-  const counts = new Map(); for (const sh of await db.all('shots')) counts.set(sh.projectId, (counts.get(sh.projectId) || 0) + 1);
+  if (showTrash) list = trash; else {
+    if (q) list = list.filter(p => normStreet([p.name, p.firma, p.str].join(' ')).includes(q));
+    list = list.filter(p => !!p.archived === showArch);
+  }
+  const inArch = q ? (await liveProjects()).filter(p => p.archived && normStreet([p.name, p.firma, p.str].join(' ')).includes(q)).length : 0;
+  // Fotoanzahl und Ampel in einem Durchgang (statt einer Abfrage je Projekt)
+  const counts = new Map(), byProj = new Map();
+  for (const sh of await db.all('shots')) { counts.set(sh.projectId, (counts.get(sh.projectId) || 0) + 1); if (!byProj.has(sh.projectId)) byProj.set(sh.projectId, []); byProj.get(sh.projectId).push(sh); }
   const dateOf = p => p.datum || todayISO(new Date(p.created || 0));
   const cmp = { neu: (a, b) => (b.updated || 0) - (a.updated || 0), datum: (a, b) => dateOf(b).localeCompare(dateOf(a)),
     strasse: (a, b) => (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }), kunde: (a, b) => (a.firma || '\uffff').localeCompare(b.firma || '\uffff', 'de') || (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }) }; // ohne Kunde ganz unten
@@ -212,7 +226,7 @@ async function renderHome() {
   list.sort((a, b) => ((b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) || by(a, b)); // angeheftete zuerst
   const el = $('#projList');
   if (!list.length) {
-    el.innerHTML = showArch ? '<div class="empty">Archiv ist leer.</div>' : q ? `<div class="empty">Nichts gefunden.${inArch ? `<br><small>${inArch} Treffer im Archiv – oben „📦 Archiv“ antippen</small>` : ''}</div>` : '<div class="empty">Noch kein Projekt.<br>Unten auf „+ Neues Projekt“ tippen.</div>';
+    el.innerHTML = showTrash ? '<div class="empty">Papierkorb ist leer.</div>' : showArch ? '<div class="empty">Archiv ist leer.</div>' : q ? `<div class="empty">Nichts gefunden.${inArch ? `<br><small>${inArch} Treffer im Archiv – oben „📦 Archiv“ antippen</small>` : ''}</div>` : '<div class="empty">Noch kein Projekt.<br>Unten auf „+ Neues Projekt“ tippen.</div>';
     return;
   }
   el.innerHTML = '';
@@ -221,13 +235,17 @@ async function renderHome() {
     const c = document.createElement('div'); c.className = 'card' + (selIds.has(p.id) ? ' checked' : '');
     c.innerHTML = `<span class="cb">✓</span><div class="t"><b></b><small></small></div><span>›</span>`;
     c.querySelector('b').textContent = (p.pinned ? '📌 ' : '') + (p.locked ? '🔒 ' : '') + (p.name || 'Ohne Namen');
-    c.querySelector('small').textContent = `${statusIcons(p)}${p.firma || ''} · ${n} Foto${n === 1 ? '' : 's'} · ${new Date(p.datum || p.created).toLocaleDateString('de-AT')}${p.archived ? ' · 📦 archiviert' : ''}`;
+    const amp = n ? ampel(p, byProj.get(p.id) || []) : null;
+    const days = p.deleted ? Math.max(0, TRASH_DAYS - Math.floor((Date.now() - p.deleted) / 864e5)) : 0;
+    c.querySelector('small').textContent = `${statusIcons(p)}${p.firma || ''} · ${n} Foto${n === 1 ? '' : 's'} · ${new Date(p.datum || p.created).toLocaleDateString('de-AT')}${p.archived ? ' · 📦 archiviert' : ''}${p.deleted ? ` · 🗑 noch ${days} Tage` : ''}`;
+    if (amp) { const d = document.createElement('i'); d.className = 'amp ' + amp.lvl; d.title = amp.text; c.querySelector('small').prepend(d); }
     c.onclick = () => {
       if (c._lp) { c._lp = false; return; } // Klick nach langem Drücken ignorieren
+      if (p.deleted) { trashMenu(p); return; }
       if (selMode) { if (selIds.has(p.id)) selIds.delete(p.id); else selIds.add(p.id); c.classList.toggle('checked', selIds.has(p.id)); updateSelBar(); return; }
       openProject(p.id);
     };
-    longPress(c, () => { if (!selMode) projMenu(p); });
+    longPress(c, () => { if (!selMode) (p.deleted ? trashMenu(p) : projMenu(p)); });
     el.appendChild(c);
   }
 }
@@ -269,19 +287,51 @@ async function projMenu(p) {
   bg.onclick = e => { if (e.target === bg) bg.remove(); };
   document.body.appendChild(bg);
 }
+// Ampel (Idee 44): grün = alles da, gelb = etwas fehlt (Rh, Eg, Kunde, Hausnummer, ungewöhnlicher Wert), rot = Pfeile ohne Maß
+function issuesFor(p, shots) {
+  const out = [];
+  const has = r => shots.some(s => s.room === r && s.arrows.some(a => a.cm != null));
+  if (!has('Rh') && !shots.some(s => s.arrows.some(a => a.el === 'Raumhöhe' && a.cm != null))) out.push('Raumhöhe (Rh) fehlt');
+  if (!has('Eg')) out.push('Eingangstür (Eg) fehlt');
+  if (!(p.firma || '').trim()) out.push('Kein Kunde gewählt (Deckblatt ohne Firma)');
+  if ((p.str || '').trim() && !houseNo(p.str)) out.push('Keine Hausnummer im Projektnamen');
+  for (const sh of shots) for (const x of shotIssues(sh)) out.push(`${sh.room}: ${x.m}`);
+  return out;
+}
+function ampel(p, shots) {
+  const iss = issuesFor(p, shots);
+  if (!iss.length) return { lvl: 'ok', text: 'Vollständig' };
+  const red = iss.some(x => /ohne Maß/.test(x));
+  return { lvl: red ? 'fail' : 'warn', text: iss.join(' · ') };
+}
+function ampelUi() {
+  const el = $('#ampel'); if (!S.project || !S.shots.length) { el.style.display = 'none'; return; }
+  const a = ampel(S.project, S.shots);
+  el.style.display = 'flex'; el.className = 'ampel ' + a.lvl; el.querySelector('span').textContent = a.lvl === 'ok' ? 'Vollständig – Rh, Eg, Kunde, Hausnummer und alle Maße da' : a.text;
+}
 async function deleteProject(p) {
-  if (!await confirmBox(`Projekt „${p.name || 'Ohne Namen'}“ mit allen Fotos löschen?`)) return false;
-  const shots = await db.shotsOf(p.id);
-  for (const s of shots) await db.del('shots', s.id);
-  await db.del('projects', p.id);
-  log('Projekt gelöscht', p.name);
+  if (!await confirmBox(`Projekt „${p.name || 'Ohne Namen'}“ in den Papierkorb legen?`, 'In Papierkorb', 'Abbrechen', 'danger', `Bleibt ${TRASH_DAYS} Tage wiederherstellbar (Projektliste → 🗑 Papierkorb), danach wird es mit allen Fotos endgültig gelöscht.`)) return false;
+  p.deleted = Date.now(); await db.put('projects', p);
+  log('Projekt in Papierkorb', p.name);
   if (S.project && S.project.id === p.id) S.project = null;
   renderHome(); show('home');
-  undoToast(`Projekt „${p.name || 'Ohne Namen'}“ gelöscht`, async () => {
-    await db.put('projects', p); for (const s of shots) await db.put('shots', s);
-    renderHome(); toast('Projekt wiederhergestellt');
-  });
+  undoToast(`Projekt „${p.name || 'Ohne Namen'}“ im Papierkorb`, async () => { delete p.deleted; await db.put('projects', p); renderHome(); toast('Projekt wiederhergestellt'); });
   return true;
+}
+async function trashMenu(p) {
+  const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+  bg.innerHTML = `<div class="sheet"><h2></h2><p class="mute"></p><div class="menu"><button class="pri" data-restore>↩ Wiederherstellen</button><button class="danger" data-purge>Endgültig löschen</button></div><button class="ghost" style="width:100%;margin-top:10px" data-close>Abbrechen</button></div>`;
+  bg.querySelector('h2').textContent = p.name || 'Ohne Namen';
+  bg.querySelector('p').textContent = `Gelöscht am ${new Date(p.deleted).toLocaleDateString('de-AT')} – wird in ${Math.max(0, TRASH_DAYS - Math.floor((Date.now() - p.deleted) / 864e5))} Tagen endgültig gelöscht.`;
+  bg.querySelector('[data-restore]').onclick = async () => { bg.remove(); delete p.deleted; await db.put('projects', p); showTrash = false; renderHome(); toast('Wiederhergestellt'); };
+  bg.querySelector('[data-purge]').onclick = async () => {
+    bg.remove();
+    if (!await confirmBox(`„${p.name || 'Ohne Namen'}“ jetzt endgültig löschen?`, 'Endgültig löschen')) return;
+    for (const sh of await db.shotsOf(p.id)) await db.del('shots', sh.id); await db.del('projects', p.id); renderHome(); toast('Endgültig gelöscht');
+  };
+  bg.querySelector('[data-close]').onclick = () => bg.remove();
+  bg.onclick = e => { if (e.target === bg) bg.remove(); };
+  document.body.appendChild(bg);
 }
 $('#btnPin').onclick = async () => { const p = S.project; p.pinned = !p.pinned; await db.put('projects', p); pinUi(); toast(p.pinned ? 'Angeheftet – bleibt oben in der Liste' : 'Nicht mehr angeheftet'); };
 function pinUi() { $('#btnPin').textContent = S.project && S.project.pinned ? '📌 Angeheftet' : '📌 Anheften'; }
@@ -296,16 +346,19 @@ $('#btnArchive').onclick = async () => {
 function archiveUi() { $('#btnArchive').textContent = S.project && S.project.archived ? 'Aus Archiv holen' : 'Archivieren'; }
 
 $('#btnNewProj').onclick = async () => {
-  const all = (await db.all('projects')).sort((a, b) => (b.updated || 0) - (a.updated || 0));
+  // Android: Zwischenablage gleich lesen (muss im Tipp passieren); am iPhone würde jedes Mal ein Hinweis erscheinen → dort nur der 📋-Knopf
+  const clipP = (!isIOS && clipOk) ? navigator.clipboard.readText().catch(() => '') : Promise.resolve('');
+  const all = (await liveProjects()).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   const last = all[0] || {};
   const p = { id: uid(), name: '', kundeId: last.kundeId || null, firma: last.firma || '', kontakt: '', strasse: '', ort: last.ort || '', land: last.land || '',
     telefon: '', datum: todayISO(), kundenLogo: last.kundenLogo || null, created: Date.now(), updated: Date.now() };
   // zuletzt verwendeter Kunde mit allen Daten
   const custs = (await db.setting('customers')) || [];
   const lastC = (last.kundeId && custs.find(x => x.id === last.kundeId)) || (!all.length ? custs[custs.length - 1] : null); // erstes Projekt: zuletzt angelegter Kunde
-  if (lastC) applyCustomerToProject(p, lastC); else p.kundeId = null;
+  if (lastC) { applyCustomerToProject(p, lastC); p.kundeId = lastC.id; } else p.kundeId = null;
   await db.put('projects', p);
   await openProject(p.id, true);
+  clipP.then(async t => { if (!t || !S.project || S.project.id !== p.id || S.project.str) return; const a = await clipAddress(t); if (a) offerClip(a); });
 };
 
 async function openProject(id, isNew = false) {
@@ -329,7 +382,7 @@ async function openProject(id, isNew = false) {
   $('#projDetails').open = isNew || !p.name || wide();
   $('#projTitle').textContent = p.name || 'Neues Projekt';
   renderShots();
-  lockUi(); navUi(); archiveUi(); pinUi();
+  lockUi(); navUi(); archiveUi(); pinUi(); ampelUi();
   show('proj');
   if (isNew) setTimeout(() => $('#pStr').focus(), 200);
 }
@@ -351,6 +404,7 @@ Object.entries(fieldMap).forEach(([id, k]) => {
     if (k === 'str') streetInput();
     if (['plz', 'ortName', 'str'].includes(k)) rememberStreetSoon();
     projectFieldToCustomer(k);
+    if (['str', 'firma'].includes(k)) ampelUi();
     clearTimeout(S._saveT); S._saveT = setTimeout(() => db.put('projects', S.project), 300);
   });
 });
@@ -372,6 +426,7 @@ let remT = 0;
 function rememberStreetSoon() {
   clearTimeout(remT);
   remT = setTimeout(async () => {
+    if (!S.project) return; // Projekt inzwischen geschlossen/gelöscht
     const st = streetOnly(S.project.str), ort = [S.project.plz, S.project.ortName].map(x => (x || '').trim()).filter(Boolean).join(' ');
     if (st.length < 3 || !/^\d{4}\s+\S/.test(ort)) return;
     const list = await knownStreets(); const k = normStreet(st);
@@ -388,6 +443,7 @@ async function streetInput() {
   const local = (await knownStreets()).filter(x => normStreet(x.street).includes(k)).sort((a, b) => (b.used || 0) - (a.used || 0)).slice(0, 5);
   autoOrt(local, k);
   showSug(local.map(x => ({ ...x, src: 'bekannt' })), []);
+  houseNoChips(st);
   clearTimeout(sugT);
   if (!navigator.onLine || local.length >= 3) return;
   const my = ++sugReq;
@@ -427,10 +483,43 @@ function autoOrt(list, k) {
   return true;
 }
 ['pPlz', 'pOrtName'].forEach(id => $('#' + id).addEventListener('input', () => { S.autoOrt = false; }));
+// bekannte Straße ohne Hausnummer getippt → Hausnummern der bisherigen Projekte anbieten (Idee 40)
+async function houseNoChips(st) {
+  const box = $('#strSug'); const old = box.querySelector('.nrs'); if (old) old.remove();
+  const k = normStreet(st); if (k.length < 3 || houseNo($('#pStr').value)) return;
+  const my = ++houseNoChips.t; const seen = new Map();
+  const projs = await liveProjects(); if (my !== houseNoChips.t) return;
+  for (const p of projs) {
+    if (normStreet(streetOnly(p.str)) !== k) continue;
+    const no = houseNo(p.str); if (!no) continue;
+    const key = no.replace(/\s+/g, '');
+    if (!seen.has(key) || (p.updated || 0) > seen.get(key).updated) seen.set(key, { no, street: streetOnly(p.str), plz: p.plz || '', ort: p.ortName || '', updated: p.updated || 0 });
+  }
+  if (!seen.size) return;
+  const old2 = box.querySelector('.nrs'); if (old2) old2.remove();
+  const row = document.createElement('div'); row.className = 'nrs';
+  const lbl = document.createElement('span'); lbl.textContent = 'Hausnr.:'; row.appendChild(lbl);
+  const items = [...seen.values()].sort((a, b) => a.no.localeCompare(b.no, 'de', { numeric: true })).slice(0, 10);
+  for (const it of items) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = it.no;
+    let done = false;
+    const pick = e => {
+      if (e) e.preventDefault(); if (done) return; done = true;
+      const el = $('#pStr'); el.value = it.street + ' ' + it.no + ', '; S.project.str = it.street + ' ' + it.no; updateNamePrev();
+      if (it.plz || it.ort) setWOrt([it.plz, it.ort].filter(Boolean).join(' '), false); else db.put('projects', S.project);
+      box.classList.remove('on'); el.focus(); el.setSelectionRange(el.value.length, el.value.length);
+      toast(`${it.street} ${it.no} – Geschoß/WG ergänzen`, 2000); ampelUi();
+    };
+    b.addEventListener('pointerdown', pick); b.addEventListener('mousedown', e => e.preventDefault()); b.addEventListener('click', pick);
+    row.appendChild(b);
+  }
+  box.prepend(row); box.classList.add('on');
+}
+houseNoChips.t = 0;
 function showSug(local, web) {
-  const box = $('#strSug'); box.innerHTML = '';
+  const box = $('#strSug'); const nrs = box.querySelector('.nrs'); box.innerHTML = ''; if (nrs) box.appendChild(nrs);
   const all = [...local, ...web];
-  if (!all.length) { box.classList.remove('on'); return; }
+  if (!all.length) { if (!nrs) box.classList.remove('on'); return; }
   for (const x of all) {
     const b = document.createElement('button');
     b.innerHTML = '<span class="src"></span><b></b><small></small>';
@@ -449,6 +538,7 @@ function showSug(local, web) {
       $('#pStr').focus();
       const el = $('#pStr'); el.setSelectionRange(el.value.length, el.value.length);
       toast(`Übernommen: ${x.street.replace(/ß/g, 'ss')}, ${x.ort}`);
+      if (!no) setTimeout(() => houseNoChips(x.street), 50);
     };
     b.addEventListener('pointerdown', choose);
     b.addEventListener('mousedown', e => e.preventDefault());
@@ -469,7 +559,7 @@ function setWOrt(ort, auto) {
 // Vorschläge zuklappen, wenn das Feld den Fokus verliert – außer die Standort-Vorschläge (📍) wurden gerade erst eingeblendet
 let sugShownAt = 0;
 $('#pStr').addEventListener('blur', () => { const blurAt = Date.now(); setTimeout(() => { if (sugShownAt < blurAt) $('#strSug').classList.remove('on'); }, 400); });
-document.addEventListener('pointerdown', e => { if (!e.target.closest('#strSug, #pStr, #gpsBtn')) $('#strSug').classList.remove('on'); }, true);
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#strSug, #pStr, #gpsBtn, #clipBtn')) $('#strSug').classList.remove('on'); }, true);
 
 // ---------------- Adresse per Standort (draußen und drinnen; drinnen hilft WLAN-Ortung) ----------------
 $('#gpsBtn').onclick = () => {
@@ -482,21 +572,24 @@ $('#gpsBtn').onclick = () => {
       const r = await fetch(`https://photon.komoot.io/reverse?lat=${la}&lon=${lo}&lang=de&limit=8&radius=0.15`);
       const j = await r.json();
       const seen = new Set(), list = [];
+      const distM = (lat2, lon2) => { const R = 6371000, dLa = (lat2 - la) * Math.PI / 180, dLo = (lon2 - lo) * Math.PI / 180; const a2 = Math.sin(dLa / 2) ** 2 + Math.cos(la * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(a2)); };
       for (const f of j.features || []) {
         const pr = f.properties || {}; const st = pr.street || (pr.osm_key === 'highway' ? pr.name : '');
         if (!st || !pr.postcode) continue;
         const line = (st + (pr.housenumber ? ' ' + pr.housenumber : '')).replace(/ß/g, 'ss');
         const ort = [pr.postcode, pr.city || pr.town || pr.village || pr.locality || pr.district].filter(Boolean).join(' ');
         if (seen.has(line + ort)) continue; seen.add(line + ort);
-        list.push({ line, ort });
+        const c = f.geometry && f.geometry.coordinates;
+        list.push({ line, ort, dist: c && c.length >= 2 ? Math.round(distM(c[1], c[0])) : null });
       }
+      list.sort((a, b) => (a.dist ?? 1e9) - (b.dist ?? 1e9));
       if (!list.length) { toast('Keine Adresse gefunden – bitte eintippen', 3500); return; }
       toast(`Standort ± ${Math.round(acc)} m${acc > 60 ? ' (ungenau, bitte prüfen)' : ''}`, 3000);
       const box = $('#strSug'); box.innerHTML = '';
       for (const x of list.slice(0, 6)) {
         const b = document.createElement('button');
         b.innerHTML = '<span class="src">📍 hier</span><b></b><small></small>';
-        b.querySelector('b').textContent = x.line; b.querySelector('small').textContent = x.ort;
+        b.querySelector('b').textContent = x.line; b.querySelector('small').textContent = x.ort + (x.dist != null ? ` · ${x.dist} m` : '');
         let done = false;
         const pick = e => {
           if (e) e.preventDefault(); if (done) return; done = true;
@@ -514,6 +607,37 @@ $('#gpsBtn').onclick = () => {
   }, err => toast(err.code === 1 ? 'Standort nicht erlaubt – in den Handy-Einstellungen freigeben' : 'Kein Standort gefunden', 4000),
   { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
 };
+// Adresse aus der Zwischenablage (Idee 63): 📋-Knopf; am Android zusätzlich beim Anlegen eines Projekts automatisch angeboten
+const clipOk = !!(navigator.clipboard && navigator.clipboard.readText);
+async function clipAddress(text) {
+  const stop = ((await db.setting('customers')) || []).flatMap(c => (c.name || '').split(/\s+/)).filter(Boolean);
+  const a = parseAddress(text, stop);
+  return a && a.str ? a : null;
+}
+function applyClipAddress(a) {
+  const el = $('#pStr'); el.value = a.str + (a.str.includes(',') ? '' : ', '); S.project.str = a.str; updateNamePrev();
+  if (a.plz || a.ort) setWOrt([a.plz, a.ort].filter(Boolean).join(' '), false); else db.put('projects', S.project);
+  $('#strSug').classList.remove('on'); rememberStreetSoon(); ampelUi();
+  el.focus(); el.setSelectionRange(el.value.length, el.value.length);
+  toast('Adresse eingefügt – Geschoß/WG ergänzen', 2500);
+}
+$('#clipBtn').style.display = clipOk ? '' : 'none';
+$('#clipBtn').onclick = async () => {
+  if (isLocked()) return;
+  let t = '';
+  try { t = await navigator.clipboard.readText(); } catch (e) { toast('Zwischenablage nicht erlaubt – bitte in den Handy-Einstellungen freigeben', 3500); return; }
+  const a = await clipAddress(t);
+  if (!a) { toast('Keine Adresse in der Zwischenablage gefunden', 3000); return; }
+  applyClipAddress(a);
+};
+function offerClip(a) { // Vorschlag im Straßen-Feld, kein automatisches Einfügen
+  const box = $('#strSug'); box.innerHTML = '';
+  const b = document.createElement('button'); b.innerHTML = '<span class="src">📋 Zwischenablage</span><b></b><small></small>';
+  b.querySelector('b').textContent = a.str; b.querySelector('small').textContent = [a.plz, a.ort].filter(Boolean).join(' ') || 'einfügen?';
+  let done = false; const pick = e => { if (e) e.preventDefault(); if (done) return; done = true; applyClipAddress(a); };
+  b.addEventListener('pointerdown', pick); b.addEventListener('mousedown', e => e.preventDefault()); b.addEventListener('click', pick);
+  box.appendChild(b); box.classList.add('on'); sugShownAt = Date.now();
+}
 function navUi() {
   const p = S.project, a = $('#navBtn');
   const q = [p.str && streetOnly(p.str) + (houseNo(p.str) ? ' ' + houseNo(p.str) : ''), [p.plz, p.ortName].filter(Boolean).join(' '), 'Österreich'].filter(Boolean).join(', ');
@@ -604,7 +728,7 @@ async function selectCustomer(c) {
   CF.forEach(([pk, , pid]) => { $('#' + pid).value = p[pk] || ''; });
   if (c) toast(`Kunde ${c.name} übernommen`);
   p.updated = Date.now(); await db.put('projects', p);
-  renderCustChips();
+  renderCustChips(); ampelUi();
 }
 function editCustomer(c) {
   return new Promise(res => {
@@ -638,6 +762,27 @@ function editCustomer(c) {
       if (!await confirmBox(`Kunde „${c.name}“ löschen? (Bestehende Projekte behalten ihre Angaben.)`)) return;
       await db.setting('customers', ((await db.setting('customers')) || []).filter(x => x.id !== c.id));
       close(null);
+    };
+    // zusammenführen: Projekte dieses Kunden wandern zu einem anderen, dieser wird gelöscht (Idee 49)
+    const mb = $('#cMerge'); mb.style.display = c ? '' : 'none';
+    mb.onclick = async () => {
+      const others = ((await db.setting('customers')) || []).filter(x => x.id !== c.id);
+      if (!others.length) { toast('Kein zweiter Kunde vorhanden'); return; }
+      const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+      bg.innerHTML = `<div class="sheet"><h2>„${c.name}“ zusammenführen mit …</h2><p class="mute">Alle Projekte von „${c.name}“ bekommen den gewählten Kunden; „${c.name}“ wird danach gelöscht.</p><div class="menu"></div><button class="ghost" style="width:100%;margin-top:10px" data-close>Abbrechen</button></div>`;
+      const m = bg.querySelector('.menu');
+      for (const o of others) { const b = document.createElement('button'); b.className = 'ghost'; b.textContent = o.name + (o.ort ? ' · ' + o.ort : ''); b.onclick = async () => {
+        bg.remove();
+        if (!await confirmBox(`„${c.name}“ in „${o.name}“ aufgehen lassen?`, 'Zusammenführen', 'Abbrechen', 'pri')) return;
+        let n = 0;
+        for (const p of await db.all('projects')) if (p.kundeId === c.id || (!p.kundeId && (p.firma || '').trim() === (c.name || '').trim())) { p.kundeId = o.id; applyCustomerToProject(p, o); await db.put('projects', p); n++; if (S.project && S.project.id === p.id) { Object.assign(S.project, p); CF.forEach(([pk, , pid]) => { $('#' + pid).value = p[pk] || ''; }); ampelUi(); } }
+        await db.setting('customers', ((await db.setting('customers')) || []).filter(x => x.id !== c.id));
+        log('Kunden zusammengeführt', c.name, '→', o.name, n);
+        toast(`${n} Projekt${n === 1 ? '' : 'e'} zu „${o.name}“ übernommen, „${c.name}“ gelöscht`, 3500);
+        close(o);
+      }; m.appendChild(b); }
+      bg.querySelector('[data-close]').onclick = () => bg.remove();
+      document.body.appendChild(bg);
     };
     document.body.appendChild(sh); // ans Ende → liegt über den Einstellungen
     sh.classList.add('on');
@@ -690,6 +835,7 @@ function confirmBox(msg, yesLabel = 'Löschen', noLabel = 'Abbrechen', yesClass 
 }
 
 function renderShots() {
+  ampelUi();
   const el = $('#shotList'); el.innerHTML = '';
   if (!S.shots.length) { el.innerHTML = '<div class="empty">Noch keine Fotos.<br>Unten auf „📷 Foto“ tippen: Raum wählen, fotografieren, messen.</div>'; return; }
   S.shots.forEach((s, i) => {
@@ -770,16 +916,19 @@ function pickRoom() {
 
 // ---------------- Kamera ----------------
 // Raum schon im Projekt? → fragen: selber Raum oder neuer (Kz → Kz2, Kz3 …)
-async function resolveRoom(r) {
+async function resolveRoom(r, except = null) {
   if (!r || r === 'Rh' || r === 'Eg') return r;
   const base = r.replace(/\d+$/, '');
   const re = new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d*)$');
-  const same = S.shots.filter(s => re.test(s.room));
+  const same = S.shots.filter(s => s !== except && re.test(s.room));
   if (!same.length) return r;
   const last = same[same.length - 1].room;
   const yes = await confirmBox(`Handelt es sich um denselben Raum „${last}“?`, 'Ja, derselbe', 'Nein, neuer Raum', 'pri');
   if (yes) return last;
+  // neuer Raum gleicher Art: wie in den alten Maßblättern – aus „Kz“ wird Kz1, der neue heißt Kz2 (Kz3 …)
   const nums = same.map(s => parseInt(s.room.match(re)[1] || '1', 10));
+  const plain = same.filter(s => s.room === base);
+  if (plain.length) { for (const s of plain) { s.room = base + '1'; await db.put('shots', s); } renderShots(); toast(`Bisheriger Raum heißt jetzt ${base}1`, 2500); }
   return base + (Math.max(...nums) + 1);
 }
 $('#btnShoot').onclick = async () => {
@@ -1042,7 +1191,7 @@ $('#arrSheet').onclick = async e => {
   if (act === 'flip' && a) a.kind = a.kind === 'H' ? 'B' : 'H';
   if (act === 'clear' && a) { a.cm = null; a.time = null; }
   if (act === 'del' && a) { S.shot.arrows = S.shot.arrows.filter(x => x !== a); S.active = firstOpen(); }
-  if (act === 'room') { closeArr(); const r = await pickRoom(); if (r) { S.shot.room = r; S.room = r; $('#edTitle').textContent = r; } }
+  if (act === 'room') { closeArr(); const r = await resolveRoom(await pickRoom(), S.shot); if (r) { S.shot.room = r; S.room = r; $('#edTitle').textContent = r; } }
   if (act === 'up' || act === 'down') {
     const i = S.shots.findIndex(x => x.id === S.shot.id);
     await moveShot(i, act === 'up' ? -1 : 1);
@@ -1549,14 +1698,7 @@ function fileBase(p) {
 }
 function openCount() { return S.shots.reduce((n, s) => n + s.arrows.filter(a => a.cm == null).length, 0); }
 // Projekt-Check vor PDF/Dropbox/Mail: Raumhöhe, Eingangstür, unplausible oder fehlende Maße
-function projectIssues() {
-  const out = [];
-  const has = r => S.shots.some(s => s.room === r && s.arrows.some(a => a.cm != null));
-  if (!has('Rh') && !S.shots.some(s => s.arrows.some(a => a.el === 'Raumhöhe' && a.cm != null))) out.push('Raumhöhe (Rh) fehlt');
-  if (!has('Eg')) out.push('Eingangstür (Eg) fehlt');
-  for (const sh of S.shots) for (const x of shotIssues(sh)) out.push(`${sh.room}: ${x.m}`);
-  return out;
-}
+function projectIssues() { return issuesFor(S.project, S.shots); }
 async function preExport(what) {
   if (!S.shots.length) { toast('Noch keine Fotos'); return false; }
   const iss = projectIssues();
@@ -1815,6 +1957,16 @@ $('#btnSettings').onclick = async () => {
 $('#sGlove').onchange = () => { opt.glove = $('#sGlove').checked; saveOpt(); };
 $('#sLeft').onchange = () => { opt.left = $('#sLeft').checked; saveOpt(); };
 $('#sMagnet').onchange = () => { opt.magnet = $('#sMagnet').checked; saveOpt(); };
+// Aufräumen (Idee 46): exportierte Projekte, die älter als n Monate sind, ins Archiv
+$('#sCleanup').onclick = async () => {
+  const months = Math.max(1, parseInt($('#sCleanMonths').value, 10) || 3);
+  const lim = Date.now() - months * 30 * 864e5;
+  const cand = (await liveProjects()).filter(p => !p.archived && (p.locked || (p.exports && p.exports.length)) && Math.max(p.updated || 0, p.locked ? p.locked.at : 0) < lim);
+  if (!cand.length) { toast(`Nichts zu archivieren (keine exportierten Projekte älter als ${months} Monate)`, 3500); return; }
+  if (!await confirmBox(`${cand.length} Projekt${cand.length > 1 ? 'e' : ''} ins Archiv verschieben?`, 'Archivieren', 'Abbrechen', 'pri', cand.slice(0, 8).map(p => '• ' + (p.name || 'Ohne Namen')).join('\n') + (cand.length > 8 ? `\n… und ${cand.length - 8} weitere` : ''))) return;
+  for (const p of cand) { p.archived = true; await db.put('projects', p); }
+  log('Sammel-Archiv', cand.length); renderHome(); toast(`${cand.length} Projekt${cand.length > 1 ? 'e' : ''} archiviert – über „📦 Archiv“ weiterhin erreichbar`, 3500);
+};
 $('#sDash').onchange = () => { opt.dash = $('#sDash').checked; saveOpt(); };
 $('#sCam').onchange = () => { opt.cam = $('#sCam').value; saveOpt(); };
 // Kameraliste (Namen gibt es erst, wenn die Kamera einmal erlaubt wurde)
@@ -1969,7 +2121,7 @@ $('#btnCal').onclick = async () => {
 async function createFromEvent(ev, addr) {
   $('#calSheet').classList.remove('on');
   const d = new Date(ev.start);
-  const all = await db.all('projects');
+  const all = await liveProjects();
   const dup = all.find(p => p.gcalId === ev.id);
   if (dup) { toast('Für diesen Termin gibt es schon ein Projekt – wird geöffnet'); return openProject(dup.id); }
   const last = all.sort((a, b) => (b.updated || 0) - (a.updated || 0))[0] || {};
@@ -1992,7 +2144,7 @@ async function createFromEvent(ev, addr) {
 $('#sStats').onclick = async () => {
   const now = new Date(), ym = todayISO(now).slice(0, 7), y = String(now.getFullYear());
   const rows = new Map(); const tot = { m: 0, y: 0, g: 0 };
-  for (const p of await db.all('projects')) {
+  for (const p of await liveProjects()) {
     if (!(await db.shotsOf(p.id)).length) continue; // nur Projekte mit Fotos zählen
     const d = (p.datum || todayISO(new Date(p.created || 0))).slice(0, 10), k = p.firma || 'ohne Kunde';
     if (!rows.has(k)) rows.set(k, { m: 0, y: 0, g: 0 });
@@ -2212,6 +2364,7 @@ function whatsNew() {
   gcalUi();
   setTimeout(async () => { const res = await selfTest(); const bad = res.filter(x => x.lvl === 'fail'); if (bad.length) toast('Funktionstest: ' + bad.map(x => x.k).join(', ') + ' – Details in ⚙ System', 5000); }, 2500);
   laserUi();
+  await purgeTrash();
   renderHome();
   offlineUi();
   whatsNew();

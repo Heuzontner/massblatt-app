@@ -86,18 +86,24 @@ export function parseAddress(text, stopWords = []) {
   let t = (text || '').replace(/\s+/g, ' ').replace(/ß/g, 'ss').trim();
   if (!t) return null;
   t = t.replace(/,?\s*(Österreich|Oesterreich|Austria|AT)\s*$/i, '').trim();
-  let str = '', plz = '', ort = '', before = t;
+  let str = '', plz = '', ort = '', before = t, after = '';
   // PLZ + Ort irgendwo im Text ("4020 Linz", "A-4400 Steyr", "4490 St. Florian", "4531 Kematen an der Krems")
   const pm = t.match(/(?:^|[\s,])(?:A-)?(\d{4})\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöü.\-]*(?:\s(?:am|an|im|in|bei|ob|der|a\.d\.|i\.M\.)(?:\sder)?\s[A-ZÄÖÜ][A-Za-zÄÖÜäöü.\-]*|\s[A-ZÄÖÜ][A-Za-zÄÖÜäöü.\-]*){0,2})/);
-  if (pm) { plz = pm[1]; ort = pm[2].replace(/[,.]+$/, '').trim(); before = t.slice(0, pm.index).trim(); }
+  if (pm) {
+    plz = pm[1]; ort = pm[2].replace(/[,.]+$/, '').trim(); before = t.slice(0, pm.index).trim(); after = t.slice(pm.index + pm[0].length).trim();
+    // Geschoß/Wohnung, die am Ort kleben ("4020 Linz EG, WG 1", "4020 Linz WG 4") → gehören zur Einheit, nicht zum Ort
+    const ow = ort.split(' ');
+    while (ow.length > 1 && /^(\d+\.)?(EG|OG|DG|KG|UG|WG|Top|Whg\.?|Stg\.?|Stiege|Tür|Tuer|Haus|Block)$/i.test(ow[ow.length - 1])) after = ow.pop() + ' ' + after;
+    ort = ow.join(' ');
+  }
   const extra = stopWords.map(x => String(x).toLowerCase());
   const isStop = w0 => STOP.test(w0) || CAPS.test(w0) || extra.includes(w0.toLowerCase()) || /^\d{1,2}[:.]\d{2}$/.test(w0) || /^\d{1,2}\.\d{1,2}\.?(\d{2,4})?$/.test(w0) || /^[\d+\/ \-()]{6,}$/.test(w0);
   // Komma-Teile vor der PLZ: Straßen-Teil = erster Teil mit Straßen-Wort, sonst erster Teil mit Buchstaben + Hausnummer (keine Einheit wie "WG 1")
-  const parts = before.split(',').map(x => x.trim()).filter(Boolean);
   const hasSuffix = p => p.split(' ').some(w => SUFFIX.test(w));
-  let ci = parts.findIndex(p => /\d/.test(p) && hasSuffix(p));
-  if (ci < 0) ci = parts.findIndex(p => /\d/.test(p) && /[A-Za-zÄÖÜäöü]/.test(p) && !UNIT.test(p));
-  if (ci < 0) ci = parts.findIndex(p => hasSuffix(p));
+  const partsOf = x => x.split(',').map(y => y.trim()).filter(Boolean);
+  const findCi = ps => { let i = ps.findIndex(p => /\d/.test(p) && hasSuffix(p)); if (i < 0) i = ps.findIndex(p => /\d/.test(p) && /[A-Za-zÄÖÜäöü]/.test(p) && !UNIT.test(p)); if (i < 0) i = ps.findIndex(p => hasSuffix(p)); return i; };
+  let parts = partsOf(before), ci = findCi(parts);
+  if (ci < 0 && after) { parts = partsOf(after); ci = findCi(parts); if (ci >= 0) after = ''; } // Straße erst nach PLZ/Ort ("4490 St. Florian, Hauptstraße 3")
   if (ci >= 0) {
     let w = parts[ci].replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
     while (w.length > 1 && isStop(w[0])) w.shift(); // führende Füllwörter / Kundenkürzel ("Aufmaß", "WAG", "Termin:") weg
@@ -114,6 +120,8 @@ export function parseAddress(text, stopWords = []) {
     str = str.replace(/\s*([\/\-])\s*/g, '$1').replace(/^[\-–:]+|[,;:\-–]+$/g, '').trim();
     // Geschoß / Wohnung aus den folgenden Teilen übernehmen ("Haydnstrasse 8, EG, WG 1")
     const units = []; for (let i = ci + 1; i < parts.length && UNIT.test(parts[i]); i++) units.push(parts[i]);
+    // … auch nach PLZ/Ort ("Haydnstrasse 8, 4020 Linz, 1.OG, WG 4")
+    for (const u of after.split(/[,;\n]/).map(x => x.replace(/\s+/g, ' ').trim()).filter(Boolean)) if (UNIT.test(u) && !units.includes(u)) units.push(u);
     if (units.length) str += ', ' + units.join(', ');
   }
   if (!str && !plz) return null;

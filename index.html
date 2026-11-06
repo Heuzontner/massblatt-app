@@ -151,6 +151,14 @@ details.card summary { font-weight:700; cursor:pointer; }
 .sug button { display:block; width:100%; text-align:left; border-radius:0; background:transparent; padding:12px; border-bottom:1px solid var(--line); }
 .sug button small { color:var(--mute); margin-left:6px; }
 .sug button .src { float:right; font-size:11px; color:var(--mute); }
+.sug .nrs { display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:8px 10px; border-bottom:1px solid var(--line); }
+.sug .nrs span { font-size:12px; color:var(--mute); }
+.sug .nrs button { display:inline-block; width:auto; padding:6px 12px; border:1px solid var(--line); border-radius:999px; background:var(--panel); font-weight:600; }
+i.amp { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:-1px; }
+i.amp.ok, .ampel.ok i { background:#3ddc84; } i.amp.warn, .ampel.warn i { background:#ffcc33; } i.amp.fail, .ampel.fail i { background:#ff5a5a; }
+.ampel { display:flex; gap:10px; align-items:flex-start; padding:8px 12px; margin:0 0 8px; border-radius:10px; background:var(--panel2); font-size:14px; color:var(--mute); }
+.ampel i { flex:none; width:12px; height:12px; border-radius:50%; margin-top:4px; }
+.ampel.ok { color:var(--text); }
 .tiles { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .tiles button { padding:16px 8px; font-size:16px; }
 .tiles button.sel { background:var(--blue); color:#fff; }
@@ -273,7 +281,7 @@ ul.news li { margin-bottom:6px; }
     <input id="projSearch" type="search" placeholder="🔍 Suchen (Straße, Kunde)" style="margin-bottom:8px">
     <div class="chips2" id="sortChips"><span class="mute">Sortieren:</span>
       <button data-sort="neu">Zuletzt</button><button data-sort="datum">Datum</button><button data-sort="strasse">Straße</button><button data-sort="kunde">Kunde</button>
-      <span style="flex:1"></span><button id="archChip">📦 Archiv</button><button id="selChip">☑ Auswählen</button></div>
+      <span style="flex:1"></span><button id="archChip">📦 Archiv</button><button id="trashChip" style="display:none">🗑 Papierkorb</button><button id="selChip">☑ Auswählen</button></div>
     <div id="projList"></div>
   </div>
   <div class="bottombar"><button class="pri" id="btnNewProj">+ Neues Projekt</button>
@@ -292,7 +300,7 @@ ul.news li { margin-bottom:6px; }
     <details class="card" id="projDetails">
       <summary>Projektdaten</summary>
       <label class="f">Straße + Hausnummer (+ Geschoß, WG)</label>
-      <div class="sugwrap" style="display:flex;gap:6px"><input id="pStr" placeholder="Haydnstrasse 8, EG, WG 1" autocomplete="off" style="flex:1"><button class="ghost" id="gpsBtn" aria-label="Adresse per Standort" style="padding:0 12px">📍</button><a id="navBtn" target="_blank" rel="noopener" style="display:none"><button class="ghost" style="padding:0 12px;height:100%">🧭</button></a><div class="sug" id="strSug"></div></div>
+      <div class="sugwrap" style="display:flex;gap:6px"><input id="pStr" placeholder="Haydnstrasse 8, EG, WG 1" autocomplete="off" style="flex:1"><button class="ghost" id="gpsBtn" aria-label="Adresse per Standort" style="padding:0 12px">📍</button><button class="ghost" id="clipBtn" aria-label="Adresse aus Zwischenablage" style="padding:0 12px">📋</button><a id="navBtn" target="_blank" rel="noopener" style="display:none"><button class="ghost" style="padding:0 12px;height:100%">🧭</button></a><div class="sug" id="strSug"></div></div>
       <div class="row2" style="grid-template-columns:1fr 2fr">
         <div><label class="f">PLZ</label><input id="pPlz" placeholder="4400" inputmode="numeric" maxlength="5"></div>
         <div><label class="f">Ort</label><input id="pOrtName" placeholder="Steyr"></div>
@@ -322,6 +330,7 @@ ul.news li { margin-bottom:6px; }
         <button class="danger" id="btnDelProj" style="flex:1 1 100%">Projekt löschen</button>
       </div>
     </details>
+    <div class="ampel" id="ampel" style="display:none"><i></i><span></span></div>
     <div id="shotList"></div>
   </div>
   <div class="bottombar">
@@ -429,6 +438,7 @@ ul.news li { margin-bottom:6px; }
   <input type="file" id="cLogo" accept="image/*"><img class="logo-prev" id="cLogoPrev" hidden>
   <div style="display:flex;gap:8px;margin-top:16px">
     <button class="danger" id="cDel">Löschen</button>
+    <button class="ghost" id="cMerge" aria-label="Mit anderem Kunden zusammenführen">⇆</button>
     <button class="ghost" id="cCancel" style="flex:1">Abbrechen</button>
     <button class="pri" id="cSave" style="flex:1">Speichern</button>
   </div>
@@ -453,6 +463,10 @@ ul.news li { margin-bottom:6px; }
     <label class="f">Raum-Knöpfe (Kürzel = Bezeichnung, eine Zeile je Raum)</label>
     <textarea id="sRooms" rows="7" style="width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px"></textarea>
     <button class="ghost" id="sRoomsReset" style="margin-top:6px">Standard-Räume</button>
+    <label class="f">Aufräumen</label>
+    <div style="display:flex;gap:8px;align-items:center"><span class="mute" style="font-size:14px">Exportierte Projekte älter als</span><select id="sCleanMonths" style="width:auto"><option value="1">1 Monat</option><option value="3" selected>3 Monate</option><option value="6">6 Monate</option><option value="12">12 Monate</option></select></div>
+    <button class="ghost" id="sCleanup" style="margin-top:6px">📦 Jetzt ins Archiv verschieben</button>
+    <p class="mute" style="margin:4px 0 0">Gelöschte Projekte liegen 30 Tage im Papierkorb (Projektliste → 🗑).</p>
     <label class="f">Pfeile im Foto</label>
     <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sMagnet" style="width:auto"> Magnet: Pfeilenden rasten an Bildkanten ein</label>
     <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sDash" style="width:auto"> Breiten-Pfeile gestrichelt (Höhe/Breite ohne Farbe unterscheidbar)</label>
