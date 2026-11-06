@@ -159,6 +159,12 @@ i.amp.ok, .ampel.ok i { background:#3ddc84; } i.amp.warn, .ampel.warn i { backgr
 .ampel { display:flex; gap:10px; align-items:flex-start; padding:8px 12px; margin:0 0 8px; border-radius:10px; background:var(--panel2); font-size:14px; color:var(--mute); }
 .ampel i { flex:none; width:12px; height:12px; border-radius:50%; margin-top:4px; }
 .ampel.ok { color:var(--text); }
+.today { margin:0 0 10px; padding:10px 12px; border-radius:12px; background:var(--panel); border:1px solid var(--line); }
+.today .th { display:flex; justify-content:space-between; align-items:baseline; gap:8px; } .today .th small { color:var(--mute); font-size:12px; }
+.today .trow { display:flex; gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); cursor:pointer; }
+.today .trow .tt { flex:none; width:58px; font-size:13px; color:var(--mute); } .today .trow .tx { flex:1; min-width:0; } .today .trow .tx b { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:15px; }
+.today .trow .tx small { display:block; color:var(--mute); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .today .trow .st { flex:none; font-size:18px; }
+.today [data-prep] { width:100%; margin-top:8px; }
 .bkbar { display:flex; align-items:center; gap:8px; margin:0 0 10px; padding:8px 10px; border-radius:12px; background:var(--panel2); font-size:13px; }
 .bkbar span { flex:1; } .bkbar button { width:auto; padding:0 12px; height:36px; font-size:14px; }
 .exprow { display:flex; align-items:center; gap:8px; padding:6px 12px; margin:0 0 8px; border-radius:10px; background:var(--panel2); font-size:13px; color:var(--mute); cursor:pointer; }
@@ -297,6 +303,7 @@ ul.news li { margin-bottom:6px; }
     <div class="chips2" id="sortChips"><span class="mute">Sortieren:</span>
       <button data-sort="neu">Zuletzt</button><button data-sort="datum">Datum</button><button data-sort="strasse">Straße</button><button data-sort="kunde">Kunde</button>
       <span style="flex:1"></span><button id="archChip">📦 Archiv</button><button id="trashChip" style="display:none">🗑 Papierkorb</button><button id="selChip">☑ Auswählen</button></div>
+    <div class="today" id="todayBox" style="display:none"><div class="th"><b>📅 Heute</b><small></small></div><div class="tlist"></div><button class="ghost" data-prep style="display:none"></button></div>
     <div class="bkbar" id="bkBar" style="display:none"><span></span><button class="ghost" id="bkLater">Später</button><button class="pri" id="bkNow">Jetzt sichern</button></div>
     <div id="projList"></div>
   </div>
@@ -505,6 +512,11 @@ ul.news li { margin-bottom:6px; }
     <p class="mute" style="margin:4px 0 10px">Antippen zum Bearbeiten. Diese Angaben kommen aufs PDF-Deckblatt und bestimmen den Dropbox-Ordner.</p>
     <div id="custList"></div>
     <button class="pri" id="custNew" style="width:100%">+ Neuer Kunde</button>
+    <label class="f">Straßen offline (Vorschläge + PLZ/Ort ohne Netz)</label>
+    <div style="display:flex;gap:8px"><input id="offlOrt" placeholder="Ort, z. B. Linz" style="flex:1"><button class="ghost" id="offlLoad" style="padding:0 14px">Laden</button></div>
+    <div class="chips2" id="offlChips" style="margin-top:8px"><button>Linz</button><button>Leonding</button><button>Traun</button><button>Wels</button><button>Steyr</button><button>Ansfelden</button><button>Pasching</button></div>
+    <div id="offlList" style="margin-top:4px"></div>
+    <p class="mute" style="margin:4px 0 0">Quelle OpenStreetMap; je Ort ein paar hundert KB. Geladene Orte erscheinen beim Tippen als „offline“.</p>
     <label class="f">Kunden &amp; Straßen auf anderes Handy übertragen</label>
     <div class="row2">
       <button class="ghost" id="exBtn">Exportieren</button>
@@ -544,7 +556,8 @@ ul.news li { margin-bottom:6px; }
     <p class="mute" id="gcalState" style="margin:0 0 6px"></p>
     <input id="gcalId" placeholder="Client-ID (…apps.googleusercontent.com)">
     <div class="row2" style="margin-top:8px"><button class="ghost" id="gcalLogin">Bei Google anmelden</button><button class="ghost" id="gcalOff">Abmelden</button></div>
-    <p class="mute" style="margin:6px 0 0">Danach erscheint oben in der Projektliste 📅. Ein Tipp auf einen Termin legt das Projekt mit Adresse und Datum an.</p>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px"><button class="ghost" id="gcalCals" style="flex:1">Kalender auswählen</button><span class="mute" id="gcalCalsState" style="flex:1;font-size:13px"></span></div>
+    <p class="mute" style="margin:6px 0 0">Danach stehen die heutigen Termine oben auf der Startseite (antippen = Projekt anlegen, „Tag vorbereiten“ = alle auf einmal); 📅 zeigt die nächsten 7 Tage.</p>
     <label class="f" style="margin-top:22px">Projekt aus Datei wiederherstellen</label>
     <button class="ghost" id="imProjBtn" style="width:100%">Projekt importieren</button>
     <input type="file" id="imProjFile" accept=".json,.massblatt,application/json" hidden>

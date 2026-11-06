@@ -50,12 +50,19 @@ export const gcal = {
     return r.json();
   },
 
-  // Termine von heute bis in `days` Tagen aus allen ausgewählten Kalendern
+  // Kalenderliste (für die Auswahl in ⚙); ausgewählte Kalender-IDs in cfg.cals (leer = alle in Google sichtbaren)
+  async calendars() {
+    const list = await this._get('https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader&maxResults=50');
+    return (list.items || []).map(c => ({ id: c.id, name: c.summaryOverride || c.summary || c.id, primary: !!c.primary, selected: c.selected !== false, color: c.backgroundColor || '' }));
+  },
+  get chosenCals() { return load().cals || null; },
+  setChosenCals(ids) { const c = load(); if (ids && ids.length) c.cals = ids; else delete c.cals; save(c); },
+  // Termine von heute bis in `days` Tagen aus den gewählten Kalendern
   async events(days = 7) {
     const now = new Date(); const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const to = new Date(from.getTime() + days * 864e5);
-    const list = await this._get('https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader&maxResults=50');
-    const cals = (list.items || []).filter(c => c.selected !== false).slice(0, 12);
+    const all = await this.calendars(); const chosen = this.chosenCals;
+    const cals = (chosen ? all.filter(c => chosen.includes(c.id)) : all.filter(c => c.selected)).slice(0, 12);
     const out = [];
     await Promise.all(cals.map(async cal => {
       const q = new URLSearchParams({ timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: 'true', orderBy: 'startTime', maxResults: '100' });
@@ -63,7 +70,7 @@ export const gcal = {
       for (const e of j.items || []) {
         if (e.status === 'cancelled') continue;
         const start = e.start && (e.start.dateTime || e.start.date);
-        out.push({ id: e.id, cal: cal.summary, summary: e.summary || '(ohne Titel)', location: e.location || '', description: e.description || '',
+        out.push({ id: e.id, cal: cal.name, summary: e.summary || '(ohne Titel)', location: e.location || '', description: e.description || '',
           start, allDay: !!(e.start && e.start.date && !e.start.dateTime) });
       }
     }));

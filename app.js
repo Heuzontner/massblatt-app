@@ -8,9 +8,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '2.9.0';
+const VERSION = '3.0.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Gesamt-Sicherung: alle Projekte, Fotos, Kunden und Einstellungen in einer Datei – und „Sicherung einspielen“ am neuen Handy (⚙ System)', 'Erinnerung, wenn die letzte Sicherung älter als 14 Tage ist', 'Optional: Fotos exportierter Projekte verkleinern – spart etwa zwei Drittel Speicher', 'Entsperren mit Fingerabdruck/Face-ID statt PIN, Sperrdauer wählbar (täglich / 7 / 30 Tage)', '„Alles löschen“ für die Weitergabe des Handys; Hinweis zum Messmodus, wenn der Laser verbindet'];
+const NEWS = ['Heutige Termine stehen oben auf der Startseite – antippen legt das Projekt an, „Tag vorbereiten“ legt alle auf einmal an', 'Straßen offline: in ⚙ Kunden & Straßen Orte laden (z. B. Linz) → Straßen-Vorschläge mit PLZ/Ort auch ohne Netz', 'Google: Kalender auswählbar (z. B. nur „Aufmaß“)'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -217,6 +217,7 @@ $('#selPdf').onclick = async () => {
 };
 let allShotCounts = null;
 async function renderHome() {
+  todayBox();
   $$('#sortChips button[data-sort]').forEach(b => b.classList.toggle('sel', b.dataset.sort === homeSort));
   $('#archChip').classList.toggle('sel', showArch); $('#trashChip').classList.toggle('sel', showTrash);
   let list = await db.all('projects');
@@ -436,6 +437,71 @@ const normStreet = s => (s || '').toLowerCase().replace(/ß/g, 'ss').replace(/st
 const streetOnly = s => (s || '').split(',')[0].trim().replace(/\s+\d+\s*[a-zA-Z]?([\/-].*)?$/, '').trim();
 const houseNo = s => { const m = (s || '').split(',')[0].trim().match(/\s(\d+\s*[a-zA-Z]?([\/-].*)?)$/); return m ? m[1] : ''; };
 async function knownStreets() { return (await db.setting('streets')) || []; }
+// Straßen offline (Idee 53): je Ort ein Straßenverzeichnis aus OpenStreetMap (Overpass), in der Datenbank
+let offlIdx = null; // [{street, ort, key}]
+async function offlineIndex() {
+  if (offlIdx) return offlIdx;
+  const all = (await db.setting('offlineStreets')) || {}; const out = [], seen = new Set();
+  for (const ort of Object.keys(all)) for (const line of all[ort].streets || []) {
+    const [street, plz, city] = line.split('|'); const o = [plz, city || ort].filter(Boolean).join(' ');
+    const key = normStreet(street) + '|' + o; if (seen.has(key)) continue; seen.add(key);
+    out.push({ street, ort: o, key: normStreet(street) });
+  }
+  return offlIdx = out;
+}
+async function offlineMatches(k, limit = 6) {
+  const idx = await offlineIndex(); if (!idx.length) return [];
+  const pre = idx.filter(x => x.key.startsWith(k)), inn = idx.filter(x => !x.key.startsWith(k) && x.key.includes(k));
+  return [...pre, ...inn].slice(0, limit).map(x => ({ street: x.street, ort: x.ort, src: 'offline' }));
+}
+const OVERPASS = 'https://overpass-api.de/api/interpreter';
+async function loadOfflinePlace(ort) {
+  // Adressen (addr:street + addr:postcode) innerhalb der Gemeindegrenze, als CSV (klein); Suchraum = Österreich
+  const q = `[out:csv("addr:street","addr:postcode","addr:city";false;"|")][timeout:120][bbox:46.3,9.5,49.1,17.2];
+area["name"="${ort.replace(/"/g, '')}"]["boundary"="administrative"]->.a;
+nwr(area.a)["addr:street"]["addr:postcode"];
+out tags;`;
+  const r = await fetch(OVERPASS, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+  if (!r.ok) throw new Error(r.status === 429 || r.status === 504 ? 'OpenStreetMap-Server ausgelastet – bitte in ein paar Minuten nochmal' : 'OpenStreetMap: ' + r.status);
+  const txt = await r.text();
+  const cnt = new Map();
+  for (const line of txt.split('\n')) {
+    const [street, plz, city] = line.split('|').map(x => (x || '').trim());
+    if (!street || !/^\d{4}$/.test(plz)) continue;
+    const key = street + '|' + plz + '|' + (city || ''); cnt.set(key, (cnt.get(key) || 0) + 1);
+  }
+  // je Straße+PLZ die häufigste Ortsschreibweise behalten
+  const best = new Map();
+  for (const [key, n] of cnt) { const [street, plz, city] = key.split('|'); const k2 = street + '|' + plz; if (!best.has(k2) || best.get(k2).n < n) best.set(k2, { street, plz, city, n }); }
+  const streets = [...best.values()].sort((a, b) => a.street.localeCompare(b.street, 'de')).map(x => `${x.street}|${x.plz}|${x.city}`);
+  if (!streets.length) throw new Error(`Keine Adressen für „${ort}“ gefunden – Schreibweise wie in OpenStreetMap (z. B. „Linz“, „Leonding“, „Sankt Florian“)`);
+  const all = (await db.setting('offlineStreets')) || {};
+  all[ort] = { t: Date.now(), streets, n: streets.length, bytes: txt.length };
+  await db.setting('offlineStreets', all); offlIdx = null;
+  return streets.length;
+}
+async function offlineUiList() {
+  const el = $('#offlList'); if (!el) return;
+  const all = (await db.setting('offlineStreets')) || {}; el.innerHTML = '';
+  const orte = Object.keys(all).sort((a, b) => a.localeCompare(b, 'de'));
+  if (!orte.length) { el.innerHTML = '<p class="mute" style="margin:4px 0">Noch kein Ort geladen.</p>'; return; }
+  for (const o of orte) {
+    const row = document.createElement('div'); row.className = 'dbxrow';
+    row.innerHTML = '<div style="flex:1"><b></b><div class="mute"></div></div><button class="ghost" data-x style="width:auto;padding:6px 10px;height:auto">✕</button>';
+    row.querySelector('b').textContent = o; row.querySelector('.mute').textContent = `${all[o].n} Straßen · geladen ${new Date(all[o].t).toLocaleDateString('de-AT')}`;
+    row.querySelector('[data-x]').onclick = async () => { delete all[o]; await db.setting('offlineStreets', all); offlIdx = null; offlineUiList(); };
+    el.appendChild(row);
+  }
+}
+$('#offlLoad').onclick = async () => {
+  const ort = $('#offlOrt').value.trim(); if (!ort) { toast('Ort eingeben, z. B. Linz'); return; }
+  if (!navigator.onLine) { toast('Zum Laden wird Netz gebraucht'); return; }
+  const b = $('#offlLoad'); b.disabled = true; b.textContent = 'Lade … (kann 1–2 Minuten dauern)';
+  try { const n = await loadOfflinePlace(ort); toast(`${ort}: ${n} Straßen offline gespeichert`, 3500); $('#offlOrt').value = ''; offlineUiList(); }
+  catch (e) { toast(e.message, 6000); }
+  b.disabled = false; b.textContent = 'Laden';
+};
+$$('#offlChips button').forEach(bt => { bt.onclick = () => { $('#offlOrt').value = bt.textContent; $('#offlLoad').click(); }; });
 let remT = 0;
 function rememberStreetSoon() {
   clearTimeout(remT);
@@ -454,12 +520,15 @@ async function streetInput() {
   const v = $('#pStr').value, st = streetOnly(v), k = normStreet(st);
   const box = $('#strSug');
   if (k.length < 3) { box.classList.remove('on'); return; }
-  const local = (await knownStreets()).filter(x => normStreet(x.street).includes(k)).sort((a, b) => (b.used || 0) - (a.used || 0)).slice(0, 5);
+  const known = (await knownStreets()).filter(x => normStreet(x.street).includes(k)).sort((a, b) => (b.used || 0) - (a.used || 0)).slice(0, 5);
+  const seenK = new Set(known.map(x => normStreet(x.street) + x.ort));
+  const offl = (await offlineMatches(k, 6)).filter(x => !seenK.has(normStreet(x.street) + x.ort)).slice(0, Math.max(2, 6 - known.length));
+  const local = [...known.map(x => ({ ...x, src: 'bekannt' })), ...offl];
   autoOrt(local, k);
-  showSug(local.map(x => ({ ...x, src: 'bekannt' })), []);
+  showSug(local, []);
   houseNoChips(st);
   clearTimeout(sugT);
-  if (!navigator.onLine || local.length >= 3) return;
+  if (!navigator.onLine || known.length >= 3 || local.length >= 5) return;
   const my = ++sugReq;
   sugT = setTimeout(async () => {
     try {
@@ -477,7 +546,7 @@ async function streetInput() {
         web.push({ street: pr.name, ort, src: 'Karte' });
       }
       if (my === sugReq && !autoOrt(local, k)) autoOrt(web, k);
-      if (my === sugReq && $('#pStr') === document.activeElement) showSug(local.map(x => ({ ...x, src: 'bekannt' })), web.slice(0, 5));
+      if (my === sugReq && $('#pStr') === document.activeElement) showSug(local, web.slice(0, 5));
     } catch (e) { /* offline oder Dienst nicht erreichbar */ }
   }, 450);
 }
@@ -537,8 +606,8 @@ function showSug(local, web) {
   for (const x of all) {
     const b = document.createElement('button');
     b.innerHTML = '<span class="src"></span><b></b><small></small>';
-    b.querySelector('b').textContent = x.street; b.querySelector('small').textContent = x.ort;
-    b.querySelector('.src').textContent = x.src === 'bekannt' ? 'schon gehabt' : 'Karte';
+    b.querySelector('b').textContent = x.street.replace(/ß/g, 'ss'); b.querySelector('small').textContent = x.ort;
+    b.querySelector('.src').textContent = x.src === 'bekannt' ? 'schon gehabt' : x.src === 'offline' ? 'offline' : 'Karte';
     // gleich beim Antippen übernehmen (am iPhone kommt der Klick sonst manchmal nicht an, weil das Feld vorher den Fokus verliert)
     let done = false;
     const choose = e => {
@@ -2143,7 +2212,7 @@ $('#btnSettings').onclick = async () => {
   showTab(t);
   $('#sGlove').checked = !!opt.glove; $('#sLearn').checked = opt.learn !== false; $('#sLeft').checked = !!opt.left;
   $('#sMagnet').checked = opt.magnet !== false; $('#sDash').checked = !!opt.dash; fillCamList();
-  $('#sShrink').checked = !!opt.shrink; $('#sRemind').checked = opt.remind !== false; $('#sLockDays').value = String(lockDays()); bioUi(); backupUi();
+  $('#sShrink').checked = !!opt.shrink; $('#sRemind').checked = opt.remind !== false; $('#sLockDays').value = String(lockDays()); bioUi(); backupUi(); offlineUiList();
   learnState();
   gcalUi();
   $('#sTitle').value = (await db.setting('headerTitle')) || '';
@@ -2458,11 +2527,13 @@ function gcalUi() {
   $('#gcalState').textContent = !gcal.configured ? 'Nicht eingerichtet (Client-ID eintragen).' : gcal.connected ? 'Angemeldet ✓' : gcal.everConnected ? 'Anmeldung abgelaufen – beim nächsten Öffnen der Termine neu anmelden.' : 'Eingerichtet, noch nicht angemeldet.';
   $('#gcalOff').style.display = gcal.everConnected ? '' : 'none';
   $('#btnCal').style.display = gcal.configured ? '' : 'none';
+  $('#gcalCals').style.display = gcal.everConnected ? '' : 'none';
+  const ch = gcal.chosenCals; $('#gcalCalsState').textContent = ch ? `${ch.length} Kalender gewählt` : 'Alle in Google sichtbaren Kalender';
 }
 $('#gcalId').onchange = () => { gcal.setClientId($('#gcalId').value); gcalUi(); };
 $('#gcalLogin').onclick = () => { try { gcal.login(); } catch (e) { toast(e.message, 3000); } };
 $('#gcalOff').onclick = () => { gcal.logout(); const c = gcal.cfg; delete c.ever; localStorage.setItem('mb_gcal', JSON.stringify(c)); gcalUi(); toast('Von Google abgemeldet'); };
-$('#calClose').onclick = () => $('#calSheet').classList.remove('on');
+$('#calClose').onclick = () => { $('#calSheet').classList.remove('on'); todayBox(); };
 $('#btnCal').onclick = async () => {
   if (!gcal.connected) {
     if (await confirmBox('Bei Google anmelden?', 'Anmelden', 'Abbrechen', 'pri', 'Du wirst kurz zu Google weitergeleitet und kommst automatisch zurück. Die App liest Termine nur, ändert nichts.')) { try { gcal.login(); } catch (e) { toast(e.message, 3000); } }
@@ -2474,6 +2545,8 @@ $('#btnCal').onclick = async () => {
     body.innerHTML = '';
     if (!evs.length) { body.innerHTML = '<p class="mute">Keine Termine in den nächsten 7 Tagen.</p>'; return; }
     const todayK = todayISO();
+    const todays = evs.filter(ev => (ev.allDay ? ev.start : todayISO(new Date(ev.start))) === todayK);
+    if (todays.length >= 2) { const pb = document.createElement('button'); pb.className = 'pri'; pb.style.cssText = 'width:100%;margin:0 0 10px'; pb.textContent = `Tag vorbereiten: heutige Termine anlegen (${todays.length})`; pb.onclick = () => { $('#calSheet').classList.remove('on'); prepareDay(todays); }; body.appendChild(pb); }
     const stop = ((await db.setting('customers')) || []).flatMap(c => (c.name || '').split(/\s+/)).filter(Boolean); // Kundennamen sind keine Straßen
     for (const ev of evs) {
       const d = new Date(ev.start); const dk = ev.allDay ? ev.start : todayISO(d);
@@ -2491,27 +2564,133 @@ $('#btnCal').onclick = async () => {
     }
   } catch (e) { body.innerHTML = ''; const pEl = document.createElement('p'); pEl.className = 'mute'; pEl.textContent = 'Termine konnten nicht geladen werden: ' + e.message; body.appendChild(pEl); gcalUi(); }
 };
-async function createFromEvent(ev, addr) {
-  $('#calSheet').classList.remove('on');
+// Adresse eines Termins herauslesen (Ort-Feld, Titel, Beschreibung); Kundennamen sind keine Straßen
+async function eventAddress(ev, stop = null) {
+  if (!stop) stop = ((await db.setting('customers')) || []).flatMap(c => (c.name || '').split(/\s+/)).filter(Boolean);
+  return parseAddress(ev.location, stop) || parseAddress(ev.summary, stop) || parseAddress(ev.description, stop);
+}
+// Projekt aus Termin anlegen (ohne es zu öffnen); Kunde: im Termin-Text erwähnt, sonst der zuletzt verwendete
+async function projectFromEvent(ev, addr, all, cs) {
   const d = new Date(ev.start);
-  const all = await liveProjects();
-  const dup = all.find(p => p.gcalId === ev.id);
-  if (dup) { toast('Für diesen Termin gibt es schon ein Projekt – wird geöffnet'); return openProject(dup.id); }
-  const last = all.sort((a, b) => (b.updated || 0) - (a.updated || 0))[0] || {};
-  const cs = (await db.setting('customers')) || [];
-  // Kunde: im Termin-Text erwähnt (z. B. „WAG“)? sonst der zuletzt verwendete
+  const last = [...all].sort((a, b) => (b.updated || 0) - (a.updated || 0))[0] || {};
   const txt = (ev.summary + ' ' + ev.description + ' ' + ev.location).toLowerCase();
   const byName = cs.find(c => c.name && txt.includes(c.name.toLowerCase()));
   const cust = byName || (last.kundeId && cs.find(c => c.id === last.kundeId)) || null;
   const p = { id: uid(), name: '', str: addr ? addr.str : '', plz: addr ? addr.plz : '', ortName: addr ? addr.ort : '', kundeId: cust ? cust.id : null,
     datum: todayISO(isNaN(d) ? new Date() : d), created: Date.now(), updated: Date.now(), gcalId: ev.id, notizTermin: ev.summary };
   applyCustomerToProject(p, cust);
+  if (addr && addr.str) p.name = [addr.str].filter(Boolean).join(', ');
   await db.put('projects', p);
   log('Projekt aus Termin', ev.summary);
+  return p;
+}
+async function createFromEvent(ev, addr) {
+  $('#calSheet').classList.remove('on');
+  const all = await liveProjects();
+  const dup = all.find(p => p.gcalId === ev.id);
+  if (dup) { toast('Für diesen Termin gibt es schon ein Projekt – wird geöffnet'); return openProject(dup.id); }
+  const p = await projectFromEvent(ev, addr, all, (await db.setting('customers')) || []);
   await openProject(p.id, true);
   if (addr && addr.str) { const el = $('#pStr'); el.value = addr.str + (addr.str.includes(',') ? '' : ', '); S.project.str = el.value; updateNamePrev(); db.put('projects', S.project); el.setSelectionRange(el.value.length, el.value.length); rememberStreetSoon(); }
   toast(addr ? 'Aus Termin übernommen – Geschoß/WG ergänzen' : 'Projekt angelegt – Adresse bitte eintragen', 3000);
 }
+// Tag vorbereiten (Idee 55): alle heutigen Termine mit Adresse auf einmal als Projekte anlegen
+async function prepareDay(evs) {
+  const all = await liveProjects(); const cs = (await db.setting('customers')) || [];
+  const stop = cs.flatMap(c => (c.name || '').split(/\s+/)).filter(Boolean);
+  const todo = [];
+  for (const ev of evs) { if (all.some(p => p.gcalId === ev.id)) continue; todo.push([ev, await eventAddress(ev, stop)]); }
+  const usable = a => a && a.str && /\d/.test(a.str); // nur Adressen mit Hausnummer automatisch anlegen
+  const withAddr = todo.filter(x => usable(x[1])), without = todo.length - withAddr.length;
+  if (!withAddr.length) { toast(todo.length ? `Keine Adresse in den ${todo.length} offenen Terminen erkannt – bitte einzeln antippen` : 'Alle heutigen Termine haben schon ein Projekt', 3500); return 0; }
+  const ok = await confirmBox(`${withAddr.length} Projekt${withAddr.length > 1 ? 'e' : ''} anlegen?`, 'Anlegen', 'Abbrechen', 'pri',
+    withAddr.map(([ev, a]) => `• ${a.str}${a.plz ? ', ' + a.plz + ' ' + a.ort : ''}`).join('\n') + (without ? `\n(${without} Termin${without > 1 ? 'e' : ''} ohne erkannte Adresse ${without > 1 ? 'bleiben' : 'bleibt'} offen – einzeln antippen)` : ''));
+  if (!ok) return 0;
+  for (const [ev, a] of withAddr) await projectFromEvent(ev, a, all, cs);
+  log('Tag vorbereitet', withAddr.length);
+  renderHome(); todayBox();
+  toast(`${withAddr.length} Projekt${withAddr.length > 1 ? 'e' : ''} angelegt – Geschoß/WG beim Öffnen ergänzen`, 4000);
+  return withAddr.length;
+}
+// Heutige Termine auf der Startseite (Idee 54): Zwischenspeicher, damit die Box sofort und auch offline da ist
+let todayBusy = false;
+async function todayBox(force = false) {
+  const box = $('#todayBox'); if (!box) return;
+  if (!gcal.configured || !gcal.everConnected) { box.style.display = 'none'; return; }
+  const cache = (await db.setting('gcalCache')) || null;
+  const fresh = cache && Date.now() - cache.t < 10 * 60000 && cache.day === todayISO();
+  if (cache && cache.day === todayISO()) renderToday(cache.evs, cache.t);
+  if (!gcal.connected) { if (!cache || cache.day !== todayISO()) renderToday(null, 0, 'Google-Anmeldung abgelaufen – antippen zum Anmelden'); return; }
+  if ((fresh && !force) || todayBusy || !navigator.onLine) return;
+  todayBusy = true;
+  try {
+    const evs = (await gcal.events(1)).map(e => ({ id: e.id, summary: e.summary, location: e.location, description: e.description, start: e.start, allDay: e.allDay, cal: e.cal }));
+    await db.setting('gcalCache', { t: Date.now(), day: todayISO(), evs });
+    renderToday(evs, Date.now());
+  } catch (e) { log('Termine heute', e.message); if (!cache) renderToday(null, 0, 'Termine nicht ladbar: ' + e.message); }
+  todayBusy = false;
+}
+let todaySeq = 0;
+async function renderToday(evs, t, msg = '') {
+  const my = ++todaySeq;
+  const box = $('#todayBox'), list = box.querySelector('.tlist'); list.innerHTML = '';
+  box.style.display = '';
+  box.querySelector('b').textContent = msg ? '📅 Termine' : `📅 Heute: ${evs.length ? evs.length + ' Termin' + (evs.length > 1 ? 'e' : '') : 'keine Termine'}`;
+  box.querySelector('small').textContent = msg || (t ? 'Stand ' + new Date(t).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' }) : '');
+  box.querySelector('[data-prep]').style.display = 'none';
+  if (msg) { box.onclick = () => { box.onclick = null; $('#btnCal').click(); }; return; }
+  box.onclick = null;
+  if (!evs.length) return;
+  const all = await liveProjects();
+  const stop = ((await db.setting('customers')) || []).flatMap(c => (c.name || '').split(/\s+/)).filter(Boolean);
+  if (my !== todaySeq) return; // inzwischen neu gezeichnet
+  const frag = document.createDocumentFragment();
+  let open = 0;
+  for (const ev of evs.slice(0, 6)) {
+    const have = all.find(p => p.gcalId === ev.id);
+    const addr = await eventAddress(ev, stop);
+    const row = document.createElement('div'); row.className = 'trow';
+    row.innerHTML = '<span class="tt"></span><span class="tx"><b></b><small></small></span><span class="st"></span>';
+    row.querySelector('.tt').textContent = ev.allDay ? 'ganztags' : new Date(ev.start).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' });
+    row.querySelector('b').textContent = ev.summary;
+    row.querySelector('small').textContent = have ? have.name || 'Projekt angelegt' : addr && addr.str ? `→ ${addr.str}` : (ev.location || 'keine Adresse erkannt');
+    row.querySelector('.st').textContent = have ? '✓' : '＋';
+    if (!have && addr && addr.str && /\d/.test(addr.str)) open++;
+    row.onclick = () => have ? openProject(have.id) : createFromEvent(ev, addr);
+    frag.appendChild(row);
+  }
+  if (evs.length > 6) { const more = document.createElement('div'); more.className = 'mute'; more.style.fontSize = '12px'; more.textContent = `… und ${evs.length - 6} weitere (📅 antippen)`; frag.appendChild(more); }
+  if (my !== todaySeq) return;
+  list.innerHTML = ''; list.appendChild(frag);
+  const prep = box.querySelector('[data-prep]'); prep.style.display = open >= 2 ? '' : 'none'; prep.textContent = `Tag vorbereiten: ${open} Projekte anlegen`;
+  prep.onclick = e => { e.stopPropagation(); prepareDay(evs); };
+}
+// Kalender auswählen (Idee 58)
+$('#gcalCals').onclick = async () => {
+  if (!gcal.connected) { toast('Bitte zuerst bei Google anmelden'); return; }
+  let cals; try { cals = await gcal.calendars(); } catch (e) { toast('Kalender nicht ladbar: ' + e.message, 4000); return; }
+  const chosen = gcal.chosenCals;
+  const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+  bg.innerHTML = `<div class="sheet"><h2>Kalender für Termine</h2><p class="mute">Nur angehakte Kalender werden gelesen.</p><div data-list style="max-height:50vh;overflow:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="ghost" data-close style="flex:1">Abbrechen</button><button class="pri" data-ok style="flex:1">Übernehmen</button></div></div>`;
+  const list = bg.querySelector('[data-list]');
+  for (const c of cals) {
+    const l = document.createElement('label'); l.style.cssText = 'display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:15px';
+    l.innerHTML = '<input type="checkbox" style="width:auto"><i style="width:12px;height:12px;border-radius:50%;flex:none"></i><span style="flex:1"></span>';
+    l.querySelector('input').checked = chosen ? chosen.includes(c.id) : c.selected; l.querySelector('input').value = c.id;
+    l.querySelector('i').style.background = c.color || 'var(--line)'; l.querySelector('span').textContent = c.name + (c.primary ? ' (Hauptkalender)' : '');
+    list.appendChild(l);
+  }
+  bg.querySelector('[data-ok]').onclick = async () => {
+    const ids = [...list.querySelectorAll('input:checked')].map(i => i.value);
+    if (!ids.length) { toast('Mindestens einen Kalender anhaken'); return; }
+    gcal.setChosenCals(ids.length === cals.length ? null : ids); bg.remove(); gcalUi();
+    await db.setting('gcalCache', null); todayBox(true);
+    toast(ids.length === cals.length ? 'Alle Kalender' : `${ids.length} Kalender gewählt`);
+  };
+  bg.querySelector('[data-close]').onclick = () => bg.remove();
+  document.body.appendChild(bg);
+};
 
 // ---------------- Statistik ----------------
 $('#sStats').onclick = async () => {
@@ -2770,6 +2949,7 @@ function whatsNew() {
   offlineUi();
   whatsNew();
   backupBar();
+  todayBox();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
     // neue Version übernommen → einmal neu laden
