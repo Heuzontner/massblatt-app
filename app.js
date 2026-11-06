@@ -7,7 +7,7 @@ import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '2.4.0';
+const VERSION = '2.4.1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -877,7 +877,7 @@ function loop() {
 
 function buildChips() {
   const el = $('#tplTiles'); el.innerHTML = '';
-  const items = ['KI erkennen', ...Object.keys(TEMPLATES)];
+  const items = [...(S.ai ? ['KI erkennen'] : []), ...Object.keys(TEMPLATES)]; // KI-Knopf nur, wenn die KI in ⚙ eingeschaltet ist
   items.forEach(k => {
     const b = document.createElement('button'); b.textContent = k === 'KI erkennen' ? '✨ KI erkennen' : k;
     b.classList.toggle('sel', S.shot.tpl === k);
