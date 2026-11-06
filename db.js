@@ -46,6 +46,9 @@ export const db = {
     });
   },
   setting: async (k, v) => v === undefined ? tx('settings', 'readonly', s => s.get(k)) : tx('settings', 'readwrite', s => s.put(v, k)),
+  delSetting: k => tx('settings', 'readwrite', s => s.delete(k)),
+  settingKeys: () => tx('settings', 'readonly', s => s.getAllKeys()),
+  clear: store => tx(store, 'readwrite', s => s.clear()),
 };
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);

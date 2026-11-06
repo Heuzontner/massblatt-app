@@ -8,9 +8,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '2.8.0';
+const VERSION = '2.9.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Export-Verlauf im Projekt (wann PDF, Mail, Dropbox) und 🖨 Drucken direkt aus dem PDF-Blatt', 'PDF-Größe wird vor dem Teilen angezeigt', 'Dropbox: Ordner aus Liste wählen, Verlauf mit „nochmal“, Versionen als _v2 statt „(1)“, Jahresordner optional', 'Je Kunde einstellbar: Original-Fotos neben dem PDF mit hochladen'];
+const NEWS = ['Gesamt-Sicherung: alle Projekte, Fotos, Kunden und Einstellungen in einer Datei – und „Sicherung einspielen“ am neuen Handy (⚙ System)', 'Erinnerung, wenn die letzte Sicherung älter als 14 Tage ist', 'Optional: Fotos exportierter Projekte verkleinern – spart etwa zwei Drittel Speicher', 'Entsperren mit Fingerabdruck/Face-ID statt PIN, Sperrdauer wählbar (täglich / 7 / 30 Tage)', '„Alles löschen“ für die Weitergabe des Handys; Hinweis zum Messmodus, wenn der Laser verbindet'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -149,9 +149,23 @@ function laserUi() {
 }
 laser.addEventListener('state', e => {
   laserUi();
-  if (e.detail.state === 'verbunden') toast('Laser verbunden ✓');
+  if (e.detail.state === 'verbunden') { toast('Laser verbunden ✓'); laserHint(); }
   if (e.detail.state === 'getrennt') toast('Laser getrennt – verbinde neu …');
 });
+// Hinweis zum Messmodus (Idee 97): im Flächen-/Volumen-/indirekten Modus schickt der GLM Rechenwerte, keine Längen
+function laserHint() {
+  let off = false; try { off = localStorage.getItem('mb_laserHint') === '0'; } catch (e) { }
+  if (off || $('#laserHintBox')) return;
+  const bg = document.createElement('div'); bg.className = 'sheet-bg on'; bg.id = 'laserHintBox';
+  bg.innerHTML = `<div class="sheet"><h2>Laser verbunden ✓</h2><ul class="news">
+    <li>Am GLM <b>Einzelmessung (Länge)</b> einstellen – nicht Fläche, Volumen oder indirekt, sonst kommen Rechenwerte statt Maße.</li>
+    <li><b>Referenz Hinterkante</b> (Gerät liegt an der Wand/Laibung an).</li>
+    <li>Rote Taste = messen, der Wert springt in den blinkenden Pfeil.</li></ul>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="ghost" data-never style="flex:1">Nicht mehr zeigen</button><button class="pri" data-close style="flex:1">OK</button></div></div>`;
+  bg.querySelector('[data-close]').onclick = () => bg.remove();
+  bg.querySelector('[data-never]').onclick = () => { try { localStorage.setItem('mb_laserHint', '0'); } catch (e) { } bg.remove(); };
+  document.body.appendChild(bg);
+}
 laser.addEventListener('measure', e => onMeasure(e.detail.cm, Math.round(e.detail.meters * 1000)));
 document.addEventListener('click', async e => {
   const el = e.target.closest('[data-laser]');
@@ -1310,7 +1324,7 @@ function setValue(cm, mm) {
 }
 const arrowName = a => `${a.el === 'Maß' ? '' : a.el + ' '}${a.kind === 'H' ? 'Höhe' : 'Breite'}`;
 // Test-Optionen: großer Messmodus, Sprachansage
-const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true, left: false, magnet: true, dash: false, cam: '' };
+const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true, left: false, magnet: true, dash: false, cam: '', shrink: false, remind: true };
 try { Object.assign(opt, JSON.parse(localStorage.getItem('mb_opt') || '{}')); } catch (e) { }
 const applyOptClasses = () => { document.body.classList.toggle('bigmode', !!opt.big); document.body.classList.toggle('glove', !!opt.glove); document.body.classList.toggle('lefty', !!opt.left); };
 const saveOpt = () => { try { localStorage.setItem('mb_opt', JSON.stringify(opt)); } catch (e) { } applyOptClasses(); };
@@ -1709,7 +1723,21 @@ async function preExport(what) {
 function noteExport(p, how, extra = {}) { p.exports = [...(p.exports || []), { t: Date.now(), how, ...extra }].slice(-50); }
 async function lockProject(how, extra = {}) {
   S.project.locked = { at: Date.now(), how }; noteExport(S.project, how, extra); await db.put('projects', S.project); lockUi(); expUi();
+  if (opt.shrink) setTimeout(() => shrinkShots(S.shots).then(n => { if (n > 0) toast(`Fotos verkleinert – ${fmtSize(n)} gespart`, 2500); renderShots(); }).catch(e => log('verkleinern', e.message)), 1500);
 }
+// Fotos exportierter Projekte verkleinern (Idee 90): 1100 px lange Seite, JPEG 74 % – fürs PDF (≈ 200 dpi) reicht das
+async function shrinkShot(s, max = 1100, q = 0.74) {
+  if (s.shrunk || !s.photo) return 0;
+  const im = await blobToImg(s.photo); const sc = Math.min(1, max / Math.max(im.width, im.height));
+  const c = document.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc);
+  c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+  const b = await canvasToBlob(c, 'image/jpeg', q);
+  const saved = s.photo.size + (s.orig ? s.orig.size : 0) - b.size;
+  if (b.size < s.photo.size) { s.photo = b; s.w = c.width; s.h = c.height; }
+  delete s.orig; s.shrunk = true; await db.put('shots', s);
+  return Math.max(0, saved);
+}
+async function shrinkShots(shots) { let n = 0; for (const s of shots) n += await shrinkShot(s); return n; }
 // Export-Verlauf (Idee 73): Zeile unter der Ampel, Tipp → ganze Liste
 const fmtSize = n => n >= 1048576 ? (n / 1048576).toLocaleString('de-AT', { maximumFractionDigits: 1 }) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 const fmtWhen = t => new Date(t).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + new Date(t).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' });
@@ -2115,6 +2143,7 @@ $('#btnSettings').onclick = async () => {
   showTab(t);
   $('#sGlove').checked = !!opt.glove; $('#sLearn').checked = opt.learn !== false; $('#sLeft').checked = !!opt.left;
   $('#sMagnet').checked = opt.magnet !== false; $('#sDash').checked = !!opt.dash; fillCamList();
+  $('#sShrink').checked = !!opt.shrink; $('#sRemind').checked = opt.remind !== false; $('#sLockDays').value = String(lockDays()); bioUi(); backupUi();
   learnState();
   gcalUi();
   $('#sTitle').value = (await db.setting('headerTitle')) || '';
@@ -2139,6 +2168,168 @@ $('#btnSettings').onclick = async () => {
 $('#sGlove').onchange = () => { opt.glove = $('#sGlove').checked; saveOpt(); };
 $('#sLeft').onchange = () => { opt.left = $('#sLeft').checked; saveOpt(); };
 $('#sMagnet').onchange = () => { opt.magnet = $('#sMagnet').checked; saveOpt(); };
+$('#sShrink').onchange = () => { opt.shrink = $('#sShrink').checked; saveOpt(); };
+$('#sRemind').onchange = () => { opt.remind = $('#sRemind').checked; saveOpt(); backupBar(); };
+$('#sLockDays').onchange = () => { try { localStorage.setItem('mb_lockDays', $('#sLockDays').value); } catch (e) { } toast(`PIN wird ${$('#sLockDays').value === '1' ? 'täglich' : 'alle ' + $('#sLockDays').value + ' Tage'} verlangt`); };
+// Fotos aller exportierten Projekte jetzt verkleinern
+$('#sShrinkNow').onclick = async () => {
+  const b = $('#sShrinkNow'); b.disabled = true;
+  try {
+    const projs = (await liveProjects()).filter(p => p.locked || (p.exports && p.exports.length));
+    let saved = 0, n = 0;
+    for (const p of projs) for (const sh of await db.shotsOf(p.id)) { if (sh.shrunk) continue; saved += await shrinkShot(sh); n++; b.textContent = `Verkleinere … ${n}`; }
+    toast(n ? `${n} Fotos verkleinert – ${fmtSize(saved)} gespart` : 'Nichts zu verkleinern (alle exportierten Fotos sind schon klein)', 4000);
+    if (S.project) { S.shots = await db.shotsOf(S.project.id); }
+    showStorage();
+  } catch (e) { toast('Fehler: ' + e.message, 4000); }
+  b.disabled = false; b.textContent = 'Jetzt alle exportierten Projekte verkleinern';
+};
+// Fingerabdruck/Face-ID einrichten (Idee 93)
+async function bioUi() {
+  const st = $('#sBioState'), on = $('#sBioOn'), off = $('#sBioOff');
+  const avail = await bio.available(); const c = bio.cred;
+  on.style.display = !c && avail ? '' : 'none'; off.style.display = c ? '' : 'none';
+  st.textContent = c ? (bio.usable ? `Eingerichtet auf diesem Gerät (seit ${new Date(c.at).toLocaleDateString('de-AT')})` : 'Eingerichtet – nach der PIN-Änderung einmal PIN eingeben, dann gilt es wieder')
+    : avail ? 'Noch nicht eingerichtet' : 'Auf diesem Gerät/Browser nicht verfügbar (am iPhone: App zum Home-Bildschirm hinzufügen, Face-ID aktiv)';
+}
+$('#sBioOn').onclick = async () => {
+  try { await bio.register(); toast('Eingerichtet – beim nächsten Sperren reicht Fingerabdruck/Face-ID', 3500); }
+  catch (e) { toast('Nicht eingerichtet: ' + (e.name === 'NotAllowedError' ? 'abgebrochen oder nicht erlaubt' : e.message), 5000); }
+  bioUi();
+};
+$('#sBioOff').onclick = () => { bio.remove(); toast('Entfernt – es gilt wieder nur die PIN'); bioUi(); };
+
+// ---------------- Gesamt-Sicherung (Idee 88/89) ----------------
+// Blobs (Fotos, Logos) werden als Daten-URL eingepackt, beim Einspielen wieder ausgepackt
+async function packBlobs(v) {
+  if (v instanceof Blob) return { __b64: await blobToB64(v) };
+  if (Array.isArray(v)) { const out = []; for (const x of v) out.push(await packBlobs(x)); return out; }
+  if (v && typeof v === 'object') { const out = {}; for (const k of Object.keys(v)) out[k] = await packBlobs(v[k]); return out; }
+  return v;
+}
+async function unpackBlobs(v) {
+  if (v && typeof v === 'object' && typeof v.__b64 === 'string' && Object.keys(v).length === 1) return b64ToBlob(v.__b64);
+  if (Array.isArray(v)) { const out = []; for (const x of v) out.push(await unpackBlobs(x)); return out; }
+  if (v && typeof v === 'object') { const out = {}; for (const k of Object.keys(v)) out[k] = await unpackBlobs(v[k]); return out; }
+  return v;
+}
+const BK_LOCAL = ['mb_opt', 'mb_sort', 'mb_cam', 'mb_lasers', 'mb_dropbox', 'mb_gcal', 'mb_lockDays', 'mb_laserHint', 'mb_pincfg'];
+const BK_SKIP_SETTINGS = ['dbxQueue'];
+async function backupStats() {
+  const projs = (await db.all('projects')).filter(p => !p.deleted); const ids = new Set(projs.map(p => p.id));
+  let n = 0, bytes = 0; for (const sh of await db.all('shots')) if (ids.has(sh.projectId)) { n++; bytes += sh.photo ? sh.photo.size : 0; }
+  return { projects: projs.length, shots: n, bytes: Math.round(bytes * 1.37) + projs.length * 2000 };
+}
+async function makeBackup() {
+  const projs = (await db.all('projects')).filter(p => !p.deleted); const ids = new Set(projs.map(p => p.id));
+  const settings = {};
+  for (const k of await db.settingKeys()) if (!BK_SKIP_SETTINGS.includes(k)) settings[k] = await packBlobs(await db.setting(k));
+  const local = {}; for (const k of BK_LOCAL) { try { const v = localStorage.getItem(k); if (v != null) local[k] = v; } catch (e) { } }
+  const d = new Date(), pad = n => String(n).padStart(2, '0');
+  const head = { app: 'massblatt-sicherung', version: 1, appVersion: VERSION, exported: d.toISOString(), device: navigator.userAgent.slice(0, 80), settings, local, projects: await packBlobs(projs) };
+  // Fotos stückweise anhängen, damit nicht ein riesiger Text auf einmal entsteht
+  const parts = [JSON.stringify(head).slice(0, -1), ',"shots":['];
+  let first = true, n = 0;
+  for (const sh of await db.all('shots')) {
+    if (!ids.has(sh.projectId)) continue;
+    const o = { ...sh }; delete o.orig;
+    parts.push((first ? '' : ',') + JSON.stringify(await packBlobs(o))); first = false; n++;
+  }
+  parts.push(']}');
+  const file = new File(parts, `massblatt-sicherung_${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`, { type: 'application/json' });
+  return { file, projects: projs.length, shots: n };
+}
+async function backupUi() {
+  const st = await backupStats(); const last = await db.setting('lastBackup');
+  $('#sBackupInfo').textContent = `${st.projects} Projekte, ${st.shots} Fotos, Datei ca. ${fmtSize(st.bytes)} · ${last ? 'zuletzt gesichert ' + fmtWhen(last) : 'noch nie gesichert'}`;
+}
+$('#sBackup').onclick = async () => {
+  const b = $('#sBackup'); b.disabled = true; b.textContent = 'Erstelle Sicherung …';
+  try {
+    const { file, projects, shots } = await makeBackup();
+    let done = false;
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: file.name }); done = true; } catch (e) { if (e.name === 'AbortError') { b.disabled = false; b.textContent = '💾 Gesamt-Sicherung erstellen'; return; } } }
+    if (!done) { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove(); }
+    await db.setting('lastBackup', Date.now()); try { localStorage.removeItem('mb_bkSnooze'); } catch (e) { }
+    log('Sicherung', projects, shots, file.size);
+    toast(`Sicherung erstellt: ${projects} Projekte, ${shots} Fotos (${fmtSize(file.size)})`, 4000);
+    backupUi(); backupBar();
+  } catch (e) { toast('Sicherung fehlgeschlagen: ' + e.message, 5000); }
+  b.disabled = false; b.textContent = '💾 Gesamt-Sicherung erstellen';
+};
+$('#sRestore').onclick = () => $('#sRestoreFile').click();
+$('#sRestoreFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  try {
+    toast('Lese Sicherung …', 5000);
+    const data = JSON.parse(await f.text());
+    if (data.app !== 'massblatt-sicherung') throw new Error('keine Gesamt-Sicherung (Projekt- und Kundendateien haben eigene Import-Knöpfe)');
+    const nP = (data.projects || []).length, nS = (data.shots || []).length;
+    const cur = await backupStats();
+    const mode = await new Promise(res => {
+      const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+      bg.innerHTML = `<div class="sheet"><h2>Sicherung einspielen</h2><p class="mute"></p><div class="menu"><button class="pri" data-m="merge">Zusammenführen (Vorhandenes bleibt)</button><button class="danger" data-m="replace">Alles ersetzen (${cur.projects} Projekte hier werden gelöscht)</button></div><button class="ghost" style="width:100%;margin-top:10px" data-close>Abbrechen</button></div>`;
+      bg.querySelector('p').textContent = `Datei vom ${fmtWhen(Date.parse(data.exported) || Date.now())} (App ${data.appVersion || '?'}): ${nP} Projekte, ${nS} Fotos, ${Object.keys(data.settings || {}).length} Einstellungen.`;
+      bg.querySelectorAll('[data-m]').forEach(b => { b.onclick = () => { bg.remove(); res(b.dataset.m); }; });
+      bg.querySelector('[data-close]').onclick = () => { bg.remove(); res(null); };
+      document.body.appendChild(bg);
+    });
+    if (!mode) return;
+    if (mode === 'replace' && !await confirmBox('Wirklich alles auf diesem Handy ersetzen?', 'Ja, ersetzen', 'Abbrechen', 'danger')) return;
+    await restoreBackup(data, mode);
+    toast(`Eingespielt: ${nP} Projekte, ${nS} Fotos – App startet neu`, 4000);
+    setTimeout(() => location.reload(), 1500);
+  } catch (err) { toast('Einspielen fehlgeschlagen: ' + err.message, 6000); }
+};
+async function restoreBackup(data, mode) {
+  if (mode === 'replace') { await db.clear('shots'); await db.clear('projects'); await db.clear('settings'); }
+  for (const p of data.projects || []) await db.put('projects', await unpackBlobs(p));
+  for (const sh of data.shots || []) await db.put('shots', await unpackBlobs(sh));
+  const st = data.settings || {};
+  for (const k of Object.keys(st)) {
+    const v = await unpackBlobs(st[k]);
+    if (mode === 'replace') { await db.setting(k, v); continue; }
+    const have = await db.setting(k);
+    if (k === 'customers') { // nach Namen zusammenführen
+      const cs = have || []; for (const c of v || []) { const i = cs.findIndex(x => (x.name || '').toLowerCase() === (c.name || '').toLowerCase()); if (i >= 0) cs[i] = { ...c, id: cs[i].id }; else cs.push(c); } await db.setting(k, cs);
+    } else if (k === 'streets') { const l = have || []; for (const x of v || []) if (!l.some(y => normStreet(y.street) === normStreet(x.street) && y.ort === x.ort)) l.push(x); await db.setting(k, l); }
+    else if (have === undefined || have === null) await db.setting(k, v);
+  }
+  for (const k of Object.keys(data.local || {})) { try { if (mode === 'replace' || localStorage.getItem(k) == null) localStorage.setItem(k, data.local[k]); } catch (e) { } }
+  await db.setting('lastBackup', Date.now());
+  log('Sicherung eingespielt', mode, (data.projects || []).length, (data.shots || []).length);
+}
+// Erinnerung (Idee 89): Leiste auf der Startseite, wenn die letzte Sicherung älter als 14 Tage ist
+const BK_DAYS = 14;
+async function backupBar() {
+  const bar = $('#bkBar'); if (!bar) return;
+  let snooze = 0; try { snooze = Number(localStorage.getItem('mb_bkSnooze') || 0); } catch (e) { }
+  if (opt.remind === false || snooze > Date.now()) { bar.style.display = 'none'; return; }
+  const last = await db.setting('lastBackup');
+  const projs = (await liveProjects()); const shots = await db.all('shots');
+  const withPhotos = projs.filter(p => shots.some(s => s.projectId === p.id));
+  const oldest = Math.min(...withPhotos.map(p => p.created || Date.now()));
+  const due = withPhotos.length >= 3 && (last ? last < Date.now() - BK_DAYS * 864e5 : oldest < Date.now() - BK_DAYS * 864e5);
+  bar.style.display = due ? 'flex' : 'none';
+  if (due) bar.querySelector('span').textContent = last ? `Zuletzt gesichert vor ${Math.floor((Date.now() - last) / 864e5)} Tagen` : 'Noch keine Gesamt-Sicherung';
+}
+$('#bkNow').onclick = async () => { await $('#btnSettings').onclick(); showTab('system'); setTimeout(() => $('#sBackup').scrollIntoView({ block: 'center' }), 100); };
+$('#bkLater').onclick = () => { try { localStorage.setItem('mb_bkSnooze', String(Date.now() + 3 * 864e5)); } catch (e) { } $('#bkBar').style.display = 'none'; };
+
+// ---------------- Alles löschen (Idee 95) ----------------
+$('#sWipe').onclick = async () => {
+  const st = await backupStats();
+  if (!await confirmBox('Alles auf diesem Handy löschen?', 'Weiter', 'Abbrechen', 'danger', `${st.projects} Projekte mit ${st.shots} Fotos, Kunden, Einstellungen, Dropbox- und Google-Anmeldung werden entfernt. Tipp: vorher „Gesamt-Sicherung erstellen“.`)) return;
+  const word = await promptBox('Zur Bestätigung LÖSCHEN eingeben', 'LÖSCHEN');
+  if ((word || '').trim().toUpperCase() !== 'LÖSCHEN') { toast('Abgebrochen – nichts gelöscht'); return; }
+  try {
+    await db.clear('shots'); await db.clear('projects'); await db.clear('settings');
+    try { localStorage.clear(); } catch (e) { }
+    try { for (const k of await caches.keys()) if (!k.startsWith('mb-') && !k.startsWith('mblib')) await caches.delete(k); } catch (e) { }
+    toast('Alles gelöscht – App startet neu', 3000);
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) { toast('Löschen fehlgeschlagen: ' + e.message, 5000); }
+};
 // Aufräumen (Idee 46): exportierte Projekte, die älter als n Monate sind, ins Archiv
 $('#sCleanup').onclick = async () => {
   const months = Math.max(1, parseInt($('#sCleanMonths').value, 10) || 3);
@@ -2460,13 +2651,39 @@ async function pinHash(pin, cfg = pinCfg) {
   return [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 const pinId = cfg => (cfg.hash || '').slice(0, 12);
+// Sperrdauer (Idee 94): nach so vielen Tagen wird die PIN wieder verlangt
+const lockDays = () => { let v = 30; try { v = parseInt(localStorage.getItem('mb_lockDays') || '30', 10); } catch (e) { } return [1, 7, 30].includes(v) ? v : 30; };
+function markUnlocked() { try { localStorage.setItem('mb_unlock', JSON.stringify({ at: Date.now(), until: Date.now() + lockDays() * 864e5, h: pinId(pinCfg) })); } catch (e) { } }
 function unlocked() {
   try {
     const raw = localStorage.getItem('mb_unlock'); if (!raw) return false;
     const u = raw.startsWith('{') ? JSON.parse(raw) : { until: Number(raw), h: pinId(PIN) }; // alter Stand: nur Ablaufzeit (= eingebaute PIN)
-    return u.until > Date.now() && u.h === pinId(pinCfg) && !pinCfg.gesperrt;
+    const until = u.at ? u.at + lockDays() * 864e5 : u.until;
+    return until > Date.now() && u.h === pinId(pinCfg) && !pinCfg.gesperrt;
   } catch (e) { return false; }
 }
+// Fingerabdruck/Face-ID (Idee 93): Handy-eigene Entsperrung über WebAuthn, nur auf diesem Gerät; nach PIN-Änderung einmal PIN nötig
+const b64u = b => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const unb64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '=')), c => c.charCodeAt(0));
+const bio = {
+  get cred() { try { return JSON.parse(localStorage.getItem('mb_bio') || 'null'); } catch (e) { return null; } },
+  get usable() { const c = this.cred; return !!(c && c.h === pinId(pinCfg) && window.PublicKeyCredential); },
+  async available() { try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch (e) { return false; } },
+  async register() {
+    const c = await navigator.credentials.create({ publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)), rp: { name: 'Maßblatt', id: location.hostname },
+      user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'massblatt', displayName: 'Maßblatt' },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' }, timeout: 60000, attestation: 'none' } });
+    localStorage.setItem('mb_bio', JSON.stringify({ id: b64u(c.rawId), h: pinId(pinCfg), at: Date.now() }));
+  },
+  async verify() {
+    const c = this.cred; if (!c) return false;
+    const a = await navigator.credentials.get({ publicKey: { challenge: crypto.getRandomValues(new Uint8Array(32)), allowCredentials: [{ id: unb64u(c.id), type: 'public-key', transports: ['internal'] }], userVerification: 'required', rpId: location.hostname, timeout: 60000 } });
+    return !!a;
+  },
+  remove() { try { localStorage.removeItem('mb_bio'); } catch (e) { } },
+};
 function applyPinCfg(c) {
   const changed = c.hash !== pinCfg.hash || !!c.gesperrt !== !!pinCfg.gesperrt;
   pinCfg = c; try { localStorage.setItem('mb_pincfg', JSON.stringify(c)); } catch (e) { }
@@ -2491,6 +2708,11 @@ function askPin() {
     $('#lockMsg').textContent = 'PIN eingeben';
     const dots = () => { $('#lockDots').textContent = '•'.repeat(buf.length); };
     pad.innerHTML = '';
+    // Fingerabdruck/Face-ID: Knopf über dem Ziffernblock, einmal automatisch versuchen
+    const bb = $('#lockBio'); bb.style.display = bio.usable ? '' : 'none';
+    const tryBio = async () => { try { if (await bio.verify()) { markUnlocked(); lock.style.display = 'none'; res(); return true; } } catch (e) { log('Biometrie', e.name, e.message); } return false; };
+    bb.onclick = tryBio;
+    if (bio.usable) setTimeout(() => { if (lock.style.display !== 'none') tryBio(); }, 400);
     ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'OK', '0', '⌫'].forEach(k => {
       const b = document.createElement('button'); b.textContent = k; if (k === 'OK') b.className = 'pri';
       b.onclick = async () => {
@@ -2500,10 +2722,7 @@ function askPin() {
           $('#lockMsg').textContent = 'Prüfe …';
           const ok = (await pinHash(buf)) === pinCfg.hash;
           buf = '';
-          if (ok) {
-            try { localStorage.setItem('mb_unlock', JSON.stringify({ until: Date.now() + 30 * 864e5, h: pinId(pinCfg) })); } catch (e) { }
-            lock.style.display = 'none'; res(); return;
-          }
+          if (ok) { markUnlocked(); lock.style.display = 'none'; res(); return; }
           tries++; beep(false);
           $('#lockMsg').textContent = 'Falsche PIN' + (tries >= 3 ? ' – bitte warten' : '');
           if (tries >= 3) { pad.style.pointerEvents = 'none'; setTimeout(() => { pad.style.pointerEvents = ''; $('#lockMsg').textContent = 'PIN eingeben'; }, 5000 * (tries - 2)); }
@@ -2550,6 +2769,7 @@ function whatsNew() {
   renderHome();
   offlineUi();
   whatsNew();
+  backupBar();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
     // neue Version übernommen → einmal neu laden

@@ -159,6 +159,8 @@ i.amp.ok, .ampel.ok i { background:#3ddc84; } i.amp.warn, .ampel.warn i { backgr
 .ampel { display:flex; gap:10px; align-items:flex-start; padding:8px 12px; margin:0 0 8px; border-radius:10px; background:var(--panel2); font-size:14px; color:var(--mute); }
 .ampel i { flex:none; width:12px; height:12px; border-radius:50%; margin-top:4px; }
 .ampel.ok { color:var(--text); }
+.bkbar { display:flex; align-items:center; gap:8px; margin:0 0 10px; padding:8px 10px; border-radius:12px; background:var(--panel2); font-size:13px; }
+.bkbar span { flex:1; } .bkbar button { width:auto; padding:0 12px; height:36px; font-size:14px; }
 .exprow { display:flex; align-items:center; gap:8px; padding:6px 12px; margin:0 0 8px; border-radius:10px; background:var(--panel2); font-size:13px; color:var(--mute); cursor:pointer; }
 .exprow span { flex:1; } .exprow b { font-size:18px; line-height:1; }
 .dbxrow { display:flex; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); }
@@ -295,6 +297,7 @@ ul.news li { margin-bottom:6px; }
     <div class="chips2" id="sortChips"><span class="mute">Sortieren:</span>
       <button data-sort="neu">Zuletzt</button><button data-sort="datum">Datum</button><button data-sort="strasse">Straße</button><button data-sort="kunde">Kunde</button>
       <span style="flex:1"></span><button id="archChip">📦 Archiv</button><button id="trashChip" style="display:none">🗑 Papierkorb</button><button id="selChip">☑ Auswählen</button></div>
+    <div class="bkbar" id="bkBar" style="display:none"><span></span><button class="ghost" id="bkLater">Später</button><button class="pri" id="bkNow">Jetzt sichern</button></div>
     <div id="projList"></div>
   </div>
   <div class="bottombar"><button class="pri" id="btnNewProj">+ Neues Projekt</button>
@@ -562,14 +565,28 @@ ul.news li { margin-bottom:6px; }
     <button class="ghost" id="sStats" style="width:100%;margin-top:14px">📊 Statistik</button>
     <label class="f">Speicher</label>
     <p class="mute" id="sStorage" style="margin:0">…</p>
+    <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px"><input type="checkbox" id="sShrink" style="width:auto"> Fotos nach dem Export verkleinern (1100 px, spart ≈ ⅔)</label>
+    <button class="ghost" id="sShrinkNow" style="width:100%;margin-top:6px">Jetzt alle exportierten Projekte verkleinern</button>
+    <label class="f">Sicherung</label>
+    <p class="mute" id="sBackupInfo" style="margin:0 0 6px">…</p>
+    <div style="display:flex;gap:8px"><button class="pri" id="sBackup" style="flex:1">💾 Gesamt-Sicherung erstellen</button><button class="ghost" id="sRestore" style="flex:1">♻ Sicherung einspielen</button></div>
+    <input type="file" id="sRestoreFile" accept=".json,application/json" hidden>
+    <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px"><input type="checkbox" id="sRemind" style="width:auto"> Alle 14 Tage an die Sicherung erinnern</label>
+    <p class="mute" style="margin:4px 0 0">Die Datei enthält alle Projekte mit Fotos, Kunden, Logos und Einstellungen – am besten in Dropbox oder „Dateien“ ablegen. Am neuen Handy: App installieren, PIN, dann „Sicherung einspielen“.</p>
     <label class="f">Fehlerbericht</label>
     <button class="ghost" id="sReport" style="width:100%">🛠 Fehlerbericht erstellen (an Claude schicken)</button>
     <p class="mute" style="margin:6px 0 0">Enthält App-Stand, Funktionstest, Bluetooth-Protokoll und Fehlermeldungen – keine Fotos, keine Kundendaten.</p>
-    <label class="f">PIN</label>
-    <button class="ghost" id="sPin" style="width:100%">🔑 PIN ändern (gilt auf allen Geräten)</button>
+    <label class="f">Entsperren</label>
+    <div style="display:flex;gap:8px;align-items:center"><span class="mute" style="font-size:14px;flex:1">PIN erneut verlangen</span><select id="sLockDays" style="width:auto"><option value="1">täglich</option><option value="7">alle 7 Tage</option><option value="30">alle 30 Tage</option></select></div>
+    <p class="mute" id="sBioState" style="margin:8px 0 4px">…</p>
+    <button class="ghost" id="sBioOn" style="width:100%">👆 Fingerabdruck / Face-ID einrichten</button>
+    <button class="ghost" id="sBioOff" style="width:100%">Fingerabdruck / Face-ID entfernen</button>
+    <button class="ghost" id="sPin" style="width:100%;margin-top:8px">🔑 PIN ändern (gilt auf allen Geräten)</button>
     <label class="f">Updates</label>
     <button class="ghost" id="sUpdate" style="width:100%;opacity:.5">⟳ Update installieren</button>
     <p class="mute" style="margin:6px 0 0">Noch ohne Funktion – neue Versionen kommen derzeit automatisch. Später wird ein Update erst nach Antippen eingespielt.</p>
+    <label class="f">Handy weitergeben</label>
+    <button class="danger" id="sWipe" style="width:100%">🗑 Alles löschen (Projekte, Fotos, Kunden, Anmeldungen)</button>
     <p class="mute" style="margin-top:16px">Maßblatt-App · Version <span id="ver"></span> · Daten bleiben nur auf diesem Handy.</p>
   </div>
 
@@ -586,6 +603,7 @@ ul.news li { margin-bottom:6px; }
   <div style="font-size:20px;font-weight:700;margin-bottom:6px">Maßblatt</div>
   <div class="mute" id="lockMsg" style="margin-bottom:16px">PIN eingeben</div>
   <div id="lockDots" style="font-size:30px;letter-spacing:10px;min-height:44px"></div>
+  <button class="ghost" id="lockBio" style="display:none;width:100%;max-width:320px;margin-bottom:10px">👆 Mit Fingerabdruck / Face-ID entsperren</button>
   <div class="keypad on" id="lockPad" style="width:100%;max-width:320px"></div>
 </div>
 <!-- Statistik -->
