@@ -159,6 +159,19 @@ i.amp.ok, .ampel.ok i { background:#3ddc84; } i.amp.warn, .ampel.warn i { backgr
 .ampel { display:flex; gap:10px; align-items:flex-start; padding:8px 12px; margin:0 0 8px; border-radius:10px; background:var(--panel2); font-size:14px; color:var(--mute); }
 .ampel i { flex:none; width:12px; height:12px; border-radius:50%; margin-top:4px; }
 .ampel.ok { color:var(--text); }
+.exprow { display:flex; align-items:center; gap:8px; padding:6px 12px; margin:0 0 8px; border-radius:10px; background:var(--panel2); font-size:13px; color:var(--mute); cursor:pointer; }
+.exprow span { flex:1; } .exprow b { font-size:18px; line-height:1; }
+.dbxrow { display:flex; gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); }
+.dbxrow b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.dbxrow .mute { font-size:12px; word-break:break-all; }
+#printBox { display:none; }
+@media print {
+  body.printing > :not(#printBox) { display:none !important; }
+  body.printing { background:#fff !important; }
+  body.printing #printBox { display:block; }
+  #printBox img.pp { display:block; width:100%; height:auto; page-break-after:always; break-after:page; }
+  #printBox img.pp:last-child { page-break-after:auto; break-after:auto; }
+}
 .tiles { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .tiles button { padding:16px 8px; font-size:16px; }
 .tiles button.sel { background:var(--blue); color:#fff; }
@@ -331,6 +344,7 @@ ul.news li { margin-bottom:6px; }
       </div>
     </details>
     <div class="ampel" id="ampel" style="display:none"><i></i><span></span></div>
+    <div class="exprow" id="expRow" style="display:none"><span></span><b>›</b></div>
     <div id="shotList"></div>
   </div>
   <div class="bottombar">
@@ -433,6 +447,7 @@ ul.news li { margin-bottom:6px; }
     <div><label class="f">Telefon</label><input id="cTel" inputmode="tel"></div>
   </div>
   <label class="f">Dropbox-Unterordner (leer = Kundenname)</label><input id="cDbx" placeholder="z. B. WAG">
+  <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px"><input type="checkbox" id="cFotos" style="width:auto"> Original-Fotos mit in die Dropbox laden (Ordner „… – Fotos“ neben dem PDF)</label>
   <label class="f">Logo</label>
   <label style="display:flex;gap:8px;align-items:center;margin:0 0 6px;font-size:14px"><input type="checkbox" id="cCut" checked style="width:auto"> Hintergrund automatisch entfernen</label>
   <input type="file" id="cLogo" accept="image/*"><img class="logo-prev" id="cLogoPrev" hidden>
@@ -515,8 +530,13 @@ ul.news li { margin-bottom:6px; }
       <a id="dbxAuth" target="_blank" rel="noopener" style="display:block;margin-top:8px"><button class="ghost" style="width:100%">1. Bei Dropbox anmelden (Code holen)</button></a>
       <div style="display:flex;gap:8px;margin-top:8px"><input id="dbxCode" placeholder="2. Code hier einfügen"><button class="pri" id="dbxOk">OK</button></div>
     </div>
-    <label class="f">Dropbox-Ordner</label><input id="dbxFolder" placeholder="/Maßblätter">
-    <button class="ghost" id="dbxOff" style="margin-top:8px">Dropbox trennen</button>
+    <label class="f">Dropbox-Ordner</label>
+    <div style="display:flex;gap:8px"><input id="dbxFolder" placeholder="/Maßblätter" style="flex:1"><button class="ghost" id="dbxBrowse" style="padding:0 14px">📁 Wählen</button></div>
+    <p class="mute" id="dbxFolderState" style="margin:4px 0 0;min-height:18px"></p>
+    <label style="display:flex;gap:8px;align-items:center;margin:10px 0 0;font-size:14px"><input type="checkbox" id="dbxYear" style="width:auto"> Jahresordner automatisch</label>
+    <p class="mute" id="dbxYearHint" style="margin:2px 0 0 26px"></p>
+    <p class="mute" style="margin:8px 0 0">Gleicher Dateiname → Versionen „_v2“, „_v3“ … (nicht „(1)“). Fotos je Kunde unter ⚙ Kunden einschaltbar.</p>
+    <div style="display:flex;gap:8px;margin-top:8px"><button class="ghost" id="dbxLogBtn" style="flex:1">Verlauf</button><button class="ghost" id="dbxOff" style="flex:1">Dropbox trennen</button></div>
     <label class="f" style="margin-top:22px">Google Kalender (Termine → Projekt mit Adresse)</label>
     <p class="mute" id="gcalState" style="margin:0 0 6px"></p>
     <input id="gcalId" placeholder="Client-ID (…apps.googleusercontent.com)">

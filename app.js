@@ -5,12 +5,12 @@ import { grayFromImage, magnetArrow } from './magnet.js';
 import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
-import { dropbox } from './dropbox.js';
+import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '2.7.0';
+const VERSION = '2.8.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Zweiter gleicher Raum: aus „Kz“ wird automatisch Kz1, der neue heißt Kz2 (wie in den alten Maßblättern)', 'Bekannte Straße eingeben → Hausnummern der bisherigen Projekte als Vorschlag', 'Ampel im Projekt und in der Liste: grün vollständig, gelb Rh/Eg/Kunde/Hausnummer fehlt, rot Pfeile ohne Maß', 'Papierkorb: gelöschte Projekte bleiben 30 Tage wiederherstellbar; Aufräumen in ⚙ archiviert alte exportierte Projekte', '📍-Vorschläge mit Entfernung; 📋 holt eine kopierte Adresse aus der Zwischenablage; Kunden zusammenführen in ⚙ Kunden'];
+const NEWS = ['Export-Verlauf im Projekt (wann PDF, Mail, Dropbox) und 🖨 Drucken direkt aus dem PDF-Blatt', 'PDF-Größe wird vor dem Teilen angezeigt', 'Dropbox: Ordner aus Liste wählen, Verlauf mit „nochmal“, Versionen als _v2 statt „(1)“, Jahresordner optional', 'Je Kunde einstellbar: Original-Fotos neben dem PDF mit hochladen'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -196,7 +196,7 @@ $('#selPdf').onclick = async () => {
     const file = await makeCombinedPdf(sel);
     const first = sel[0];
     const c = first && first.kundeId && ((await db.setting('customers')) || []).find(x => x.id === first.kundeId);
-    await sharePdf(file, { title: `Sammel-PDF (${sel.length} Projekte)`, dbxSub: c ? (c.dbx || c.name) : (first && first.firma) || '',
+    await sharePdf(file, { title: `Sammel-PDF (${sel.length} Projekte)`, dbxSub: withYear(c ? (c.dbx || c.name) : (first && first.firma) || '', first),
       onLock: async how => { for (const p of sel) { p.locked = { at: Date.now(), how: how + ' (Sammel-PDF)' }; noteExport(p, how + ' (Sammel-PDF)'); await db.put('projects', p); } setSelMode(false); } });
   } catch (e) { console.error(e); toast('PDF-Fehler: ' + e.message, 5000); }
   finally { updateSelBar(); }
@@ -382,7 +382,7 @@ async function openProject(id, isNew = false) {
   $('#projDetails').open = isNew || !p.name || wide();
   $('#projTitle').textContent = p.name || 'Neues Projekt';
   renderShots();
-  lockUi(); navUi(); archiveUi(); pinUi(); ampelUi();
+  lockUi(); navUi(); archiveUi(); pinUi(); ampelUi(); expUi();
   show('proj');
   if (isNew) setTimeout(() => $('#pStr').focus(), 200);
 }
@@ -735,7 +735,7 @@ function editCustomer(c) {
     const sh = $('#custSheet'); let logo = c ? c.logo : null;
     $('#custTitle').textContent = c ? 'Kunde bearbeiten' : 'Neuer Kunde';
     CF.forEach(([, ck, , cid]) => { $('#' + cid).value = c ? (c[ck] || '') : ''; });
-    $('#cDbx').value = c ? (c.dbx || '') : '';
+    $('#cDbx').value = c ? (c.dbx || '') : ''; $('#cFotos').checked = !!(c && c.fotos);
     const prev = () => { if (logo) { $('#cLogoPrev').src = blobUrl(logo); $('#cLogoPrev').hidden = false; } else $('#cLogoPrev').hidden = true; };
     prev(); $('#cLogo').value = '';
     $('#cDel').style.display = c ? '' : 'none';
@@ -747,7 +747,7 @@ function editCustomer(c) {
       const list = (await db.setting('customers')) || [];
       const obj = { id: c ? c.id : uid(), logo };
       CF.forEach(([, ck, , cid]) => { obj[ck] = $('#' + cid).value.trim(); });
-      obj.dbx = $('#cDbx').value.trim();
+      obj.dbx = $('#cDbx').value.trim(); obj.fotos = $('#cFotos').checked;
       const i = list.findIndex(x => x.id === obj.id);
       if (i >= 0) list[i] = obj; else list.push(obj);
       await db.setting('customers', list);
@@ -1706,10 +1706,24 @@ async function preExport(what) {
   return await confirmBox(`Vor dem ${what} bitte prüfen`, 'Trotzdem', 'Abbrechen', 'ghost', iss.map(x => '• ' + x).join('\n'));
 }
 // nach dem Export sperren (gegen versehentliche Änderungen)
-function noteExport(p, how) { p.exports = [...(p.exports || []), { t: Date.now(), how }].slice(-50); }
-async function lockProject(how) {
-  S.project.locked = { at: Date.now(), how }; noteExport(S.project, how); await db.put('projects', S.project); lockUi();
+function noteExport(p, how, extra = {}) { p.exports = [...(p.exports || []), { t: Date.now(), how, ...extra }].slice(-50); }
+async function lockProject(how, extra = {}) {
+  S.project.locked = { at: Date.now(), how }; noteExport(S.project, how, extra); await db.put('projects', S.project); lockUi(); expUi();
 }
+// Export-Verlauf (Idee 73): Zeile unter der Ampel, Tipp → ganze Liste
+const fmtSize = n => n >= 1048576 ? (n / 1048576).toLocaleString('de-AT', { maximumFractionDigits: 1 }) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+const fmtWhen = t => new Date(t).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' ' + new Date(t).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' });
+function expUi() {
+  const el = $('#expRow'); const ex = S.project && S.project.exports || [];
+  if (!ex.length) { el.style.display = 'none'; return; }
+  const last = ex[ex.length - 1];
+  el.style.display = 'flex'; el.querySelector('span').textContent = `${ex.length} Export${ex.length === 1 ? '' : 'e'} · zuletzt ${last.how} ${fmtWhen(last.t)}`;
+}
+$('#expRow').onclick = () => {
+  const ex = [...(S.project.exports || [])].reverse();
+  const lines = ex.map(e => `${fmtWhen(e.t)} · ${e.how}${e.size ? ' · ' + fmtSize(e.size) : ''}${e.path ? '\n   ' + e.path : ''}${e.fotos ? ` (+ ${e.fotos} Foto${e.fotos === 1 ? '' : 's'})` : ''}`);
+  infoBox('Export-Verlauf', lines);
+};
 function lockUi() {
   const l = S.project && S.project.locked;
   $('#proj').classList.toggle('locked', !!l);
@@ -1723,7 +1737,7 @@ const isLocked = () => { if (S.project && S.project.locked) { toast('Projekt ist
 $('#btnPdf').onclick = async () => {
   if (!await preExport('PDF')) return;
   const b = $('#btnPdf'); b.disabled = true; b.textContent = 'Erstelle …';
-  try { await sharePdf(await makePdfFile()); }
+  try { await sharePdf(await makePdfFile(), { projectId: S.project.id }); }
   catch (e) { console.error(e); toast('PDF-Fehler: ' + e.message, 5000); }
   finally { b.disabled = false; b.textContent = 'PDF'; }
 };
@@ -1733,7 +1747,8 @@ $('#btnMail').onclick = async () => {
   try {
     const file = await makePdfFile();
     const subject = 'Massblatt ' + (S.project.name || fileBase(S.project));
-    const doShare = () => navigator.share({ files: [file], title: subject, text: subject }).then(() => lockProject('gemailt'));
+    if (file.size > 10 * 1048576) toast(`Achtung: PDF hat ${fmtSize(file.size)} – für Mail evtl. zu groß`, 4000);
+    const doShare = () => navigator.share({ files: [file], title: subject, text: subject }).then(() => lockProject('gemailt', { size: file.size }));
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       try { await doShare(); }
       catch (e) {
@@ -1741,7 +1756,7 @@ $('#btnMail').onclick = async () => {
         // Berührung „verbraucht“ (iPhone): Dialog mit eigenem Knopf, der sofort teilt
         const bg = document.createElement('div'); bg.className = 'sheet-bg on';
         bg.innerHTML = `<div class="sheet"><h2>✉ Mail senden</h2><p class="mute"></p><div style="display:flex;flex-direction:column;gap:8px"><button class="pri" data-go>Mail-Programm öffnen</button><button class="ghost" data-close>Abbrechen</button></div></div>`;
-        bg.querySelector('p').textContent = `Betreff: ${subject}`;
+        bg.querySelector('p').textContent = `Betreff: ${subject} · ${fmtSize(file.size)}`;
         bg.querySelector('[data-go]').onclick = () => { bg.remove(); doShare().catch(err => { if (err.name !== 'AbortError') toast('Teilen nicht möglich: ' + err.message, 4000); }); };
         bg.querySelector('[data-close]').onclick = () => bg.remove();
         document.body.appendChild(bg);
@@ -1754,14 +1769,43 @@ $('#btnMail').onclick = async () => {
   } catch (e) { toast('Mail-Fehler: ' + e.message, 5000); }
   finally { b.disabled = false; }
 };
-// Dropbox: Unterordner je Kunde, ohne Netz in die Warteschlange
-async function custFolder() {
-  const c = S.project.kundeId && ((await db.setting('customers')) || []).find(x => x.id === S.project.kundeId);
-  return c ? (c.dbx || c.name || '') : (S.project.firma || '');
+// Dropbox: Unterordner je Kunde (+ Jahresordner, Idee 82), ohne Netz in die Warteschlange
+async function customerOf(p) { return p && p.kundeId && ((await db.setting('customers')) || []).find(x => x.id === p.kundeId) || null; }
+function withYear(sub, p) {
+  if (!dropbox.cfg.year) return sub;
+  const d = p && p.datum ? new Date(p.datum) : new Date(); const y = isNaN(d) ? new Date().getFullYear() : d.getFullYear();
+  return (sub ? sub + '/' : '') + y;
 }
-async function queueAdd(file, sub) {
+async function custFolderFor(p) { const c = await customerOf(p); return withYear(c ? (c.dbx || c.name || '') : (p.firma || ''), p); }
+async function custFolder() { return custFolderFor(S.project); }
+// Fotos mit hochladen (Idee 83): nur wenn beim Kunden eingeschaltet – Originale (ohne Pfeile), nummeriert nach Raum
+async function photosFor(p, shots) {
+  const c = await customerOf(p); if (!c || !c.fotos) return [];
+  return shots.map((s, i) => ({ name: `${String(i + 1).padStart(2, '0')} ${s.room}.jpg`.replace(/[\\/:*?"<>|]+/g, ' '), blob: s.orig || s.photo }));
+}
+// Dropbox-Verlauf (Idee 80)
+async function dbxLogAdd(e) { const l = ((await db.setting('dbxLog')) || []).slice(-99); l.push({ t: Date.now(), ...e }); await db.setting('dbxLog', l); }
+// Hochladen mit Verlauf und Fotos; meta = { projectId, photos:[{name, blob}] } → { path, fotos }
+async function dbxUpload(file, sub, meta = {}) {
+  let path;
+  try { path = await dropbox.upload(file, sub); }
+  catch (e) { await dbxLogAdd({ name: file.name, sub, size: file.size, ok: false, err: e.message, projectId: meta.projectId || null }); throw e; }
+  let fotos = 0, ferr = '';
+  if (meta.photos && meta.photos.length) {
+    const fsub = (dropbox.cleanSub(sub) ? dropbox.cleanSub(sub) + '/' : '') + path.split('/').pop().replace(/\.pdf$/i, '') + ' – Fotos';
+    for (const ph of meta.photos) {
+      toast(`Foto ${fotos + 1}/${meta.photos.length} in Dropbox …`, 10000);
+      try { await dropbox.upload(new File([ph.blob], ph.name, { type: 'image/jpeg' }), fsub, { overwrite: true }); fotos++; }
+      catch (e) { ferr = e.message; break; }
+    }
+  }
+  await dbxLogAdd({ name: file.name, sub, size: file.size, ok: true, path, fotos, err: ferr ? `Fotos: ${ferr}` : '', projectId: meta.projectId || null });
+  if (ferr) toast(`PDF hochgeladen, aber Fotos abgebrochen: ${ferr}`, 6000);
+  return { path, fotos };
+}
+async function queueAdd(file, sub, meta = {}) {
   const q = (await db.setting('dbxQueue')) || [];
-  q.push({ name: file.name, blob: file, sub, time: Date.now() });
+  q.push({ name: file.name, blob: file, sub, time: Date.now(), projectId: meta.projectId || null, photos: meta.photos || [] });
   await db.setting('dbxQueue', q);
 }
 let queueBusy = false;
@@ -1771,8 +1815,11 @@ async function processQueue() {
   queueBusy = true; let ok = 0;
   const rest = [];
   for (const it of q) {
-    try { await dropbox.upload(new File([it.blob], it.name, { type: 'application/pdf' }), it.sub); ok++; }
-    catch (e) { rest.push(it); }
+    try {
+      const r = await dbxUpload(new File([it.blob], it.name, { type: 'application/pdf' }), it.sub, { projectId: it.projectId, photos: it.photos });
+      ok++;
+      if (it.projectId) { const p = await db.get('projects', it.projectId); if (p) { noteExport(p, 'in Dropbox', { path: r.path, size: it.blob.size, fotos: r.fotos }); await db.put('projects', p); if (S.project && S.project.id === p.id) { S.project.exports = p.exports; expUi(); } } }
+    } catch (e) { rest.push(it); }
   }
   await db.setting('dbxQueue', rest); queueBusy = false;
   if (ok) toast(`${ok} wartende PDF${ok > 1 ? 's' : ''} in Dropbox hochgeladen ✓`, 3500);
@@ -1782,8 +1829,8 @@ $('#btnDbx').onclick = async () => {
   if (!dropbox.connected) { toast('Dropbox zuerst in ⚙ Einstellungen verbinden', 3000); $('#btnSettings').click(); return; }
   if (!await preExport('Hochladen')) return;
   const sub = await custFolder();
-  const base = (dropbox.cfg.folder || '/Maßblätter').replace(/\/+$/, '');
-  const ok = await confirmBox('PDF in Dropbox speichern?', 'Ja, hochladen', 'Abbrechen', 'pri', `Ordner: ${base}${sub ? '/' + sub : ''}`);
+  const photos = await photosFor(S.project, S.shots);
+  const ok = await confirmBox('PDF in Dropbox speichern?', 'Ja, hochladen', 'Abbrechen', 'pri', `Ordner: ${dropbox.pathFor(sub)}${photos.length ? `\n+ ${photos.length} Original-Foto${photos.length === 1 ? '' : 's'} (beim Kunden eingeschaltet)` : ''}`);
   if (!ok) return;
   const b = $('#btnDbx'); b.disabled = true;
   let file;
@@ -1791,11 +1838,11 @@ $('#btnDbx').onclick = async () => {
     file = await makePdfFile();
     if (!navigator.onLine) throw new TypeError('offline');
     toast('Lade in Dropbox hoch …', 10000);
-    const path = await dropbox.upload(file, sub); toast('In Dropbox gespeichert ✓ ' + path, 3500); beep(true);
-    await lockProject('in Dropbox');
+    const r = await dbxUpload(file, sub, { projectId: S.project.id, photos }); toast('In Dropbox gespeichert ✓ ' + r.path, 3500); beep(true);
+    await lockProject('in Dropbox', { path: r.path, size: file.size, fotos: r.fotos });
   } catch (e) {
-    console.error(e);
-    if (file && (e instanceof TypeError || !navigator.onLine)) { await queueAdd(file, sub); await lockProject('in Dropbox (wartet auf Netz)'); toast('Kein Netz – wird automatisch hochgeladen, sobald wieder Netz da ist', 4500); }
+    if (!(e instanceof TypeError)) console.error(e);
+    if (file && (e instanceof TypeError || !navigator.onLine)) { await queueAdd(file, sub, { projectId: S.project.id, photos }); await lockProject('in Dropbox (wartet auf Netz)', { size: file.size }); toast('Kein Netz – wird automatisch hochgeladen, sobald wieder Netz da ist', 4500); }
     else { toast('Dropbox-Fehler: ' + e.message, 6000); beep(false); }
   } finally { b.disabled = false; }
 };
@@ -1844,16 +1891,116 @@ $('#imProjFile').onchange = async e => {
 // ---------------- Dropbox einrichten (⚙) ----------------
 async function dbxUi() {
   const c = dropbox.cfg;
-  $('#dbxKey').value = c.appKey || ''; $('#dbxFolder').value = c.folder || '';
+  $('#dbxKey').value = c.appKey || ''; $('#dbxFolder').value = c.folder || ''; $('#dbxYear').checked = !!c.year;
   const qn = ((await db.setting('dbxQueue')) || []).length;
   $('#dbxState').textContent = (dropbox.connected ? 'Verbunden ✓' : 'Nicht verbunden') + (qn ? ` · ${qn} PDF wartet auf Netz` : '');
   $('#dbxSetup').style.display = dropbox.connected ? 'none' : '';
   $('#dbxOff').style.display = dropbox.connected ? '' : 'none';
+  $('#dbxBrowse').disabled = !dropbox.connected;
+  const log = (await db.setting('dbxLog')) || []; const bad = log.filter(e => !e.ok).length;
+  $('#dbxLogBtn').textContent = `Verlauf (${log.length}${bad ? `, ${bad} fehlgeschlagen` : ''})`; $('#dbxLogBtn').style.display = log.length ? '' : 'none';
+  $('#dbxYearHint').textContent = `z. B. ${dropbox.pathFor(withYear('WAG', null))}/Kopernikusstrasse 22, EG.pdf`;
   if (!dropbox.connected && c.appKey) { try { $('#dbxAuth').href = await dropbox.authUrl(); } catch (e) { } } else $('#dbxAuth').removeAttribute('href');
+  checkDbxFolder();
+}
+// Prüfung, ob der eingetragene Ordner existiert (Idee 79)
+let dbxChkT = 0;
+function checkDbxFolder() {
+  clearTimeout(dbxChkT); const st = $('#dbxFolderState');
+  if (!dropbox.connected) { st.textContent = ''; return; }
+  st.textContent = 'prüfe …';
+  dbxChkT = setTimeout(async () => {
+    try { const m = await dropbox.exists(dropbox.base); st.textContent = m ? (m['.tag'] === 'folder' ? `✓ Ordner vorhanden (${m.path_display})` : '✗ Das ist eine Datei, kein Ordner') : '○ Ordner gibt es noch nicht – wird beim ersten Hochladen angelegt'; }
+    catch (e) { st.textContent = (e instanceof DbxError && e.missingScope) ? '? Keine Leserechte – Berechtigung files.metadata.read in der Dropbox-App-Konsole aktivieren' : '? Prüfung nicht möglich: ' + e.message; }
+  }, 600);
+}
+$('#dbxYear').onchange = () => { dropbox.setYear($('#dbxYear').checked); dbxUi(); };
+// Ordner aus Liste wählen (Idee 79): durch die Dropbox blättern, neuen Ordner anlegen, übernehmen
+$('#dbxBrowse').onclick = () => dbxBrowser(dropbox.base);
+async function dbxBrowser(start) {
+  const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+  bg.innerHTML = `<div class="sheet"><h2>Dropbox-Ordner wählen</h2><p class="mute" data-path style="word-break:break-all"></p>
+    <div class="menu" data-list style="max-height:45vh;overflow:auto"></div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="ghost" data-up style="flex:1">↑ Eine Ebene höher</button><button class="ghost" data-new style="flex:1">＋ Neuer Ordner</button></div>
+    <div style="display:flex;gap:8px;margin-top:8px"><button class="ghost" data-close style="flex:1">Abbrechen</button><button class="pri" data-use style="flex:2">✓ Diesen Ordner verwenden</button></div></div>`;
+  let cur = start || '';
+  const list = bg.querySelector('[data-list]'), pathEl = bg.querySelector('[data-path]');
+  const show = async path => {
+    cur = path === '/' ? '' : path; pathEl.textContent = cur || '/ (Hauptordner)'; list.innerHTML = '<p class="mute">Lade …</p>';
+    try {
+      const l = await dropbox.listFolder(cur);
+      list.innerHTML = '';
+      if (!l.folders.length) { const p = document.createElement('p'); p.className = 'mute'; p.textContent = l.files.length ? `Keine Unterordner (${l.files.length} Datei${l.files.length === 1 ? '' : 'en'})` : 'Leerer Ordner'; list.appendChild(p); }
+      for (const f of l.folders) { const b = document.createElement('button'); b.className = 'ghost'; b.textContent = '📁 ' + f.name; b.onclick = () => show(f.path); list.appendChild(b); }
+    } catch (e) {
+      if (e instanceof DbxError && e.notFound && cur) { toast('Ordner gibt es noch nicht'); return show(cur.split('/').slice(0, -1).join('/')); }
+      list.innerHTML = ''; const p = document.createElement('p'); p.className = 'mute'; p.textContent = 'Fehler: ' + e.message; list.appendChild(p);
+    }
+  };
+  bg.querySelector('[data-up]').onclick = () => show(cur.split('/').slice(0, -1).join('/'));
+  bg.querySelector('[data-new]').onclick = async () => {
+    const name = await promptBox('Neuer Ordner in ' + (cur || '/'), 'z. B. Maßblätter'); if (!name) return;
+    try { const m = await dropbox.createFolder((cur || '') + '/' + name.replace(/[\\/:*?"<>|]+/g, ' ').trim()); toast('Ordner angelegt'); show(m.path_display); }
+    catch (e) { toast('Anlegen fehlgeschlagen: ' + e.message, 5000); }
+  };
+  bg.querySelector('[data-use]').onclick = () => { if (!cur) { toast('Bitte einen Ordner wählen (nicht den Hauptordner)'); return; } dropbox.setFolder(cur); $('#dbxFolder').value = cur; bg.remove(); toast('Dropbox-Ordner: ' + cur, 2500); checkDbxFolder(); };
+  bg.querySelector('[data-close]').onclick = () => bg.remove();
+  document.body.appendChild(bg);
+  show(cur);
+}
+// kleine Texteingabe als Blatt
+function promptBox(title, placeholder = '', value = '') {
+  return new Promise(res => {
+    const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+    bg.innerHTML = `<div class="sheet"><h2></h2><input data-in><div style="display:flex;gap:8px;margin-top:12px"><button class="ghost" data-close style="flex:1">Abbrechen</button><button class="pri" data-ok style="flex:1">OK</button></div></div>`;
+    bg.querySelector('h2').textContent = title; const inp = bg.querySelector('[data-in]'); inp.placeholder = placeholder; inp.value = value;
+    const fin = v => { bg.remove(); res(v); };
+    bg.querySelector('[data-ok]').onclick = () => fin(inp.value.trim() || null); bg.querySelector('[data-close]').onclick = () => fin(null);
+    inp.onkeydown = e => { if (e.key === 'Enter') fin(inp.value.trim() || null); };
+    document.body.appendChild(bg); setTimeout(() => inp.focus(), 50);
+  });
+}
+// Dropbox-Verlauf (Idee 80) mit „nochmal“ für fehlgeschlagene Uploads
+$('#dbxLogBtn').onclick = () => dbxLogSheet();
+async function dbxLogSheet() {
+  const log = [...((await db.setting('dbxLog')) || [])].reverse();
+  const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+  bg.innerHTML = `<div class="sheet"><h2>Dropbox-Verlauf</h2><div data-list style="max-height:60vh;overflow:auto;font-size:14px"></div>
+    <div style="display:flex;gap:8px;margin-top:10px"><button class="ghost" data-clear style="flex:1">Verlauf leeren</button><button class="pri" data-close style="flex:1">Schließen</button></div></div>`;
+  const list = bg.querySelector('[data-list]');
+  for (const e of log) {
+    const row = document.createElement('div'); row.className = 'dbxrow';
+    row.innerHTML = `<div style="flex:1;min-width:0"><b></b><div class="mute" data-sub></div></div>`;
+    row.querySelector('b').textContent = `${e.ok ? '✓' : '✗'} ${e.name}`;
+    row.querySelector('[data-sub]').textContent = `${fmtWhen(e.t)} · ${e.size ? fmtSize(e.size) + ' · ' : ''}${e.ok ? (e.path || '') + (e.fotos ? ` + ${e.fotos} Foto${e.fotos === 1 ? '' : 's'}` : '') : 'fehlgeschlagen: ' + (e.err || '?')}${e.ok && e.err ? ' · ' + e.err : ''}`;
+    if (e.redone) { const s2 = document.createElement('span'); s2.className = 'mute'; s2.textContent = '↻ nachgeholt'; row.appendChild(s2); }
+    if (e.projectId && (!e.ok || e.err) && !e.redone) {
+      const b = document.createElement('button'); b.className = 'ghost'; b.textContent = 'nochmal'; b.style.cssText = 'width:auto;padding:6px 10px;height:auto';
+      b.onclick = async () => {
+        b.disabled = true; b.textContent = '…';
+        try {
+          const p = await db.get('projects', e.projectId); if (!p) throw new Error('Projekt gibt es nicht mehr');
+          const shots = await db.shotsOf(p.id);
+          const file = await makePdfFileFor(p, shots);
+          const r = await dbxUpload(file, e.sub || await custFolderFor(p), { projectId: p.id, photos: await photosFor(p, shots) });
+          noteExport(p, 'in Dropbox', { path: r.path, size: file.size, fotos: r.fotos }); await db.put('projects', p);
+          if (S.project && S.project.id === p.id) { S.project.exports = p.exports; expUi(); }
+          const l2 = (await db.setting('dbxLog')) || []; const old = l2.find(x => x.t === e.t); if (old) { old.redone = Date.now(); await db.setting('dbxLog', l2); }
+          toast('Hochgeladen ✓ ' + r.path, 3500); bg.remove(); dbxLogSheet(); dbxUi();
+        } catch (err) { toast('Fehler: ' + err.message, 5000); b.disabled = false; b.textContent = 'nochmal'; }
+      };
+      row.appendChild(b);
+    }
+    list.appendChild(row);
+  }
+  if (!log.length) list.innerHTML = '<p class="mute">Noch keine Uploads.</p>';
+  bg.querySelector('[data-clear]').onclick = async () => { await db.setting('dbxLog', []); bg.remove(); dbxUi(); };
+  bg.querySelector('[data-close]').onclick = () => bg.remove();
+  document.body.appendChild(bg);
 }
 $('#dbxKey').onchange = () => { dropbox.setAppKey($('#dbxKey').value); dbxUi(); };
 $('#dbxAuth').onclick = e => { if (!$('#dbxAuth').href) { e.preventDefault(); toast('Zuerst den App-Key eintragen'); } };
-$('#dbxFolder').oninput = () => dropbox.setFolder($('#dbxFolder').value);
+$('#dbxFolder').oninput = () => { dropbox.setFolder($('#dbxFolder').value); checkDbxFolder(); };
 $('#dbxOk').onclick = async () => {
   try { await dropbox.finishAuth($('#dbxCode').value); $('#dbxCode').value = ''; toast('Dropbox verbunden ✓'); }
   catch (e) { toast('Dropbox: ' + e.message, 5000); }
@@ -1878,11 +2025,42 @@ async function previewPdf(file) {
   } catch (e) { pages.innerHTML = ''; const p = document.createElement('p'); p.style.color = '#fff'; p.textContent = 'Vorschau nicht möglich: ' + e.message; pages.appendChild(p); }
 }
 $('#pvwClose').onclick = () => { $('#pvw').classList.remove('on'); $('#pvwPages').innerHTML = ''; };
+// Drucken (Idee 74): PDF-Seiten werden als Bilder in eine Druckansicht gelegt – geht am Android (kein PDF im Rahmen) und am iPhone gleich
+let printBusy = false;
+async function printPdf(file) {
+  if (printBusy) return; printBusy = true;
+  toast('Bereite Druck vor …', 8000);
+  try {
+    const pdfjs = await import('./vendor/pdf.min.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', location.href).href;
+    const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+    const old = $('#printBox'); if (old) old.remove();
+    const box = document.createElement('div'); box.id = 'printBox';
+    let landscape = true;
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const vp0 = page.getViewport({ scale: 1 }); if (i === 1) landscape = vp0.width >= vp0.height;
+      const vp = page.getViewport({ scale: 2.4 }); // ≈ 170 dpi auf A4
+      const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+      await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      const img = document.createElement('img'); img.src = c.toDataURL('image/jpeg', 0.9); img.className = 'pp'; box.appendChild(img);
+      c.width = c.height = 0;
+    }
+    let st = $('#printStyle'); if (!st) { st = document.createElement('style'); st.id = 'printStyle'; document.head.appendChild(st); }
+    st.textContent = `@page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 0; }`;
+    document.body.appendChild(box);
+    await Promise.all([...box.querySelectorAll('img')].map(im => im.decode().catch(() => { })));
+    document.body.classList.add('printing');
+    const done = () => { document.body.classList.remove('printing'); box.remove(); window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    setTimeout(() => { window.print(); setTimeout(done, 120000); }, 50);
+  } finally { printBusy = false; }
+}
 // opts: { onLock(how) – was nach Teilen/Speichern passieren soll, dbxSub – Dropbox-Unterordner, title }
 async function sharePdf(file, opts = {}) {
   const url = blobUrl(file);
   const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
-  const onLock = opts.onLock || (how => lockProject(how));
+  const onLock = opts.onLock || ((how, extra) => lockProject(how, extra));
   const bg = document.createElement('div'); bg.className = 'sheet-bg on';
   bg.innerHTML = `<div class="sheet"><h2></h2><p class="mute"></p>
     <div style="display:flex;flex-direction:column;gap:8px">
@@ -1891,14 +2069,16 @@ async function sharePdf(file, opts = {}) {
       <a data-dl style="display:block"><button class="ghost" style="width:100%">Am Handy speichern</button></a>
       <button class="ghost" data-files>In „Dateien“ sichern</button>
       <button class="ghost" data-open>Vorschau ansehen</button>
+      <button class="ghost" data-print>🖨 Drucken</button>
       <button class="ghost" data-close>Schließen</button></div></div>`;
   bg.querySelector('h2').textContent = opts.title || 'PDF fertig';
-  bg.querySelector('p').textContent = file.name;
+  bg.querySelector('p').textContent = `${file.name} · ${fmtSize(file.size)}${file.size > 10 * 1048576 ? ' – für Mail evtl. zu groß' : ''}`;
   const a = bg.querySelector('[data-dl]'); a.href = url; a.download = file.name;
-  a.addEventListener('click', () => onLock('gespeichert'));
+  a.addEventListener('click', () => onLock('gespeichert', { size: file.size }));
   const sb = bg.querySelector('[data-share]');
   if (!canShare) sb.style.display = 'none';
-  sb.onclick = () => navigator.share({ files: [file], title: file.name }).then(() => onLock('geteilt')).catch(() => { });
+  sb.onclick = () => navigator.share({ files: [file], title: file.name }).then(() => onLock('geteilt', { size: file.size })).catch(() => { });
+  bg.querySelector('[data-print]').onclick = () => printPdf(file).then(() => onLock('gedruckt', { size: file.size })).catch(e => toast('Drucken nicht möglich: ' + e.message, 4000));
   // iPhone: ein Download-Link würde das PDF in der App öffnen (ohne Zurück) → stattdessen Teilen-Menü („In Dateien sichern“)
   const fb = bg.querySelector('[data-files]');
   if (isIOS && canShare) { a.style.display = 'none'; fb.onclick = sb.onclick; } else fb.style.display = 'none';
@@ -1906,12 +2086,14 @@ async function sharePdf(file, opts = {}) {
   if (!dropbox.connected) dbx.style.display = 'none';
   dbx.onclick = async () => {
     dbx.disabled = true; dbx.textContent = 'Lade hoch …';
+    const sub = opts.dbxSub != null ? opts.dbxSub : await custFolder();
+    const meta = { projectId: opts.projectId || null, photos: opts.projectId && S.project && S.project.id === opts.projectId ? await photosFor(S.project, S.shots) : [] };
     try {
       if (!navigator.onLine) throw new TypeError('offline');
-      const path = await dropbox.upload(file, opts.dbxSub != null ? opts.dbxSub : await custFolder());
-      toast('In Dropbox gespeichert ✓ ' + path, 3500); beep(true); await onLock('in Dropbox'); bg.remove();
+      const r = await dbxUpload(file, sub, meta);
+      toast('In Dropbox gespeichert ✓ ' + r.path, 3500); beep(true); await onLock('in Dropbox', { path: r.path, size: file.size, fotos: r.fotos }); bg.remove();
     } catch (e) {
-      if (e instanceof TypeError || !navigator.onLine) { await queueAdd(file, opts.dbxSub != null ? opts.dbxSub : await custFolder()); await onLock('in Dropbox (wartet auf Netz)'); toast('Kein Netz – wird automatisch hochgeladen, sobald wieder Netz da ist', 4500); bg.remove(); }
+      if (e instanceof TypeError || !navigator.onLine) { await queueAdd(file, sub, meta); await onLock('in Dropbox (wartet auf Netz)', { size: file.size }); toast('Kein Netz – wird automatisch hochgeladen, sobald wieder Netz da ist', 4500); bg.remove(); }
       else { toast('Dropbox-Fehler: ' + e.message, 6000); dbx.disabled = false; dbx.textContent = 'In Dropbox speichern'; }
     }
   };
