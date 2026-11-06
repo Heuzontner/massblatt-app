@@ -1,6 +1,6 @@
 // Offline: App-Dateien im Cache. Große, unveränderliche Bibliotheken liegen in einem eigenen Cache,
 // damit ein Update nur die kleinen App-Dateien neu laden muss (schnelle Updates).
-const V = 'mb-2.4.1';
+const V = 'mb-2.5.0';
 const LIB = 'mblib-1';
 const FILES = ['./', 'index.html', 'app.js', 'db.js', 'ble.js', 'arrows.js', 'pdf.js', 'detect.js', 'pin.js', 'dropbox.js', 'gcal.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png'];
@@ -32,8 +32,9 @@ self.addEventListener('fetch', e => {
   }
   if (u.origin !== location.origin) return;
   // App-Dateien: immer beim Server nachfragen (Updates), offline aus dem Cache
+  // Anfragen mit ?t=… (z. B. pin.json) nie merken und offline nicht mit index.html beantworten
   e.respondWith(fetch(e.request, { cache: 'no-cache' }).then(r => {
-    if (r.ok) { const cl = r.clone(); caches.open(V).then(c => c.put(e.request, cl)); }
+    if (r.ok && !u.search) { const cl = r.clone(); caches.open(V).then(c => c.put(e.request, cl)); }
     return r;
-  }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html'))));
+  }).catch(() => u.search ? Response.error() : caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html'))));
 });

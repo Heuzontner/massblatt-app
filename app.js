@@ -7,7 +7,9 @@ import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '2.4.1';
+const VERSION = '2.5.0';
+// Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
+const NEWS = ['Zurück-Taste (Android) schließt zuerst Blatt, Tastatur oder Bildschirm statt die App', 'Projekt lange drücken → Schnellmenü (PDF, Mail, Dropbox, Anheften, Archiv, Löschen)', 'Symbole in der Liste: 📌 angeheftet, 🔒 gesperrt, ☁ Dropbox, ✉ gemailt, 📤 geteilt', 'Kein Netz → Hinweisbalken; Linkshänder-Modus in ⚙; Tablet-/Querformat-Ansicht', 'PIN gilt jetzt auf allen Geräten (Datei pin.json im Repo) – ändern in ⚙ System'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -35,7 +37,82 @@ function toast(msg, ms = 1800) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('on');
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), ms);
 }
-function show(id) { $$('.screen').forEach(s => s.classList.toggle('on', s.id === id)); if (id !== 'cam') stopCam(); }
+// ---------------- Zurück-Taste (Android) / Browser-Verlauf ----------------
+// Jeder tiefere Bildschirm und jedes offene Blatt bekommt einen Eintrag im Verlauf. „Zurück“ schließt dann
+// das oberste Blatt bzw. geht einen Bildschirm zurück, statt die App zu verlassen. Zählung über history.state.mb.
+const nav = { stack: ['home'], suppress: 0, pendingPush: 0, popClosing: 0, layers: [], lastDepth: 0 };
+const curDepth = () => { try { return (history.state && history.state.mb) || 0; } catch (e) { return 0; } };
+function navPushNow() { try { const d = curDepth() + 1; history.pushState({ mb: d }, '', location.href); nav.lastDepth = d; } catch (e) { } }
+function navPush() { if (nav.suppress > 0) { nav.pendingPush++; return; } navPushNow(); } // während ein „zurück“ noch läuft: erst danach eintragen
+function navBackN(n) {
+  const d = curDepth(); n = Math.min(n, d); if (n <= 0) { nav.lastDepth = d; return; }
+  nav.suppress++; nav.lastDepth = d - n;
+  try { history.go(-n); } catch (e) { nav.suppress--; }
+}
+function show(id, viaPop = false) {
+  const st = nav.stack, cur = st[st.length - 1];
+  if (id !== cur) {
+    const i = st.indexOf(id);
+    if (i >= 0) { const n = st.length - 1 - i; st.length = i + 1; navBackN(viaPop ? n - 1 : n); }
+    else if (id === 'cam' && cur === 'ed') st[st.length - 1] = 'cam'; // Foto fertig → Kamera ersetzt den Editor (kein neuer Eintrag)
+    else { st.push(id); if (!viaPop) navPush(); }
+  }
+  $$('.screen').forEach(s => s.classList.toggle('on', s.id === id)); if (id !== 'cam') stopCam();
+  offlineUi();
+}
+const isLayerEl = el => !!(el && el.nodeType === 1 && (el.classList.contains('sheet-bg') || el.id === 'pvw' || el.id === 'keypad'));
+const layerOpen = new WeakSet();
+new MutationObserver(recs => {
+  let opens = 0, closes = 0;
+  const seen = new Set();
+  const check = el => {
+    if (!isLayerEl(el) || seen.has(el)) return; seen.add(el);
+    const on = el.isConnected && el.classList.contains('on');
+    if (on && !layerOpen.has(el)) { layerOpen.add(el); nav.layers.push(el); opens++; }
+    else if (!on && layerOpen.has(el)) { layerOpen.delete(el); nav.layers = nav.layers.filter(x => x !== el); closes++; }
+  };
+  for (const r of recs) { if (r.type === 'attributes') check(r.target); else { r.addedNodes.forEach(check); r.removedNodes.forEach(check); } }
+  if (nav.popClosing) closes = 0; // vom Zurück-Druck ausgelöst: Eintrag hat der Browser schon entfernt
+  const net = opens - closes;
+  if (net > 0) for (let i = 0; i < net; i++) navPush(); else if (net < 0) navBackN(-net);
+}).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+function closeLayer(el) {
+  const byId = { setSheet: '#setClose', pvw: '#pvwClose', calSheet: '#calClose', statSheet: '#statClose', custSheet: '#cCancel' };
+  if (el.id === 'keypad') return setKb(false);
+  if (el.id === 'arrSheet') return closeArr();
+  if (el.id === 'demo') return el.classList.remove('on');
+  if (el.id === 'roomSheet') return el.dispatchEvent(new MouseEvent('click', { bubbles: true })); // Tipp daneben = abgebrochen
+  if (byId[el.id]) { const b = $(byId[el.id]); if (b) return b.click(); }
+  const b = el.querySelector('[data-close]') || el.querySelector('button.ghost'); // dynamische Blätter: „Schließen“ bzw. „Abbrechen“
+  if (b) return b.click();
+  el.classList.remove('on');
+}
+function goBack(viaPop) {
+  const st = nav.stack, cur = st[st.length - 1];
+  if (cur === 'home') return false;
+  const prev = st[st.length - 2] || 'home';
+  if (cur === 'ed') leaveEditor(prev, viaPop);
+  else if (cur === 'cam') leaveCam(viaPop);
+  else { renderHome(); show('home', viaPop); }
+  return true;
+}
+window.addEventListener('popstate', () => {
+  if (nav.suppress > 0) {
+    nav.suppress--; nav.lastDepth = curDepth();
+    if (nav.pendingPush) { const n = nav.pendingPush; nav.pendingPush = 0; for (let i = 0; i < n; i++) navPushNow(); }
+    return;
+  }
+  const d = curDepth(); let diff = nav.lastDepth - d; nav.lastDepth = d;
+  if (diff <= 0) return; // vorwärts oder nichts von uns → nichts tun
+  nav.popClosing++;
+  try {
+    while (diff-- > 0) {
+      const top = nav.layers[nav.layers.length - 1];
+      if (top) closeLayer(top); else if (!goBack(true)) break;
+    }
+  } finally { setTimeout(() => nav.popClosing--, 80); }
+});
+nav.lastDepth = curDepth();
 // Rückmeldung nur per Vibration (am iPhone erlaubt Apple Web-Apps keine Vibration)
 function beep(ok = true) { try { if (navigator.vibrate) navigator.vibrate(ok ? 60 : [80, 60, 80]); } catch (e) { } }
 // toBlob hängt auf manchen Geräten gelegentlich → Zeitlimit, dann toDataURL
@@ -110,7 +187,7 @@ $('#selPdf').onclick = async () => {
     const first = sel[0];
     const c = first && first.kundeId && ((await db.setting('customers')) || []).find(x => x.id === first.kundeId);
     await sharePdf(file, { title: `Sammel-PDF (${sel.length} Projekte)`, dbxSub: c ? (c.dbx || c.name) : (first && first.firma) || '',
-      onLock: async how => { for (const p of sel) { p.locked = { at: Date.now(), how: how + ' (Sammel-PDF)' }; await db.put('projects', p); } setSelMode(false); } });
+      onLock: async how => { for (const p of sel) { p.locked = { at: Date.now(), how: how + ' (Sammel-PDF)' }; noteExport(p, how + ' (Sammel-PDF)'); await db.put('projects', p); } setSelMode(false); } });
   } catch (e) { console.error(e); toast('PDF-Fehler: ' + e.message, 5000); }
   finally { updateSelBar(); }
 };
@@ -130,7 +207,8 @@ async function renderHome() {
   const dateOf = p => p.datum || todayISO(new Date(p.created || 0));
   const cmp = { neu: (a, b) => (b.updated || 0) - (a.updated || 0), datum: (a, b) => dateOf(b).localeCompare(dateOf(a)),
     strasse: (a, b) => (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }), kunde: (a, b) => (a.firma || '\uffff').localeCompare(b.firma || '\uffff', 'de') || (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }) }; // ohne Kunde ganz unten
-  list.sort(cmp[homeSort] || cmp.neu);
+  const by = cmp[homeSort] || cmp.neu;
+  list.sort((a, b) => ((b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)) || by(a, b)); // angeheftete zuerst
   const el = $('#projList');
   if (!list.length) {
     el.innerHTML = showArch ? '<div class="empty">Archiv ist leer.</div>' : q ? `<div class="empty">Nichts gefunden.${inArch ? `<br><small>${inArch} Treffer im Archiv – oben „📦 Archiv“ antippen</small>` : ''}</div>` : '<div class="empty">Noch kein Projekt.<br>Unten auf „+ Neues Projekt“ tippen.</div>';
@@ -141,15 +219,71 @@ async function renderHome() {
     const n = counts.get(p.id) || 0;
     const c = document.createElement('div'); c.className = 'card' + (selIds.has(p.id) ? ' checked' : '');
     c.innerHTML = `<span class="cb">✓</span><div class="t"><b></b><small></small></div><span>›</span>`;
-    c.querySelector('b').textContent = (p.locked ? '🔒 ' : '') + (p.name || 'Ohne Namen');
-    c.querySelector('small').textContent = `${p.firma || ''} · ${n} Foto${n === 1 ? '' : 's'} · ${new Date(p.datum || p.created).toLocaleDateString('de-AT')}${p.archived ? ' · 📦 archiviert' : ''}`;
+    c.querySelector('b').textContent = (p.pinned ? '📌 ' : '') + (p.locked ? '🔒 ' : '') + (p.name || 'Ohne Namen');
+    c.querySelector('small').textContent = `${statusIcons(p)}${p.firma || ''} · ${n} Foto${n === 1 ? '' : 's'} · ${new Date(p.datum || p.created).toLocaleDateString('de-AT')}${p.archived ? ' · 📦 archiviert' : ''}`;
     c.onclick = () => {
+      if (c._lp) { c._lp = false; return; } // Klick nach langem Drücken ignorieren
       if (selMode) { if (selIds.has(p.id)) selIds.delete(p.id); else selIds.add(p.id); c.classList.toggle('checked', selIds.has(p.id)); updateSelBar(); return; }
       openProject(p.id);
     };
+    longPress(c, () => { if (!selMode) projMenu(p); });
     el.appendChild(c);
   }
 }
+// Symbole: was mit dem Projekt schon passiert ist (Idee 12)
+function statusIcons(p) {
+  const ex = p.exports || [];
+  const has = re => ex.some(e => re.test(e.how || ''));
+  const ic = [has(/dropbox/i) ? '☁' : '', has(/gemailt/i) ? '✉' : '', has(/geteilt|gespeichert/i) ? '📤' : ''].filter(Boolean).join(' ');
+  return ic ? ic + ' · ' : '';
+}
+// langes Drücken (Idee 3): 550 ms ohne Bewegung → Aktion, der folgende Klick wird verschluckt
+function longPress(el, fn) {
+  let t = 0, x0 = 0, y0 = 0;
+  const stop = () => { clearTimeout(t); t = 0; };
+  el.addEventListener('pointerdown', e => { if (e.button !== 0 && e.pointerType === 'mouse') return; x0 = e.clientX; y0 = e.clientY; stop(); t = setTimeout(() => { t = 0; el._lp = true; try { navigator.vibrate && navigator.vibrate(20); } catch (err) { } fn(); }, 550); });
+  el.addEventListener('pointermove', e => { if (t && Math.hypot(e.clientX - x0, e.clientY - y0) > 8) stop(); });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => el.addEventListener(ev, stop));
+  el.addEventListener('contextmenu', e => e.preventDefault());
+}
+// Schnellmenü zu einem Projekt aus der Liste
+async function projMenu(p) {
+  p = (await db.get('projects', p.id)) || p;
+  const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+  const items = [
+    ['📄 PDF erstellen', async () => { await openProject(p.id); $('#btnPdf').click(); }],
+    ['✉ Per Mail senden', async () => { await openProject(p.id); $('#btnMail').click(); }],
+    dropbox.connected ? ['☁ In Dropbox speichern', async () => { await openProject(p.id); $('#btnDbx').click(); }] : null,
+    [p.pinned ? '📌 Nicht mehr anheften' : '📌 Oben anheften', async () => { p.pinned = !p.pinned; await db.put('projects', p); renderHome(); toast(p.pinned ? 'Angeheftet – bleibt oben in der Liste' : 'Nicht mehr angeheftet'); }],
+    ['⧉ Duplizieren', async () => { await openProject(p.id); $('#btnDupProj').click(); }],
+    [p.archived ? '📦 Aus Archiv holen' : '📦 Archivieren', async () => { p.archived = !p.archived; p.updated = Date.now(); await db.put('projects', p); renderHome(); toast(p.archived ? 'Ins Archiv verschoben' : 'Aus dem Archiv geholt'); }],
+    ['🗑 Projekt löschen', async () => { await deleteProject(p); }, 'danger'],
+  ].filter(Boolean);
+  bg.innerHTML = `<div class="sheet"><h2></h2><p class="mute"></p><div class="menu"></div><button class="ghost" style="width:100%;margin-top:10px" data-close>Abbrechen</button></div>`;
+  bg.querySelector('h2').textContent = p.name || 'Ohne Namen';
+  bg.querySelector('p').textContent = [p.firma, p.plz && p.ortName ? p.plz + ' ' + p.ortName : (p.ortName || '')].filter(Boolean).join(' · ') || 'Schnellmenü';
+  const m = bg.querySelector('.menu');
+  for (const [label, fn, cls] of items) { const b = document.createElement('button'); b.textContent = label; b.className = cls || 'ghost'; b.onclick = () => { bg.remove(); fn(); }; m.appendChild(b); }
+  bg.querySelector('[data-close]').onclick = () => bg.remove();
+  bg.onclick = e => { if (e.target === bg) bg.remove(); };
+  document.body.appendChild(bg);
+}
+async function deleteProject(p) {
+  if (!await confirmBox(`Projekt „${p.name || 'Ohne Namen'}“ mit allen Fotos löschen?`)) return false;
+  const shots = await db.shotsOf(p.id);
+  for (const s of shots) await db.del('shots', s.id);
+  await db.del('projects', p.id);
+  log('Projekt gelöscht', p.name);
+  if (S.project && S.project.id === p.id) S.project = null;
+  renderHome(); show('home');
+  undoToast(`Projekt „${p.name || 'Ohne Namen'}“ gelöscht`, async () => {
+    await db.put('projects', p); for (const s of shots) await db.put('shots', s);
+    renderHome(); toast('Projekt wiederhergestellt');
+  });
+  return true;
+}
+$('#btnPin').onclick = async () => { const p = S.project; p.pinned = !p.pinned; await db.put('projects', p); pinUi(); toast(p.pinned ? 'Angeheftet – bleibt oben in der Liste' : 'Nicht mehr angeheftet'); };
+function pinUi() { $('#btnPin').textContent = S.project && S.project.pinned ? '📌 Angeheftet' : '📌 Anheften'; }
 // Archiv: Projekt ausblenden, bleibt aber erhalten (jederzeit wieder einblendbar)
 $('#btnArchive').onclick = async () => {
   const p = S.project;
@@ -191,10 +325,10 @@ async function openProject(id, isNew = false) {
   $('#pStrasse').value = p.strasse || ''; $('#pOrt').value = p.ort || ''; $('#pLand').value = p.land || '';
   $('#pTel').value = p.telefon || ''; $('#pDatum').value = (p.datum || '').slice(0, 10);
   renderCustChips();
-  $('#projDetails').open = isNew || !p.name;
+  $('#projDetails').open = isNew || !p.name || wide();
   $('#projTitle').textContent = p.name || 'Neues Projekt';
   renderShots();
-  lockUi(); navUi(); archiveUi();
+  lockUi(); navUi(); archiveUi(); pinUi();
   show('proj');
   if (isNew) setTimeout(() => $('#pStr').focus(), 200);
 }
@@ -527,18 +661,7 @@ async function renderCustManage() {
   }
 }
 $('#custNew').onclick = async () => { await editCustomer(null); renderCustManage(); if (S.project) renderCustChips(); };
-$('#btnDelProj').onclick = async () => {
-  if (!await confirmBox(`Projekt „${S.project.name || 'Ohne Namen'}“ mit allen Fotos löschen?`)) return;
-  const p = S.project, shots = S.shots;
-  for (const s of shots) await db.del('shots', s.id);
-  await db.del('projects', p.id);
-  log('Projekt gelöscht', p.name);
-  renderHome(); show('home');
-  undoToast(`Projekt „${p.name || 'Ohne Namen'}“ gelöscht`, async () => {
-    await db.put('projects', p); for (const s of shots) await db.put('shots', s);
-    renderHome(); toast('Projekt wiederhergestellt');
-  });
-};
+$('#btnDelProj').onclick = () => deleteProject(S.project);
 
 // Hinweis mit „Rückgängig“-Knopf (6 s)
 function undoToast(msg, undo) {
@@ -689,10 +812,10 @@ function setCamRoom(r) {
   $('#camRoom').textContent = r;
   $('#camHint').textContent = r === 'Rh' ? 'Wand von Boden bis Decke ins Bild nehmen' : 'Tür und Fenster ganz ins Bild nehmen';
 }
-async function openCam() {
+async function openCam(viaPop = false) {
   setCamRoom(S.room);
   $('#camFallback').style.display = 'none';
-  show('cam');
+  show('cam', viaPop);
   try {
     S.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 3000 }, height: { ideal: 4000 } }, audio: false });
     $('#video').srcObject = S.stream;
@@ -787,7 +910,8 @@ async function captureHdr() {
   return out;
 }
 $('#camRoom').onclick = async () => { const r = await resolveRoom(await pickRoom()); if (r) setCamRoom(r); };
-$('#camBack').onclick = () => { renderShots(); if (S.shots.length) $('#projDetails').open = false; show('proj'); }; // Fotos sichtbar, Projektdaten eingeklappt
+function leaveCam(viaPop) { renderShots(); if (S.shots.length && !wide()) $('#projDetails').open = false; show('proj', viaPop); } // Fotos sichtbar, Projektdaten eingeklappt
+$('#camBack').onclick = () => leaveCam();
 $('#camGallery').onclick = () => $('#galIn').click();
 $('#fileIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) newShotFromBlob(f); else show('proj'); };
 $('#galIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) newShotFromBlob(f); };
@@ -1014,10 +1138,23 @@ function setValue(cm, mm) {
 }
 const arrowName = a => `${a.el === 'Maß' ? '' : a.el + ' '}${a.kind === 'H' ? 'Höhe' : 'Breite'}`;
 // Test-Optionen: großer Messmodus, Sprachansage
-const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true };
+const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true, left: false };
 try { Object.assign(opt, JSON.parse(localStorage.getItem('mb_opt') || '{}')); } catch (e) { }
-const saveOpt = () => { try { localStorage.setItem('mb_opt', JSON.stringify(opt)); } catch (e) { } document.body.classList.toggle('bigmode', !!opt.big); document.body.classList.toggle('glove', !!opt.glove); };
-document.body.classList.toggle('bigmode', !!opt.big); document.body.classList.toggle('glove', !!opt.glove);
+const applyOptClasses = () => { document.body.classList.toggle('bigmode', !!opt.big); document.body.classList.toggle('glove', !!opt.glove); document.body.classList.toggle('lefty', !!opt.left); };
+const saveOpt = () => { try { localStorage.setItem('mb_opt', JSON.stringify(opt)); } catch (e) { } applyOptClasses(); };
+applyOptClasses();
+// breite Ansicht (Tablet / Querformat): Projektdaten und Fotoliste nebeneinander
+const wide = () => window.matchMedia('(min-width: 820px)').matches;
+// Offline-Hinweis (Idee 13): schmaler Balken, solange kein Netz da ist
+async function offlineUi() {
+  const el = $('#offline'); if (!el) return;
+  const off = navigator.onLine === false;
+  const scr = nav.stack[nav.stack.length - 1];
+  el.classList.toggle('on', off && (scr === 'home' || scr === 'proj'));
+  if (off) { let qn = 0; try { qn = ((await db.setting('dbxQueue')) || []).length; } catch (e) { } el.textContent = 'Kein Netz – Adress-Vorschläge und Dropbox warten' + (qn ? ` · ${qn} PDF${qn > 1 ? 's' : ''} in der Warteschlange` : ''); }
+}
+window.addEventListener('online', () => { offlineUi(); toast('Wieder online'); });
+window.addEventListener('offline', offlineUi);
 function showBig(a) {
   const el = $('#bigVal'); el.innerHTML = `${fmtVal(a)}<small></small>`; el.querySelector('small').textContent = arrowName(a);
   el.classList.add('on'); clearTimeout(showBig._t); showBig._t = setTimeout(() => el.classList.remove('on'), 1400);
@@ -1091,12 +1228,14 @@ async function finishShot(auto) {
 
 $('#edDone').onclick = () => finishShot(false);
 // zurück zum Projekt: sofort wechseln, Speichern läuft im Hintergrund
-$('#edBack').onclick = () => {
+function leaveEditor(target = 'proj', viaPop = false) {
   clearTimeout(finishing); if (kb.on) setKb(false);
   if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
-  show('proj'); renderShots();
+  if (target === 'cam') openCam(viaPop); else show(target, viaPop);
+  renderShots();
   saveShot().then(renderShots).catch(e => toast('Speichern fehlgeschlagen: ' + e.message, 4000));
-};
+}
+$('#edBack').onclick = () => leaveEditor('proj');
 function stepActive(d) {
   clearTimeout(finishing);
   const arr = S.shot.arrows; if (!arr.length) return;
@@ -1377,8 +1516,9 @@ async function preExport(what) {
   return await confirmBox(`Vor dem ${what} bitte prüfen`, 'Trotzdem', 'Abbrechen', 'ghost', iss.map(x => '• ' + x).join('\n'));
 }
 // nach dem Export sperren (gegen versehentliche Änderungen)
+function noteExport(p, how) { p.exports = [...(p.exports || []), { t: Date.now(), how }].slice(-50); }
 async function lockProject(how) {
-  S.project.locked = { at: Date.now(), how }; await db.put('projects', S.project); lockUi();
+  S.project.locked = { at: Date.now(), how }; noteExport(S.project, how); await db.put('projects', S.project); lockUi();
 }
 function lockUi() {
   const l = S.project && S.project.locked;
@@ -1601,7 +1741,7 @@ function showTab(t) {
 $('#btnSettings').onclick = async () => {
   let t = 'allg'; try { t = localStorage.getItem('mb_tab') || 'allg'; } catch (e) { }
   showTab(t);
-  $('#sGlove').checked = !!opt.glove; $('#sLearn').checked = opt.learn !== false;
+  $('#sGlove').checked = !!opt.glove; $('#sLearn').checked = opt.learn !== false; $('#sLeft').checked = !!opt.left;
   learnState();
   gcalUi();
   $('#sTitle').value = (await db.setting('headerTitle')) || '';
@@ -1624,6 +1764,7 @@ $('#btnSettings').onclick = async () => {
   $('#setSheet').classList.add('on');
 };
 $('#sGlove').onchange = () => { opt.glove = $('#sGlove').checked; saveOpt(); };
+$('#sLeft').onchange = () => { opt.left = $('#sLeft').checked; saveOpt(); };
 $('#sLearn').onchange = () => { opt.learn = $('#sLearn').checked; saveOpt(); };
 $('#sLearnReset').onclick = async () => { await db.setting('tplLearn', null); learnState(); toast('Gelernte Pfeil-Positionen gelöscht'); };
 async function learnState() {
@@ -1879,21 +2020,80 @@ $('#imFile').onchange = async e => {
   } catch (err) { toast('Import fehlgeschlagen: ' + err.message, 4000); }
 };
 $('#sLaserOff').onclick = () => { laser.disconnect(); laserUi(); };
+// PIN ändern: neue Prüfsumme erzeugen → Text für pin.json (gilt dann auf allen Geräten)
+$('#sPin').onclick = () => {
+  const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+  bg.innerHTML = `<div class="sheet"><h2>PIN ändern (alle Geräte)</h2>
+    <p class="mute">Die PIN gilt auf allen Handys. Neue PIN eingeben → den erzeugten Text in die Datei <b>pin.json</b> im GitHub-Repo kopieren (Inhalt komplett ersetzen, „Commit changes“). Ab dann verlangt jedes Gerät beim nächsten Start mit Netz die neue PIN. Alternativ: die neue PIN Claude im Chat schreiben.</p>
+    <label class="f">Neue PIN (4–12 Ziffern)</label><input id="pinNew" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off">
+    <label class="f">Nochmal</label><input id="pinNew2" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off">
+    <label style="display:flex;gap:10px;align-items:center;margin:10px 0 4px"><input type="checkbox" id="pinLock" style="width:auto"> App sofort für alle sperren (gesperrt = true)</label>
+    <button class="pri" style="width:100%;margin-top:8px" data-make>Text erzeugen</button>
+    <textarea id="pinOut" readonly style="display:none;width:100%;height:120px;margin-top:10px;font:12px monospace;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px"></textarea>
+    <div id="pinActs" style="display:none;flex-direction:column;gap:8px;margin-top:8px"><button class="ghost" data-copy>Text kopieren</button><a href="https://github.com/Heuzontner/massblatt-app/edit/main/pin.json" target="_blank" rel="noopener"><button class="ghost" style="width:100%">pin.json auf GitHub bearbeiten</button></a></div>
+    <button class="ghost" style="width:100%;margin-top:10px" data-close>Schließen</button></div>`;
+  bg.querySelector('[data-make]').onclick = async () => {
+    const a = bg.querySelector('#pinNew').value.trim(), b = bg.querySelector('#pinNew2').value.trim();
+    if (!/^\d{4,12}$/.test(a)) return toast('PIN: 4 bis 12 Ziffern');
+    if (a !== b) return toast('Die beiden Eingaben sind verschieden');
+    const salt = [...crypto.getRandomValues(new Uint8Array(8))].map(x => x.toString(16).padStart(2, '0')).join('');
+    const cfg = { salt, iter: 200000, hash: await pinHash(a, { salt, iter: 200000 }), gesperrt: bg.querySelector('#pinLock').checked, hinweis: '' };
+    const out = bg.querySelector('#pinOut'); out.value = JSON.stringify(cfg, null, 2); out.style.display = 'block'; bg.querySelector('#pinActs').style.display = 'flex';
+    toast('Text erzeugt – kopieren und in pin.json einfügen', 3000);
+  };
+  bg.querySelector('[data-copy]').onclick = async () => { const t = bg.querySelector('#pinOut').value; try { await navigator.clipboard.writeText(t); toast('Kopiert'); } catch (e) { bg.querySelector('#pinOut').select(); toast('Bitte Text markieren und kopieren', 3000); } };
+  bg.querySelector('[data-close]').onclick = () => bg.remove();
+  document.body.appendChild(bg);
+};
 $$('[data-back]').forEach(b => b.onclick = () => { renderHome(); show(b.dataset.back); });
 
 // ---------------- PIN-Sperre ----------------
 // Einfache Sperre gegen fremde Nutzung (kein echter Schutz: der Code ist öffentlich).
-// Nach richtiger Eingabe bleibt das Gerät 30 Tage entsperrt.
-async function pinHash(pin) {
+// Die gültige PIN steht als Prüfsumme in pin.json im Repo und gilt damit auf allen Geräten: wird sie dort geändert
+// (oder „gesperrt“ gesetzt), verlangt jedes Handy beim nächsten Start mit Netz die neue PIN. Ohne Netz gilt der letzte Stand.
+let pinCfg = { ...PIN, gesperrt: false };
+try { const c = JSON.parse(localStorage.getItem('mb_pincfg') || 'null'); if (c && c.hash) pinCfg = c; } catch (e) { }
+async function fetchPinCfg() {
+  const r = await fetch('pin.json?t=' + Date.now(), { cache: 'no-store' });
+  if (!r.ok) throw new Error('pin.json ' + r.status);
+  const c = await r.json(); if (!c || !/^[0-9a-f]{64}$/.test(c.hash || '')) throw new Error('pin.json ungültig');
+  return { salt: c.salt || PIN.salt, iter: c.iter || PIN.iter, hash: c.hash, gesperrt: !!c.gesperrt, hinweis: c.hinweis || '' };
+}
+async function pinHash(pin, cfg = pinCfg) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: new TextEncoder().encode(PIN.salt), iterations: PIN.iter, hash: 'SHA-256' }, key, 256);
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: new TextEncoder().encode(cfg.salt), iterations: cfg.iter, hash: 'SHA-256' }, key, 256);
   return [...new Uint8Array(bits)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
-function unlocked() { try { return Number(localStorage.getItem('mb_unlock') || 0) > Date.now(); } catch (e) { return false; } }
+const pinId = cfg => (cfg.hash || '').slice(0, 12);
+function unlocked() {
+  try {
+    const raw = localStorage.getItem('mb_unlock'); if (!raw) return false;
+    const u = raw.startsWith('{') ? JSON.parse(raw) : { until: Number(raw), h: pinId(PIN) }; // alter Stand: nur Ablaufzeit (= eingebaute PIN)
+    return u.until > Date.now() && u.h === pinId(pinCfg) && !pinCfg.gesperrt;
+  } catch (e) { return false; }
+}
+function applyPinCfg(c) {
+  const changed = c.hash !== pinCfg.hash || !!c.gesperrt !== !!pinCfg.gesperrt;
+  pinCfg = c; try { localStorage.setItem('mb_pincfg', JSON.stringify(c)); } catch (e) { }
+  if (changed && !unlocked() && $('#lock').style.display === 'none') { log('PIN geändert/gesperrt → neu sperren'); askPin(); }
+}
+async function pinStart() {
+  // pin.json holen, aber höchstens kurz warten (sonst startet die App ohne Netz nie)
+  const net = fetchPinCfg().then(applyPinCfg).catch(e => log('pin.json nicht erreichbar', e.message));
+  await Promise.race([net, new Promise(r => setTimeout(r, 2500))]);
+  if (!unlocked()) await askPin(); else $('#lock').style.display = 'none';
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') fetchPinCfg().then(applyPinCfg).catch(() => { }); });
+}
 function askPin() {
   return new Promise(res => {
     const lock = $('#lock'), pad = $('#lockPad'); let buf = ''; let tries = 0;
     lock.style.display = 'flex';
+    if (pinCfg.gesperrt) { // zentral gesperrt: keine PIN möglich, regelmäßig nachsehen, ob die Sperre aufgehoben wurde
+      $('#lockMsg').textContent = 'App gesperrt' + (pinCfg.hinweis ? ' – ' + pinCfg.hinweis : ''); pad.innerHTML = ''; $('#lockDots').textContent = '';
+      const iv = setInterval(async () => { try { const c = await fetchPinCfg(); if (!c.gesperrt) { clearInterval(iv); applyPinCfg(c); lock.style.display = 'none'; askPin().then(res); } } catch (e) { } }, 30000);
+      return;
+    }
+    $('#lockMsg').textContent = 'PIN eingeben';
     const dots = () => { $('#lockDots').textContent = '•'.repeat(buf.length); };
     pad.innerHTML = '';
     ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'OK', '0', '⌫'].forEach(k => {
@@ -1903,10 +2103,10 @@ function askPin() {
         else if (k === 'OK') {
           if (!buf) return;
           $('#lockMsg').textContent = 'Prüfe …';
-          const ok = (await pinHash(buf)) === PIN.hash;
+          const ok = (await pinHash(buf)) === pinCfg.hash;
           buf = '';
           if (ok) {
-            try { localStorage.setItem('mb_unlock', String(Date.now() + 30 * 864e5)); } catch (e) { }
+            try { localStorage.setItem('mb_unlock', JSON.stringify({ until: Date.now() + 30 * 864e5, h: pinId(pinCfg) })); } catch (e) { }
             lock.style.display = 'none'; res(); return;
           }
           tries++; beep(false);
@@ -1921,9 +2121,27 @@ function askPin() {
   });
 }
 
+function infoBox(title, lines, btn = 'OK') {
+  return new Promise(res => {
+    const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+    bg.innerHTML = `<div class="sheet"><h2></h2><ul class="news"></ul><button class="pri" style="width:100%;margin-top:12px" data-close></button></div>`;
+    bg.querySelector('h2').textContent = title;
+    const ul = bg.querySelector('ul'); for (const l of lines) { const li = document.createElement('li'); li.textContent = l; ul.appendChild(li); }
+    const b = bg.querySelector('[data-close]'); b.textContent = btn; b.onclick = () => { bg.remove(); res(true); };
+    document.body.appendChild(bg);
+  });
+}
+function whatsNew() {
+  let seen = null, installed = false;
+  try { seen = localStorage.getItem('mb_seenV'); installed = !!localStorage.getItem('mb_unlock'); localStorage.setItem('mb_seenV', VERSION); } catch (e) { return; }
+  if (seen === VERSION) return;
+  if (!seen && !installed) return; // Erstinstallation: nichts anzeigen
+  setTimeout(() => infoBox('Neu in Version ' + VERSION, NEWS, 'Alles klar'), 900);
+}
+
 // ---------------- Start ----------------
 (async () => {
-  if (!unlocked()) await askPin(); else $('#lock').style.display = 'none';
+  await pinStart();
   const ai = await db.setting('ai'); S.ai = ai === true; // KI vorerst aus, bis das Modell zuverlässig läuft
   applyZoom((await db.setting('zoom')) || 1);
   setTimeout(processQueue, 3000);
@@ -1934,11 +2152,13 @@ function askPin() {
   setTimeout(async () => { const res = await selfTest(); const bad = res.filter(x => x.lvl === 'fail'); if (bad.length) toast('Funktionstest: ' + bad.map(x => x.k).join(', ') + ' – Details in ⚙ System', 5000); }, 2500);
   laserUi();
   renderHome();
+  offlineUi();
+  whatsNew();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
     // neue Version übernommen → einmal neu laden
     let reloaded = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
   }
-  window.__mb = { S, laser, view, onMeasure, applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
+  window.__mb = { S, laser, view, nav, onMeasure, applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
 })();
