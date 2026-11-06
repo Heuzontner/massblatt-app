@@ -94,7 +94,7 @@ export function drawArrows(ctx, W, H, arrows, activeId, blink = 1, forExport = f
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.setLineDash([]);
     }
     // Etikett
-    const label = a.cm != null ? (fmt ? fmt(a) : `${a.cm} cm`) : (forExport ? null : (active ? '? cm' : a.kind === 'H' ? 'Höhe' : 'Breite'));
+    const label = a.cm != null ? (fmt ? fmt(a) : `${a.cm} cm`) : (forExport ? null : (a.est ? `~${a.est}` : active ? '? cm' : a.kind === 'H' ? 'Höhe' : 'Breite'));
     if (label) {
       let la = ang; if (la > Math.PI / 2) la -= Math.PI; if (la < -Math.PI / 2) la += Math.PI;
       // Maße 1,5× größer als ursprünglich, damit sie im Bild/PDF gut lesbar sind
@@ -111,7 +111,7 @@ export function drawArrows(ctx, W, H, arrows, activeId, blink = 1, forExport = f
       placed.push(b);
       labelBoxes.set(a.id, { x: b.x / W, y: b.y / H, w: b.w / W, h: b.h / H });
       ctx.save(); ctx.translate(b.cx, b.cy); ctx.rotate(la);
-      ctx.fillStyle = a.cm != null ? '#000' : (active ? '#d32f2f' : 'rgba(0,0,0,0.55)');
+      ctx.fillStyle = a.cm != null ? '#000' : (a.est ? 'rgba(0,0,0,0.5)' : active ? '#d32f2f' : 'rgba(0,0,0,0.55)');
       roundRect(ctx, -bw / 2, -bh / 2, bw, bh, 9 * s); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(label, 0, 1 * s);

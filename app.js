@@ -1,5 +1,5 @@
 import { db, uid } from './db.js';
-import { Laser } from './ble.js';
+import { Laser, PROFILES } from './ble.js';
 import { TEMPLATES, arrowsFromObjects, newArrow, drawArrows, labelBoxes } from './arrows.js';
 import { grayFromImage, magnetArrow } from './magnet.js';
 import { buildPdf } from './pdf.js';
@@ -8,9 +8,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.0.0';
+const VERSION = '3.1.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Heutige Termine stehen oben auf der Startseite – antippen legt das Projekt an, „Tag vorbereiten“ legt alle auf einmal an', 'Straßen offline: in ⚙ Kunden & Straßen Orte laden (z. B. Linz) → Straßen-Vorschläge mit PLZ/Ort auch ohne Netz', 'Google: Kalender auswählbar (z. B. nur „Aufmaß“)'];
+const NEWS = ['Laser-Multi-Tool: neben Bosch auch Leica DISTO, Mileseey/Hersch/Suaoki und Stanley; mehrere Laser gemerkt, Akkustand, automatisch verbinden beim Start (⚙ System)', 'Notiz je Foto und je Projekt (kleiner Pfeil ▸ öffnet eine Zeile)', 'Vorab-Schätzung grauer Werte im Foto (Test, ⚙ abschaltbar); Raumvorschlag nach gelernter Reihenfolge; 🎤 Raum per Sprache; Gitterlinien im Sucher', 'PDF-Fotoqualität wählbar; wöchentliche Sicherung in Dropbox; Sperre nach Pause; Gerätewechsel mit QR-Code'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -144,9 +144,38 @@ function laserUi() {
   $$('[data-laser]').forEach(el => {
     el.classList.toggle('ok', st === 'verbunden');
     el.classList.toggle('busy', st === 'suche' || st === 'verbinde' || st === 'getrennt');
-    el.querySelector('span').textContent = st === 'verbunden' ? 'Laser ✓' : st === 'aus' ? 'Laser' : st === 'getrennt' ? 'Laser …' : 'Verbinde …';
+    el.querySelector('span').textContent = st === 'verbunden' ? 'Laser ✓' + (laser.battery != null ? ` ${laser.battery}%` : '') : st === 'aus' ? 'Laser' : st === 'getrennt' ? 'Laser …' : 'Verbinde …';
   });
+  if ($('#setSheet').classList.contains('on')) laserListUi();
 }
+laser.addEventListener('battery', () => { laserUi(); if (laser.battery != null && laser.battery <= 15) toast(`Laser-Akku nur noch ${laser.battery} %`, 4000); });
+laser.addEventListener('hint', e => toast(e.detail.msg, 4500));
+// gemerkte Laser (Idee 145) in ⚙ System
+function laserListUi() {
+  const el = $('#sLaserList'); if (!el) return; el.innerHTML = '';
+  const kl = laser.known;
+  $('#sLasers').textContent = kl.length ? '' : 'Noch kein Laser verbunden. Unterstützt: Bosch GLM/PLR, Leica DISTO, Mileseey/Hersch/Suaoki, Stanley TLM99s.';
+  for (const k of kl) {
+    const row = document.createElement('div'); row.className = 'dbxrow';
+    const cur = laser.device && laser.device.id === k.id && laser.state === 'verbunden';
+    row.innerHTML = '<div style="flex:1;min-width:0"><b></b><div class="mute"></div></div><button class="ghost" data-c style="width:auto;padding:6px 10px;height:auto"></button><button class="ghost" data-x style="width:auto;padding:6px 10px;height:auto">✕</button>';
+    row.querySelector('b').textContent = (cur ? '✓ ' : '') + k.name;
+    const prof = PROFILES.find(p => p.id === k.profile);
+    row.querySelector('.mute').textContent = `${prof ? prof.name.split(' (')[0] : 'Hersteller unbekannt'} · zuletzt ${new Date(k.last).toLocaleDateString('de-AT')}${cur && laser.battery != null ? ` · Akku ${laser.battery} %` : ''}`;
+    const cb = row.querySelector('[data-c]'); cb.textContent = cur ? 'Trennen' : 'Verbinden';
+    cb.onclick = async () => { if (cur) { laser.disconnect(); laserUi(); return; } cb.disabled = true; cb.textContent = '…'; try { await laser.connectKnown(k.id); } catch (e) { toast(e.message, 4500); } laserUi(); };
+    row.querySelector('[data-x]').onclick = () => { if (cur) laser.disconnect(); laser.forget(k.id); laserUi(); laserListUi(); };
+    el.appendChild(row);
+  }
+}
+$('#sLaserAuto').onchange = () => { opt.laserAuto = $('#sLaserAuto').checked; saveOpt(); };
+// Lernmodus: unbekannten Laser verbinden und alle Meldungen ins Protokoll schreiben (für neue Hersteller)
+$('#sLaserLearn').onclick = async () => {
+  if (!laser.supported) { toast('Kein Web-Bluetooth in diesem Browser (Chrome auf Android nötig)', 4000); return; }
+  if (!await confirmBox('Protokoll eines unbekannten Lasers aufzeichnen?', 'Gerät wählen', 'Abbrechen', 'pri', 'Danach am Laser ein paar Mal messen (z. B. 1,00 m, 2,00 m, 0,50 m). Die Rohdaten landen im Bluetooth-Protokoll unten – dieses per „Fehlerbericht“ an Claude schicken, dann wird der Decoder gebaut.')) return;
+  try { const info = await laser.learn(); toast(info, 6000); $('#sLog').textContent = laser.log.join('\n'); }
+  catch (e) { if (e.name !== 'NotFoundError') toast('Lernmodus: ' + e.message, 5000); }
+};
 laser.addEventListener('state', e => {
   laserUi();
   if (e.detail.state === 'verbunden') { toast('Laser verbunden ✓'); laserHint(); }
@@ -393,6 +422,7 @@ async function openProject(id, isNew = false) {
   $('#pFirma').value = p.firma || ''; $('#pKontakt').value = p.kontakt || '';
   $('#pStrasse').value = p.strasse || ''; $('#pOrt').value = p.ort || ''; $('#pLand').value = p.land || '';
   $('#pTel').value = p.telefon || ''; $('#pDatum').value = (p.datum || '').slice(0, 10);
+  $('#pNote').value = p.note || ''; $('#pNoteRow').classList.toggle('has', !!p.note); $('#pNoteRow').classList.remove('open');
   renderCustChips();
   $('#projDetails').open = isNew || !p.name || wide();
   $('#projTitle').textContent = p.name || 'Neues Projekt';
@@ -402,7 +432,7 @@ async function openProject(id, isNew = false) {
   if (isNew) setTimeout(() => $('#pStr').focus(), 200);
 }
 
-const fieldMap = { pStr: 'str', pPlz: 'plz', pOrtName: 'ortName', pFirma: 'firma', pKontakt: 'kontakt', pStrasse: 'strasse', pOrt: 'ort', pLand: 'land', pTel: 'telefon', pDatum: 'datum' };
+const fieldMap = { pStr: 'str', pPlz: 'plz', pOrtName: 'ortName', pFirma: 'firma', pKontakt: 'kontakt', pStrasse: 'strasse', pOrt: 'ort', pLand: 'land', pTel: 'telefon', pDatum: 'datum', pNote: 'note' };
 const SS_FIELDS = ['pStr', 'pStrasse', 'cStrasse'];
 function fixSz(el) {
   if (!el.value.includes('ß')) return;
@@ -420,6 +450,7 @@ Object.entries(fieldMap).forEach(([id, k]) => {
     if (['plz', 'ortName', 'str'].includes(k)) rememberStreetSoon();
     projectFieldToCustomer(k);
     if (['str', 'firma'].includes(k)) ampelUi();
+    if (k === 'note') $('#pNoteRow').classList.toggle('has', !!S.project.note);
     clearTimeout(S._saveT); S._saveT = setTimeout(() => db.put('projects', S.project), 300);
   });
 });
@@ -933,7 +964,15 @@ function renderShots() {
     c.onclick = () => { if (!isLocked()) openEditor(s); };
     c.querySelector('.del').onclick = e => { e.stopPropagation(); if (!isLocked()) deleteShot(s); };
     swipeToDelete(c, () => isLocked() ? false : deleteShot(s));
-    el.appendChild(wrap);
+    // Notiz (Idee 101): kleiner Pfeil öffnet eine Zeile
+    const nb = document.createElement('div'); nb.className = 'noterow' + (s.note ? ' has' : '');
+    nb.innerHTML = '<button class="ntog" aria-label="Notiz">▸</button><span class="ntxt"></span><input class="nin" placeholder="Notiz zum Foto …" maxlength="120">';
+    nb.querySelector('.ntxt').textContent = s.note || '';
+    const inp = nb.querySelector('.nin'); inp.value = s.note || '';
+    nb.querySelector('.ntog').onclick = e => { e.stopPropagation(); nb.classList.toggle('open'); if (nb.classList.contains('open')) { inp.focus(); } };
+    inp.oninput = () => { s.note = inp.value.trim(); nb.querySelector('.ntxt').textContent = s.note; nb.classList.toggle('has', !!s.note); clearTimeout(inp._t); inp._t = setTimeout(() => db.put('shots', s), 400); };
+    inp.onkeydown = e => { if (e.key === 'Enter') { inp.blur(); nb.classList.remove('open'); } };
+    el.appendChild(wrap); el.appendChild(nb);
   });
 }
 // Nach links wischen → Löschen (mit Rückfrage)
@@ -983,16 +1022,57 @@ async function moveShot(i, d) {
 
 // ---------------- Raumwahl ----------------
 async function rooms() { const r = await db.setting('rooms'); return Array.isArray(r) && r.length ? r : DEFAULT_ROOMS; }
+// Raumreihenfolge lernen (Idee 107): welcher Raum folgt meist auf welchen
+const roomBase = r => (r || '').replace(/\d+$/, '');
+async function learnRoomSeq(prev, next) {
+  prev = roomBase(prev); next = roomBase(next); if (!prev || !next || prev === next) return;
+  const seq = (await db.setting('roomSeq')) || {}; seq[prev] = seq[prev] || {}; seq[prev][next] = (seq[prev][next] || 0) + 1;
+  await db.setting('roomSeq', seq);
+}
+async function nextRoomSuggestion(prev) {
+  const m = ((await db.setting('roomSeq')) || {})[roomBase(prev)]; if (!m) return null;
+  const best = Object.entries(m).sort((a, b) => b[1] - a[1])[0];
+  return best && best[1] >= 2 ? best[0] : null;
+}
+// Raum per Sprache (Idee 149)
+const getSR = () => window.SpeechRecognition || window.webkitSpeechRecognition;
+const ROOM_WORDS = { 'kinderzimmer': 'Kz', 'kinder': 'Kz', 'schlafzimmer': 'Sz', 'schlafen': 'Sz', 'wohnzimmer': 'Wz', 'wohnküche': 'Wk', 'küche': 'Kü', 'kuche': 'Kü', 'bad': 'Bad', 'badezimmer': 'Bad', 'wc': 'WC', 'klo': 'WC', 'toilette': 'WC', 'vorraum': 'Vr', 'vorzimmer': 'Vr', 'gang': 'Vr', 'flur': 'Vr', 'abstellraum': 'Ar', 'abstellkammer': 'Ar', 'kammer': 'Ar', 'loggia': 'Lo', 'balkon': 'Lo', 'eingang': 'Eg', 'eingangstür': 'Eg', 'wohnungstür': 'Eg', 'raumhöhe': 'Rh', 'höhe': 'Rh', 'esszimmer': 'Ez', 'arbeitszimmer': 'Az', 'büro': 'Az', 'keller': 'Ke' };
+function matchRoomSpeech(text, list) {
+  const t = text.toLowerCase().replace(/[.,!?]/g, ' ');
+  const keys = list.map(x => x[0]);
+  for (const [k, title] of list) { if (title && t.includes(title.toLowerCase().replace(/\.$/, ''))) return k; if (t.split(/\s+/).includes(k.toLowerCase())) return k; }
+  for (const w of Object.keys(ROOM_WORDS).sort((a, b) => b.length - a.length)) if (t.includes(w)) { const k = ROOM_WORDS[w]; if (keys.includes(k)) return k; }
+  return null;
+}
 function pickRoom() {
   return new Promise(async res => {
     const sh = $('#roomSheet'); const g = $('#roomGrid'); g.innerHTML = '';
-    (await rooms()).forEach(([k, t]) => {
-      const b = document.createElement('button'); b.innerHTML = `${k}<small>${t}</small>`;
+    const list = await rooms();
+    const prev = S.shots.length ? S.shots[S.shots.length - 1].room : null;
+    const sug = prev ? await nextRoomSuggestion(prev) : null;
+    const nx = $('#roomNext'); nx.style.display = sug ? '' : 'none';
+    if (sug) { nx.textContent = `Als Nächstes meist: ${sug} ›`; nx.onclick = () => { sh.classList.remove('on'); res(sug); }; }
+    list.forEach(([k, t]) => {
+      const b = document.createElement('button'); b.innerHTML = `${k}<small>${t}</small>`; if (k === sug) b.classList.add('sug');
       b.onclick = () => { sh.classList.remove('on'); res(k); }; g.appendChild(b);
     });
     $('#roomCustom').value = '';
     $('#roomOk').onclick = () => { const v = $('#roomCustom').value.trim(); if (!v) return; sh.classList.remove('on'); res(v); };
-    sh.onclick = e => { if (e.target === sh) { sh.classList.remove('on'); res(null); } };
+    const mic = $('#roomMic'); mic.style.display = getSR() ? '' : 'none'; mic.classList.remove('on'); mic.textContent = '🎤';
+    mic.onclick = () => {
+      if (mic._rec) { try { mic._rec.stop(); } catch (e) { } return; }
+      const SR = getSR(); if (!SR) { toast('Keine Spracherkennung in diesem Browser'); return; }
+      const r = new SR(); r.lang = 'de-AT'; r.interimResults = false; r.maxAlternatives = 3; mic._rec = r; mic.classList.add('on'); mic.textContent = '… spricht';
+      r.onresult = ev => {
+        const alts = [...ev.results[0]].map(x => x.transcript);
+        let k = null; for (const a of alts) { k = matchRoomSpeech(a, list); if (k) break; }
+        if (k) { sh.classList.remove('on'); res(k); } else { $('#roomCustom').value = alts[0].trim(); toast(`„${alts[0].trim()}“ – kein bekannter Raum, als eigener Name eingetragen`, 3000); }
+      };
+      r.onerror = ev => toast(ev.error === 'not-allowed' ? 'Mikrofon nicht erlaubt' : ev.error === 'network' ? 'Spracherkennung braucht Netz' : 'Spracherkennung: ' + ev.error, 3500);
+      r.onend = () => { mic._rec = null; mic.classList.remove('on'); mic.textContent = '🎤'; };
+      try { r.start(); } catch (e) { mic._rec = null; toast('Spracherkennung nicht verfügbar'); }
+    };
+    sh.onclick = e => { if (e.target === sh) { sh.classList.remove('on'); if (mic._rec) { try { mic._rec.stop(); } catch (x) { } } res(null); } };
     sh.classList.add('on');
   });
 }
@@ -1046,6 +1126,7 @@ function setCamRoom(r) {
   $('#camHint').textContent = r === 'Rh' ? 'Wand von Boden bis Decke ins Bild nehmen' : 'Tür und Fenster ganz ins Bild nehmen';
 }
 async function openCam(viaPop = false) {
+  $('#camGrid').classList.toggle('on', !!opt.grid);
   setCamRoom(S.room);
   $('#camFallback').style.display = 'none';
   show('cam', viaPop);
@@ -1197,6 +1278,7 @@ async function newShotFromBlob(blob) {
   c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
   const photo = await canvasToBlob(c, 'image/jpeg', 0.88);
   const shot = { id: uid(), projectId: S.project.id, order: S.shots.length, room: S.room, photo, w: c.width, h: c.height, arrows: [], tpl: null, created: Date.now() };
+  if (S.shots.length) learnRoomSeq(S.shots[S.shots.length - 1].room, S.room);
   S.shots.push(shot);
   await db.put('shots', shot);
   S.project.updated = Date.now(); db.put('projects', S.project);
@@ -1355,7 +1437,24 @@ async function runDetect() {
 
 function firstOpen() { const a = S.shot.arrows.find(a => a.cm == null); return a ? a.id : (S.shot.arrows[0] || {}).id || null; }
 function activeArrow() { return S.shot.arrows.find(a => a.id === S.active); }
+// Vorab-Schätzung (Idee 105): aus schon gemessenen Pfeilen desselben Fotos den Maßstab ableiten (grob, Perspektive bleibt unberücksichtigt)
+function estimateArrows() {
+  if (!S.shot) return;
+  const px = a => Math.hypot((a.x2 - a.x1) * S.shot.w, (a.y2 - a.y1) * S.shot.h);
+  const done = S.shot.arrows.filter(a => a.cm != null && px(a) > 5);
+  for (const a of S.shot.arrows) {
+    if (a.cm != null) { delete a.est; continue; }
+    if (!opt.est || done.length < 1) { delete a.est; continue; }
+    const pool = done.filter(d => d.kind === a.kind); // nur gleiche Richtung (Höhe aus Höhe, Breite aus Breite) – sonst verfälscht die Perspektive zu stark
+    if (!pool.length) { delete a.est; continue; }
+    const scales = pool.map(d => d.cm / px(d)).sort((x, y) => x - y);
+    const sc = scales[Math.floor(scales.length / 2)];
+    const e = Math.round(px(a) * sc);
+    a.est = e >= 10 && e <= 600 ? e : undefined;
+  }
+}
 function updateCur() {
+  estimateArrows();
   const a = activeArrow();
   const i = S.shot.arrows.indexOf(a);
   $('#curLbl').textContent = a ? `${a.el} · ${a.kind === 'H' ? 'Höhe' : 'Breite'}   (${i + 1} von ${S.shot.arrows.length})` : 'Kein Pfeil – oben „Pfeile“ antippen';
@@ -1382,9 +1481,11 @@ function setValue(cm, mm) {
   }
   S.manualPick = false;
   if (!a) { a = newArrow(); S.shot.arrows.push(a); } // noch gar kein Pfeil → neuen anlegen
+  const est = a.est; delete a.est;
   a.cm = cm; a.mm = mm != null ? mm : cm * 10; a.time = new Date().toISOString();
   saveShot();
   beep(true);
+  if (est && Math.abs(cm - est) > Math.max(15, est * 0.2)) toast(`Weicht von der Schätzung (~${est}) ab – richtig gezielt?`, 3500);
   const next = S.shot.arrows.find(x => x.cm == null);
   if (opt.big) showBig(a);
   if (opt.voice) say(`${opt.mm ? a.mm : cm}` + (next ? `. Nächster: ${arrowName(next)}` : '. Fertig'));
@@ -1393,7 +1494,7 @@ function setValue(cm, mm) {
 }
 const arrowName = a => `${a.el === 'Maß' ? '' : a.el + ' '}${a.kind === 'H' ? 'Höhe' : 'Breite'}`;
 // Test-Optionen: großer Messmodus, Sprachansage
-const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true, left: false, magnet: true, dash: false, cam: '', shrink: false, remind: true };
+const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true, left: false, magnet: true, dash: false, cam: '', shrink: false, remind: true, est: true, grid: false, laserAuto: true, autoBackup: false, bgLock: 0 };
 try { Object.assign(opt, JSON.parse(localStorage.getItem('mb_opt') || '{}')); } catch (e) { }
 const applyOptClasses = () => { document.body.classList.toggle('bigmode', !!opt.big); document.body.classList.toggle('glove', !!opt.glove); document.body.classList.toggle('lefty', !!opt.left); };
 const saveOpt = () => { try { localStorage.setItem('mb_opt', JSON.stringify(opt)); } catch (e) { } applyOptClasses(); };
@@ -1737,14 +1838,19 @@ let fontBytesCache = null;
 async function pdfBytesFor(p, allShots) {
   const fontBytes = fontBytesCache || (fontBytesCache = new Uint8Array(await (await fetch('vendor/NotoSans.woff')).arrayBuffer()));
   const shots = [];
+  // Fotoqualität (Idee 127): klein für Mail, normal, Druck
+  const q = (await db.setting('pdfQuality')) || 'normal';
+  const maxPx = q === 'klein' ? 1000 : q === 'druck' ? 2400 : 1600, jq = q === 'klein' ? 0.72 : q === 'druck' ? 0.92 : 0.85;
+  const notes = !!(await db.setting('pdfNotes'));
   for (const s of allShots) {
     const im = await blobToImg(s.photo);
-    const c = document.createElement('canvas'); c.width = s.w; c.height = s.h;
-    const g = c.getContext('2d'); g.drawImage(im, 0, 0, s.w, s.h);
+    const sc = Math.min(1, maxPx / Math.max(s.w, s.h));
+    const c = document.createElement('canvas'); c.width = Math.round(s.w * sc); c.height = Math.round(s.h * sc);
+    const g = c.getContext('2d'); g.drawImage(im, 0, 0, c.width, c.height);
     const measured = s.arrows.filter(a => a.cm != null);
-    drawArrows(g, s.w, s.h, measured, null, 1, true);
-    const jb = await canvasToBlob(c, 'image/jpeg', 0.85);
-    shots.push({ room: s.room, jpg: new Uint8Array(await jb.arrayBuffer()), values: measured.map(a => ({ cm: a.cm, time: new Date(a.time) })) });
+    drawArrows(g, c.width, c.height, measured, null, 1, true);
+    const jb = await canvasToBlob(c, 'image/jpeg', jq);
+    shots.push({ room: s.room, jpg: new Uint8Array(await jb.arrayBuffer()), values: measured.map(a => ({ cm: a.cm, time: new Date(a.time) })), note: notes ? (s.note || '') : '' });
   }
   const headLogo = await db.setting('headerLogo');
   const proj = { ...p, headerTitle: (await db.setting('headerTitle')) || 'Measuring Master',
@@ -1816,6 +1922,7 @@ function expUi() {
   const last = ex[ex.length - 1];
   el.style.display = 'flex'; el.querySelector('span').textContent = `${ex.length} Export${ex.length === 1 ? '' : 'e'} · zuletzt ${last.how} ${fmtWhen(last.t)}`;
 }
+$('#pNoteTog').onclick = () => { const r = $('#pNoteRow'); r.classList.toggle('open'); if (r.classList.contains('open')) $('#pNote').focus(); };
 $('#expRow').onclick = () => {
   const ex = [...(S.project.exports || [])].reverse();
   const lines = ex.map(e => `${fmtWhen(e.t)} · ${e.how}${e.size ? ' · ' + fmtSize(e.size) : ''}${e.path ? '\n   ' + e.path : ''}${e.fotos ? ` (+ ${e.fotos} Foto${e.fotos === 1 ? '' : 's'})` : ''}`);
@@ -2213,6 +2320,9 @@ $('#btnSettings').onclick = async () => {
   $('#sGlove').checked = !!opt.glove; $('#sLearn').checked = opt.learn !== false; $('#sLeft').checked = !!opt.left;
   $('#sMagnet').checked = opt.magnet !== false; $('#sDash').checked = !!opt.dash; fillCamList();
   $('#sShrink').checked = !!opt.shrink; $('#sRemind').checked = opt.remind !== false; $('#sLockDays').value = String(lockDays()); bioUi(); backupUi(); offlineUiList();
+  $('#sGrid').checked = !!opt.grid; $('#sEst').checked = opt.est !== false; $('#sLaserAuto').checked = opt.laserAuto !== false; $('#sAutoBackup').checked = !!opt.autoBackup; $('#sBgLock').value = String(opt.bgLock || 0);
+  $('#sPdfQ').value = (await db.setting('pdfQuality')) || 'normal'; $('#sNotesPdf').checked = !!(await db.setting('pdfNotes')); laserListUi();
+  $('#sAutoBackupInfo').textContent = dropbox.connected ? `Ordner ${dropbox.pathFor('_Sicherung')} · ${(await db.setting('autoBackupAt')) ? 'zuletzt ' + fmtWhen(await db.setting('autoBackupAt')) : 'noch nie'}` : 'Dropbox ist nicht verbunden (⚙ Cloud)';
   learnState();
   gcalUi();
   $('#sTitle').value = (await db.setting('headerTitle')) || '';
@@ -2238,6 +2348,12 @@ $('#sGlove').onchange = () => { opt.glove = $('#sGlove').checked; saveOpt(); };
 $('#sLeft').onchange = () => { opt.left = $('#sLeft').checked; saveOpt(); };
 $('#sMagnet').onchange = () => { opt.magnet = $('#sMagnet').checked; saveOpt(); };
 $('#sShrink').onchange = () => { opt.shrink = $('#sShrink').checked; saveOpt(); };
+$('#sGrid').onchange = () => { opt.grid = $('#sGrid').checked; saveOpt(); $('#camGrid').classList.toggle('on', !!opt.grid); };
+$('#sEst').onchange = () => { opt.est = $('#sEst').checked; saveOpt(); };
+$('#sPdfQ').onchange = () => db.setting('pdfQuality', $('#sPdfQ').value);
+$('#sNotesPdf').onchange = () => db.setting('pdfNotes', $('#sNotesPdf').checked);
+$('#sAutoBackup').onchange = () => { opt.autoBackup = $('#sAutoBackup').checked; saveOpt(); if (opt.autoBackup) autoBackup(true); };
+$('#sBgLock').onchange = () => { opt.bgLock = parseInt($('#sBgLock').value, 10) || 0; saveOpt(); };
 $('#sRemind').onchange = () => { opt.remind = $('#sRemind').checked; saveOpt(); backupBar(); };
 $('#sLockDays').onchange = () => { try { localStorage.setItem('mb_lockDays', $('#sLockDays').value); } catch (e) { } toast(`PIN wird ${$('#sLockDays').value === '1' ? 'täglich' : 'alle ' + $('#sLockDays').value + ' Tage'} verlangt`); };
 // Fotos aller exportierten Projekte jetzt verkleinern
@@ -2327,8 +2443,8 @@ $('#sBackup').onclick = async () => {
   b.disabled = false; b.textContent = '💾 Gesamt-Sicherung erstellen';
 };
 $('#sRestore').onclick = () => $('#sRestoreFile').click();
-$('#sRestoreFile').onchange = async e => {
-  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+$('#sRestoreFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (f) restoreFromFile(f); };
+async function restoreFromFile(f) {
   try {
     toast('Lese Sicherung …', 5000);
     const data = JSON.parse(await f.text());
@@ -2349,7 +2465,7 @@ $('#sRestoreFile').onchange = async e => {
     toast(`Eingespielt: ${nP} Projekte, ${nS} Fotos – App startet neu`, 4000);
     setTimeout(() => location.reload(), 1500);
   } catch (err) { toast('Einspielen fehlgeschlagen: ' + err.message, 6000); }
-};
+}
 async function restoreBackup(data, mode) {
   if (mode === 'replace') { await db.clear('shots'); await db.clear('projects'); await db.clear('settings'); }
   for (const p of data.projects || []) await db.put('projects', await unpackBlobs(p));
@@ -2384,6 +2500,93 @@ async function backupBar() {
 }
 $('#bkNow').onclick = async () => { await $('#btnSettings').onclick(); showTab('system'); setTimeout(() => $('#sBackup').scrollIntoView({ block: 'center' }), 100); };
 $('#bkLater').onclick = () => { try { localStorage.setItem('mb_bkSnooze', String(Date.now() + 3 * 864e5)); } catch (e) { } $('#bkBar').style.display = 'none'; };
+
+// Automatische Sicherung in Dropbox (Idee 136): wöchentlich, Ordner _Sicherung, die letzten 4 bleiben
+let autoBkBusy = false;
+async function autoBackup(force = false) {
+  if (autoBkBusy || !opt.autoBackup || !dropbox.connected || !navigator.onLine) return;
+  const conn = navigator.connection; if (!force && conn && conn.type === 'cellular') return; // nur WLAN/unbekannt
+  const last = (await db.setting('autoBackupAt')) || 0;
+  if (!force && Date.now() - last < 7 * 864e5) return;
+  const st = await backupStats(); if (!st.shots) return;
+  autoBkBusy = true;
+  try {
+    const { file } = await makeBackup();
+    const path = await dropbox.upload(file, '_Sicherung');
+    await db.setting('autoBackupAt', Date.now()); await db.setting('lastBackup', Date.now());
+    await dbxLogAdd({ name: file.name, sub: '_Sicherung', size: file.size, ok: true, path, projectId: null });
+    try { // alte Sicherungen aufräumen
+      const l = await dropbox.listFolder(dropbox.pathFor('_Sicherung'));
+      const old = l.files.filter(f => /^massblatt-sicherung_/.test(f.name)).sort((a, b) => b.name.localeCompare(a.name)).slice(4);
+      for (const f of old) await dropbox.api('files/delete_v2', { path: f.path });
+    } catch (e) { log('Sicherung aufräumen', e.message); }
+    log('Auto-Sicherung', path, file.size); toast(`Sicherung in Dropbox abgelegt (${fmtSize(file.size)})`, 3500); backupBar();
+  } catch (e) { log('Auto-Sicherung fehlgeschlagen', e.message); if (force) toast('Sicherung in Dropbox fehlgeschlagen: ' + e.message, 5000); }
+  autoBkBusy = false;
+}
+$('#sAutoBackupNow').onclick = () => { if (!dropbox.connected) { toast('Dropbox ist nicht verbunden (⚙ Cloud)'); return; } opt.autoBackup = true; $('#sAutoBackup').checked = true; saveOpt(); autoBackup(true); };
+// Sicherung aus Dropbox holen (Gerätewechsel, Idee 140)
+$('#sRestoreDbx').onclick = async () => {
+  if (!dropbox.connected) { toast('Zuerst in ⚙ Cloud Dropbox verbinden'); return; }
+  let files; try { files = (await dropbox.listFolder(dropbox.pathFor('_Sicherung'))).files.filter(f => /\.json$/i.test(f.name)).sort((a, b) => b.name.localeCompare(a.name)); }
+  catch (e) { toast((e instanceof DbxError && e.notFound) ? `Kein Ordner ${dropbox.pathFor('_Sicherung')} in der Dropbox` : 'Dropbox: ' + e.message, 5000); return; }
+  if (!files.length) { toast('Keine Sicherung in ' + dropbox.pathFor('_Sicherung'), 4000); return; }
+  const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+  bg.innerHTML = `<div class="sheet"><h2>Sicherung aus Dropbox</h2><div class="menu" data-list style="max-height:50vh;overflow:auto"></div><button class="ghost" style="width:100%;margin-top:10px" data-close>Abbrechen</button></div>`;
+  for (const f of files.slice(0, 10)) { const b = document.createElement('button'); b.className = 'ghost'; b.textContent = `${f.name} · ${fmtSize(f.size)}`; b.onclick = async () => {
+    bg.remove(); toast('Lade Sicherung …', 8000);
+    try { const blob = await dropbox.download(f.path); const file = new File([blob], f.name, { type: 'application/json' }); await restoreFromFile(file); }
+    catch (e) { toast('Einspielen fehlgeschlagen: ' + e.message, 6000); }
+  }; bg.querySelector('[data-list]').appendChild(b); }
+  bg.querySelector('[data-close]').onclick = () => bg.remove();
+  document.body.appendChild(bg);
+};
+// Gerätewechsel (Idee 140): Sicherung in Dropbox + QR-Code mit den Einstellungen fürs neue Handy
+$('#sMove').onclick = async () => {
+  const cfg = dropbox.cfg, g = gcal.cfg;
+  const payload = { v: 1, dbxKey: cfg.appKey || '', folder: cfg.folder || '', year: !!cfg.year, gcalId: g.clientId || '', opt: { ...opt }, lockDays: lockDays(), cals: g.cals || null };
+  const link = location.origin + location.pathname + '#setup=' + b64u(new TextEncoder().encode(JSON.stringify(payload)));
+  const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+  bg.innerHTML = `<div class="sheet"><h2>📱 Gerät wechseln</h2>
+    <ol class="news" style="padding-left:18px"><li><b>Sicherung</b> in die Dropbox legen (Knopf unten) – oder „Gesamt-Sicherung erstellen“ und die Datei selbst aufs neue Handy bringen.</li>
+    <li>Am <b>neuen Handy</b> diesen QR-Code mit der Kamera scannen → die App öffnet sich mit deinen Einstellungen (Dropbox-Schlüssel, Ordner, Google, Optionen). Dann zum Startbildschirm hinzufügen und PIN eingeben.</li>
+    <li>Dort in ⚙ Cloud <b>Dropbox verbinden</b>, dann ⚙ System → <b>„Sicherung aus Dropbox holen“</b>.</li></ol>
+    <div data-qr style="display:flex;justify-content:center;margin:8px 0"></div>
+    <div style="display:flex;gap:8px;margin-top:8px"><button class="ghost" data-copy style="flex:1">Link kopieren</button><button class="pri" data-bk style="flex:1">Sicherung in Dropbox</button></div>
+    <button class="ghost" style="width:100%;margin-top:8px" data-close>Schließen</button></div>`;
+  try { await loadScript('vendor/qrcode.js'); const qr = window.qrcode(0, 'M'); qr.addData(link); qr.make(); bg.querySelector('[data-qr]').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 8, scalable: true }); bg.querySelector('[data-qr] svg').style.cssText = 'width:min(70vw,320px);height:auto;background:#fff;border-radius:8px'; }
+  catch (e) { bg.querySelector('[data-qr]').innerHTML = '<p class="mute">QR-Code nicht erzeugbar – Link kopieren und am neuen Handy öffnen.</p>'; }
+  bg.querySelector('[data-copy]').onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link kopiert – z. B. per WhatsApp ans neue Handy schicken', 3500); } catch (e) { prompt('Link:', link); } };
+  bg.querySelector('[data-bk]').onclick = async () => { if (!dropbox.connected) { toast('Dropbox ist nicht verbunden (⚙ Cloud)'); return; } bg.querySelector('[data-bk]').disabled = true; await autoBackup(true); bg.querySelector('[data-bk]').disabled = false; };
+  bg.querySelector('[data-close]').onclick = () => bg.remove();
+  document.body.appendChild(bg);
+};
+function loadScript(src) { return new Promise((res, rej) => { if (document.querySelector(`script[src="${src}"]`)) return res(); const sc = document.createElement('script'); sc.src = src; sc.onload = res; sc.onerror = () => rej(new Error('Skript nicht ladbar')); document.head.appendChild(sc); }); }
+// am neuen Handy: #setup=… aus dem QR-Code übernehmen
+// (der Link wird sofort zwischengespeichert, weil die App beim allerersten Start durch den Service Worker einmal neu lädt)
+try { if ((location.hash || '').startsWith('#setup=')) sessionStorage.setItem('mb_setup', location.hash); } catch (e) { }
+async function applySetupLink() {
+  let h = ''; try { h = sessionStorage.getItem('mb_setup') || ''; } catch (e) { }
+  if (!h && (location.hash || '').startsWith('#setup=')) h = location.hash;
+  if (!h.startsWith('#setup=')) return;
+  if ((location.hash || '').startsWith('#setup=')) history.replaceState(null, '', location.pathname + location.search);
+  let p; try { p = JSON.parse(new TextDecoder().decode(unb64u(h.slice(7)))); } catch (e) { try { sessionStorage.removeItem('mb_setup'); } catch (x) { } toast('Einrichtungs-Link nicht lesbar', 4000); return; }
+  const ok = await confirmBox('Einstellungen vom alten Handy übernehmen?', 'Übernehmen', 'Nicht jetzt', 'pri', `Dropbox-Schlüssel${p.folder ? ', Ordner ' + p.folder : ''}${p.gcalId ? ', Google-Kalender' : ''}, Optionen. Danach: ⚙ Cloud → Dropbox verbinden → ⚙ System → „Sicherung aus Dropbox holen“.`);
+  try { sessionStorage.removeItem('mb_setup'); } catch (e) { } // erst nach der Antwort vergessen (die App lädt beim ersten Start einmal neu)
+  if (!ok) return;
+  if (p.dbxKey) dropbox.setAppKey(p.dbxKey); if (p.folder) dropbox.setFolder(p.folder); dropbox.setYear(!!p.year);
+  if (p.gcalId) gcal.setClientId(p.gcalId); if (p.cals) gcal.setChosenCals(p.cals);
+  if (p.opt) { Object.assign(opt, p.opt); saveOpt(); }
+  if (p.lockDays) { try { localStorage.setItem('mb_lockDays', String(p.lockDays)); } catch (e) { } }
+  gcalUi(); dbxUi(); toast('Übernommen – jetzt in ⚙ Cloud Dropbox verbinden', 5000);
+}
+// Sperre nach Pause (Idee 137)
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+  if (opt.bgLock > 0 && hiddenAt && Date.now() - hiddenAt >= opt.bgLock * 60000 && $('#lock').style.display === 'none') { log('Sperre nach Pause'); askPin(); }
+  hiddenAt = 0;
+});
 
 // ---------------- Alles löschen (Idee 95) ----------------
 $('#sWipe').onclick = async () => {
@@ -2709,7 +2912,18 @@ $('#sStats').onclick = async () => {
   let h = `<table class="stat"><tr><th>Wohnungen</th><th>${mon}</th><th>${y}</th><th>Gesamt</th></tr><tr><td><b>Alle</b></td><td><b>${tot.m}</b></td><td><b>${tot.y}</b></td><td><b>${tot.g}</b></td></tr></table>`;
   h += `<table class="stat"><tr><th>Pro Kunde</th><th>${mon}</th><th>${y}</th><th>Gesamt</th></tr>`;
   [...rows.entries()].sort((a, b) => b[1].g - a[1].g).forEach(([k, r]) => { h += `<tr><td></td><td>${r.m}</td><td>${r.y}</td><td>${r.g}</td></tr>`.replace('<td></td>', '<td>' + k.replace(/[<>&]/g, '') + '</td>'); });
-  h += '</table><p class="mute">Gezählt werden Projekte mit mindestens einem Foto, nach Projektdatum. Nur auf diesem Handy.</p>';
+  // Zeit je Wohnung (Idee 121): erstes Foto bis letzte Messung, nur Projekte mit ≥ 2 Fotos
+  const durs = { m: [], y: [], g: [] };
+  for (const p of await liveProjects()) {
+    const sh = await db.shotsOf(p.id); if (sh.length < 2) continue;
+    const t0 = Math.min(...sh.map(x => x.created || Infinity)), t1 = Math.max(...sh.flatMap(x => [x.created || 0, ...x.arrows.map(a => Date.parse(a.time) || 0)]));
+    const min = (t1 - t0) / 60000; if (!isFinite(min) || min <= 0 || min > 240) continue;
+    const d = (p.datum || todayISO(new Date(p.created || 0))).slice(0, 10);
+    durs.g.push(min); if (d.startsWith(y)) durs.y.push(min); if (d.startsWith(ym)) durs.m.push(min);
+  }
+  const med = a => { if (!a.length) return '–'; const b = [...a].sort((x, y2) => x - y2); return Math.round(b[Math.floor(b.length / 2)]) + ' min'; };
+  h += `<table class="stat"><tr><th>Zeit je Wohnung (Mitte)</th><th>${mon}</th><th>${y}</th><th>Gesamt</th></tr><tr><td>erstes Foto → letzte Messung</td><td>${med(durs.m)}</td><td>${med(durs.y)}</td><td>${med(durs.g)}</td></tr></table>`;
+  h += '</table><p class="mute">Gezählt werden Projekte mit mindestens einem Foto, nach Projektdatum. Zeit: Projekte mit mindestens zwei Fotos. Nur auf diesem Handy.</p>';
   $('#statBody').innerHTML = h;
   $('#setSheet').classList.remove('on'); $('#statSheet').classList.add('on');
 };
@@ -2950,6 +3164,9 @@ function whatsNew() {
   whatsNew();
   backupBar();
   todayBox();
+  applySetupLink();
+  if (opt.laserAuto !== false) setTimeout(() => laser.autoConnect().then(ok => { if (ok) laserUi(); }).catch(() => { }), 1500);
+  setTimeout(() => autoBackup(), 8000);
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
     // neue Version übernommen → einmal neu laden

@@ -88,6 +88,12 @@ export const dropbox = {
     const by = (a, b) => a.name.localeCompare(b.name, 'de', { numeric: true });
     return { folders: folders.sort(by), files: files.sort(by) };
   },
+  // Datei herunterladen (Sicherung vom anderen Handy)
+  async download(path) {
+    const r = await fetch('https://content.dropboxapi.com/2/files/download', { method: 'POST', headers: { Authorization: 'Bearer ' + await this.token(), 'Dropbox-API-Arg': asciiJson(JSON.stringify({ path })) } });
+    if (!r.ok) throw apiError(await r.text(), r.status);
+    return r.blob();
+  },
   async createFolder(path) { return (await this.api('files/create_folder_v2', { path, autorename: false })).metadata; },
   // Ordner/Datei vorhanden? → Metadaten oder null
   async exists(path) {

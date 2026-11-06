@@ -165,6 +165,17 @@ i.amp.ok, .ampel.ok i { background:#3ddc84; } i.amp.warn, .ampel.warn i { backgr
 .today .trow .tt { flex:none; width:58px; font-size:13px; color:var(--mute); } .today .trow .tx { flex:1; min-width:0; } .today .trow .tx b { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:15px; }
 .today .trow .tx small { display:block; color:var(--mute); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .today .trow .st { flex:none; font-size:18px; }
 .today [data-prep] { width:100%; margin-top:8px; }
+.noterow { display:flex; align-items:center; gap:6px; margin:2px 0 8px; min-height:28px; font-size:13px; color:var(--mute); }
+.noterow .ntog { width:28px; height:28px; padding:0; border:none; background:transparent; color:var(--mute); font-size:16px; transition:transform .15s; }
+.noterow.open .ntog { transform:rotate(90deg); }
+.noterow.has .ntog { color:var(--blue); }
+.noterow .ntxt { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .noterow.open .ntxt { display:none; }
+.noterow .nin { display:none; flex:1; height:34px; font-size:14px; } .noterow.open .nin { display:block; }
+.noterow.pnote { margin:10px 0 0; }
+.roomgrid button.sug { outline:2px solid var(--blue); }
+.mic { width:auto; padding:0 14px; height:40px; } .mic.on { background:var(--blue); color:#fff; }
+#camGrid { position:absolute; left:0; right:0; top:calc(env(safe-area-inset-top) + 64px); bottom:110px; pointer-events:none; display:none; background-image:linear-gradient(to right, rgba(255,255,255,.55) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,.55) 1px, transparent 1px); background-size:33.333% 33.333%; background-position:-1px -1px; }
+#camGrid.on { display:block; }
 .bkbar { display:flex; align-items:center; gap:8px; margin:0 0 10px; padding:8px 10px; border-radius:12px; background:var(--panel2); font-size:13px; }
 .bkbar span { flex:1; } .bkbar button { width:auto; padding:0 12px; height:36px; font-size:14px; }
 .exprow { display:flex; align-items:center; gap:8px; padding:6px 12px; margin:0 0 8px; border-radius:10px; background:var(--panel2); font-size:13px; color:var(--mute); cursor:pointer; }
@@ -335,6 +346,7 @@ ul.news li { margin-bottom:6px; }
         <div><label class="f">Datum</label><input id="pDatum" type="date"></div>
         <div></div>
       </div>
+      <div class="noterow pnote" id="pNoteRow"><button class="ntog" id="pNoteTog" aria-label="Notiz">▸</button><span class="ntxt">Notiz</span><input class="nin" id="pNote" placeholder="Notiz zum Projekt …" maxlength="160"></div>
       <details style="margin-top:10px"><summary class="mute">Kundendaten fürs Deckblatt</summary>
         <label class="f">Firma</label><input id="pFirma">
         <label class="f">Straße + Hausnummer</label><input id="pStrasse">
@@ -373,6 +385,7 @@ ul.news li { margin-bottom:6px; }
     <div style="flex:1"></div>
     <button class="roomchip" id="camRoom">Raum</button>
   </div>
+  <div id="camGrid"></div>
   <div id="horizon"><i class="ref l"></i><i class="line"></i><i class="ref r"></i></div>
   <div id="poi"></div>
   <div class="camside">
@@ -439,7 +452,8 @@ ul.news li { margin-bottom:6px; }
 
 <!-- Raumwahl -->
 <div class="sheet-bg" id="roomSheet"><div class="sheet">
-  <h2>Raum wählen</h2>
+  <div style="display:flex;align-items:center;gap:8px"><h2 style="flex:1;margin:0 0 10px">Raum wählen</h2><button class="ghost mic" id="roomMic" aria-label="Raum sprechen" style="display:none">🎤</button></div>
+  <button class="ghost" id="roomNext" style="display:none;width:100%;margin:0 0 10px"></button>
   <div class="roomgrid" id="roomGrid"></div>
   <label class="f">Eigener Name (z. B. Kz1, WC Bad)</label>
   <div style="display:flex;gap:8px"><input id="roomCustom"><button class="pri" id="roomOk">OK</button></div>
@@ -495,6 +509,8 @@ ul.news li { margin-bottom:6px; }
     <label class="f">Pfeile im Foto</label>
     <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sMagnet" style="width:auto"> Magnet: Pfeilenden rasten an Bildkanten ein</label>
     <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sDash" style="width:auto"> Breiten-Pfeile gestrichelt (Höhe/Breite ohne Farbe unterscheidbar)</label>
+    <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sEst" style="width:auto"> Vorab-Schätzung: offene Pfeile zeigen grau „~201“, geschätzt aus den schon gemessenen (Test)</label>
+    <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sGrid" style="width:auto"> Gitterlinien im Sucher (Drittel)</label>
     <label class="f">Kamera</label>
     <select id="sCam"><option value="">Automatisch (Rückkamera)</option></select>
     <p class="mute" id="sCamHint" style="margin:4px 0 0"></p>
@@ -535,6 +551,9 @@ ul.news li { margin-bottom:6px; }
     <input id="sFooter" placeholder="VIEWPORT 360° · office@viewport360.at · +43 …">
     <label class="f">Übersichtsseite (alle Räume mit Tür-/Fenstermaßen)</label>
     <select id="sOverview"><option value="1">An – am Ende des PDFs</option><option value="0">Aus</option></select>
+    <label class="f">Fotoqualität im PDF</label>
+    <select id="sPdfQ"><option value="klein">Klein – für Mail (ca. ⅓ Größe)</option><option value="normal">Normal (wie bisher)</option><option value="druck">Druck – größte Fotos</option></select>
+    <label style="display:flex;gap:10px;align-items:center;margin:8px 0 0"><input type="checkbox" id="sNotesPdf" style="width:auto"> Notizen ins PDF (klein, rechts unten bzw. am Deckblatt)</label>
   </div>
 
   <div class="tab" data-tab="cloud">
@@ -569,6 +588,10 @@ ul.news li { margin-bottom:6px; }
     <button class="ghost" id="sCheck" style="margin-top:8px">Erneut prüfen</button>
     <label class="f">Laser</label>
     <p class="mute" id="sLasers" style="margin:0 0 6px"></p>
+    <div id="sLaserList"></div>
+    <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px"><input type="checkbox" id="sLaserAuto" style="width:auto"> Gemerkten Laser beim Start automatisch verbinden (Android/Chrome)</label>
+    <button class="ghost" id="sLaserLearn" style="width:100%;margin-top:8px">🔍 Unbekannter Laser: Protokoll aufzeichnen</button>
+    <p class="mute" style="margin:4px 0 6px">Unterstützt: Bosch GLM/PLR (C-Modelle), Leica DISTO, Mileseey/Hersch/Suaoki, Stanley TLM99s. Andere Marken: Lernmodus, dann Fehlerbericht an Claude.</p>
     <button class="ghost" id="sLaserOff">Laser trennen</button>
     <details style="margin-top:10px"><summary class="mute">Bluetooth-Protokoll (für Fehlersuche)</summary><pre class="log" id="sLog"></pre></details>
     <label class="f">Tür-/Fenster-Erkennung (KI) – in Arbeit</label>
@@ -585,12 +608,17 @@ ul.news li { margin-bottom:6px; }
     <div style="display:flex;gap:8px"><button class="pri" id="sBackup" style="flex:1">💾 Gesamt-Sicherung erstellen</button><button class="ghost" id="sRestore" style="flex:1">♻ Sicherung einspielen</button></div>
     <input type="file" id="sRestoreFile" accept=".json,application/json" hidden>
     <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px"><input type="checkbox" id="sRemind" style="width:auto"> Alle 14 Tage an die Sicherung erinnern</label>
+    <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px"><input type="checkbox" id="sAutoBackup" style="width:auto"> Wöchentlich automatisch in Dropbox sichern (nur im WLAN, letzte 4 bleiben)</label>
+    <p class="mute" id="sAutoBackupInfo" style="margin:2px 0 0 26px"></p>
+    <div style="display:flex;gap:8px;margin-top:8px"><button class="ghost" id="sAutoBackupNow" style="flex:1">Jetzt in Dropbox sichern</button><button class="ghost" id="sRestoreDbx" style="flex:1">Sicherung aus Dropbox holen</button></div>
+    <button class="ghost" id="sMove" style="width:100%;margin-top:8px">📱 Gerät wechseln (QR-Code fürs neue Handy)</button>
     <p class="mute" style="margin:4px 0 0">Die Datei enthält alle Projekte mit Fotos, Kunden, Logos und Einstellungen – am besten in Dropbox oder „Dateien“ ablegen. Am neuen Handy: App installieren, PIN, dann „Sicherung einspielen“.</p>
     <label class="f">Fehlerbericht</label>
     <button class="ghost" id="sReport" style="width:100%">🛠 Fehlerbericht erstellen (an Claude schicken)</button>
     <p class="mute" style="margin:6px 0 0">Enthält App-Stand, Funktionstest, Bluetooth-Protokoll und Fehlermeldungen – keine Fotos, keine Kundendaten.</p>
     <label class="f">Entsperren</label>
     <div style="display:flex;gap:8px;align-items:center"><span class="mute" style="font-size:14px;flex:1">PIN erneut verlangen</span><select id="sLockDays" style="width:auto"><option value="1">täglich</option><option value="7">alle 7 Tage</option><option value="30">alle 30 Tage</option></select></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:6px"><span class="mute" style="font-size:14px;flex:1">Sperren nach Pause im Hintergrund</span><select id="sBgLock" style="width:auto"><option value="0">nie</option><option value="1">1 Minute</option><option value="10">10 Minuten</option><option value="60">1 Stunde</option></select></div>
     <p class="mute" id="sBioState" style="margin:8px 0 4px">…</p>
     <button class="ghost" id="sBioOn" style="width:100%">👆 Fingerabdruck / Face-ID einrichten</button>
     <button class="ghost" id="sBioOff" style="width:100%">Fingerabdruck / Face-ID entfernen</button>

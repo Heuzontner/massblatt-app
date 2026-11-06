@@ -92,6 +92,7 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
   text(p0, 'Datum: ' + fmtDate(project.datum ? new Date(project.datum) : new Date()), R, top, 13);
   text(p0, 'Land: ' + (project.land || ''), R, top + lh, 13);
   text(p0, 'Telefon: ' + (project.telefon || ''), R, top + 2 * lh, 13);
+  if (project.note) text(p0, 'Notiz: ' + fit(project.note, 10, 200), R, top + 4 * lh, 10, rgb(0.3, 0.3, 0.3));
   const custLogo = await embedImg(project.kundenLogo);
   if (custLogo) drawContain(p0, custLogo, 615, 112, 110, 118);
 
@@ -165,6 +166,7 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
       row(pg, 418, y, cols, [`${v.cm} cm`, 'Länge', fmtDateTime(v.time)], Math.min(7.5, rh * 0.42), k, rh);
       y += rh;
     });
+    if (s.note) text(pg, 'Notiz: ' + fit(s.note, 8, 390), 418, Math.max(y + 14, 556), 8, rgb(0.3, 0.3, 0.3));
     pageNo(pg, i + 1);
   }
 
