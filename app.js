@@ -5,8 +5,9 @@ import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
+import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '2.3.0';
+const VERSION = '2.4.0';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -14,6 +15,20 @@ const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'],
 
 const S = { project: null, shots: [], room: null, shot: null, active: null, stream: null, ai: true, wake: null };
 const laser = new Laser();
+
+// ---------------- Protokoll (für den Fehlerbericht) ----------------
+const LOG = [];
+function log(...a) { const line = new Date().toISOString().slice(11, 19) + ' ' + a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' '); LOG.push(line); if (LOG.length > 300) LOG.shift(); }
+function persistErr(kind, msg) {
+  try { const e = JSON.parse(localStorage.getItem('mb_errs') || '[]'); e.push({ t: new Date().toISOString(), kind, msg: String(msg).slice(0, 400), v: VERSION }); localStorage.setItem('mb_errs', JSON.stringify(e.slice(-30))); } catch (e) { }
+}
+window.addEventListener('error', e => { log('FEHLER', e.message, e.filename ? e.filename.split('/').pop() + ':' + e.lineno : ''); persistErr('error', (e.message || '') + ' @' + (e.filename || '').split('/').pop() + ':' + e.lineno); });
+window.addEventListener('unhandledrejection', e => { const m = e.reason && (e.reason.message || String(e.reason)); log('FEHLER (Promise)', m); persistErr('promise', m); });
+// lokales Datum als JJJJ-MM-TT (nicht UTC – sonst stimmt das Datum nach Mitternacht nicht)
+const todayISO = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// Objekt-URLs je Blob nur einmal anlegen (sonst wächst der Speicher mit jeder Liste)
+const urlCache = new WeakMap();
+const blobUrl = b => { let u = urlCache.get(b); if (!u) { u = URL.createObjectURL(b); urlCache.set(b, u); } return u; };
 
 // ---------------- Hilfen ----------------
 function toast(msg, ms = 1800) {
@@ -34,7 +49,7 @@ function canvasToBlob(c, type = 'image/jpeg', q = 0.88) {
 }
 const blobToB64 = b => new Promise(r => { const f = new FileReader(); f.onload = () => r(f.result); f.readAsDataURL(b); });
 const b64ToBlob = async d => (await fetch(d)).blob();
-const blobToImg = b => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(b); });
+const blobToImg = b => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = blobUrl(b); });
 async function fileToImgBytes(blob) {
   // beliebiges Bild → PNG-Bytes (für pdf-lib)
   const im = await blobToImg(blob);
@@ -72,40 +87,87 @@ document.addEventListener('click', async e => {
 });
 
 // ---------------- Projekte ----------------
-let homeSort = 'neu';
+let homeSort = 'neu', showArch = false, selMode = false;
+const selIds = new Set();
 try { homeSort = localStorage.getItem('mb_sort') || 'neu'; } catch (e) { }
 $('#projSearch').addEventListener('input', () => renderHome());
-$$('#sortChips button').forEach(b => b.onclick = () => { homeSort = b.dataset.sort; try { localStorage.setItem('mb_sort', homeSort); } catch (e) { } renderHome(); });
+$$('#sortChips button[data-sort]').forEach(b => b.onclick = () => { homeSort = b.dataset.sort; try { localStorage.setItem('mb_sort', homeSort); } catch (e) { } renderHome(); });
+$('#archChip').onclick = () => { showArch = !showArch; renderHome(); };
+function setSelMode(on) { selMode = on; selIds.clear(); $('.plist').classList.toggle('sel', on); $('#selChip').classList.toggle('sel', on); updateSelBar(); renderHome(); }
+$('#selChip').onclick = () => setSelMode(!selMode);
+$('#selCancel').onclick = () => setSelMode(false);
+function updateSelBar() { $('#selPdf').textContent = `PDF aus ${selIds.size} Projekt${selIds.size === 1 ? '' : 'en'}`; $('#selPdf').disabled = !selIds.size; }
+$('#selPdf').onclick = async () => {
+  if (!selIds.size) return;
+  const all = await db.all('projects');
+  const sel = all.filter(p => selIds.has(p.id)).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }));
+  const empty = [];
+  for (const p of sel) if (!(await db.shotsOf(p.id)).length) empty.push(p.name || 'Ohne Namen');
+  if (empty.length && !await confirmBox(`${empty.length} Projekt(e) ohne Fotos`, 'Trotzdem', 'Abbrechen', 'ghost', 'Ohne Fotos: ' + empty.join(', '))) return;
+  const b = $('#selPdf'); b.disabled = true; b.textContent = 'Erstelle …';
+  try {
+    const file = await makeCombinedPdf(sel);
+    const first = sel[0];
+    const c = first && first.kundeId && ((await db.setting('customers')) || []).find(x => x.id === first.kundeId);
+    await sharePdf(file, { title: `Sammel-PDF (${sel.length} Projekte)`, dbxSub: c ? (c.dbx || c.name) : (first && first.firma) || '',
+      onLock: async how => { for (const p of sel) { p.locked = { at: Date.now(), how: how + ' (Sammel-PDF)' }; await db.put('projects', p); } setSelMode(false); } });
+  } catch (e) { console.error(e); toast('PDF-Fehler: ' + e.message, 5000); }
+  finally { updateSelBar(); }
+};
+let allShotCounts = null;
 async function renderHome() {
-  $$('#sortChips button').forEach(b => b.classList.toggle('sel', b.dataset.sort === homeSort));
+  $$('#sortChips button[data-sort]').forEach(b => b.classList.toggle('sel', b.dataset.sort === homeSort));
+  $('#archChip').classList.toggle('sel', showArch);
   let list = await db.all('projects');
   const q = normStreet($('#projSearch').value);
+  const archN = list.filter(p => p.archived).length;
+  $('#archChip').textContent = `📦 Archiv${archN ? ' (' + archN + ')' : ''}`;
   if (q) list = list.filter(p => normStreet([p.name, p.firma, p.str].join(' ')).includes(q));
-  const dateOf = p => p.datum || new Date(p.created || 0).toISOString().slice(0, 10);
+  const inArch = list.filter(p => p.archived).length;
+  list = list.filter(p => !!p.archived === showArch);
+  // Fotoanzahl in einem Durchgang (statt einer Abfrage je Projekt)
+  const counts = new Map(); for (const sh of await db.all('shots')) counts.set(sh.projectId, (counts.get(sh.projectId) || 0) + 1);
+  const dateOf = p => p.datum || todayISO(new Date(p.created || 0));
   const cmp = { neu: (a, b) => (b.updated || 0) - (a.updated || 0), datum: (a, b) => dateOf(b).localeCompare(dateOf(a)),
-    strasse: (a, b) => (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }), kunde: (a, b) => (a.firma || '').localeCompare(b.firma || '', 'de') || (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }) };
+    strasse: (a, b) => (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }), kunde: (a, b) => (a.firma || '\uffff').localeCompare(b.firma || '\uffff', 'de') || (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }) }; // ohne Kunde ganz unten
   list.sort(cmp[homeSort] || cmp.neu);
   const el = $('#projList');
-  if (!list.length) { el.innerHTML = q ? '<div class="empty">Nichts gefunden.</div>' : '<div class="empty">Noch kein Projekt.<br>Unten auf „+ Neues Projekt“ tippen.</div>'; return; }
+  if (!list.length) {
+    el.innerHTML = showArch ? '<div class="empty">Archiv ist leer.</div>' : q ? `<div class="empty">Nichts gefunden.${inArch ? `<br><small>${inArch} Treffer im Archiv – oben „📦 Archiv“ antippen</small>` : ''}</div>` : '<div class="empty">Noch kein Projekt.<br>Unten auf „+ Neues Projekt“ tippen.</div>';
+    return;
+  }
   el.innerHTML = '';
   for (const p of list) {
-    const n = (await db.shotsOf(p.id)).length;
-    const c = document.createElement('div'); c.className = 'card';
-    c.innerHTML = `<div class="t"><b></b><small></small></div><span>›</span>`;
-    c.querySelector('b').textContent = p.name || 'Ohne Namen';
-    c.querySelector('small').textContent = `${p.firma || ''} · ${n} Foto${n === 1 ? '' : 's'} · ${new Date(p.datum || p.created).toLocaleDateString('de-AT')}`;
-    c.onclick = () => openProject(p.id);
+    const n = counts.get(p.id) || 0;
+    const c = document.createElement('div'); c.className = 'card' + (selIds.has(p.id) ? ' checked' : '');
+    c.innerHTML = `<span class="cb">✓</span><div class="t"><b></b><small></small></div><span>›</span>`;
+    c.querySelector('b').textContent = (p.locked ? '🔒 ' : '') + (p.name || 'Ohne Namen');
+    c.querySelector('small').textContent = `${p.firma || ''} · ${n} Foto${n === 1 ? '' : 's'} · ${new Date(p.datum || p.created).toLocaleDateString('de-AT')}${p.archived ? ' · 📦 archiviert' : ''}`;
+    c.onclick = () => {
+      if (selMode) { if (selIds.has(p.id)) selIds.delete(p.id); else selIds.add(p.id); c.classList.toggle('checked', selIds.has(p.id)); updateSelBar(); return; }
+      openProject(p.id);
+    };
     el.appendChild(c);
   }
 }
+// Archiv: Projekt ausblenden, bleibt aber erhalten (jederzeit wieder einblendbar)
+$('#btnArchive').onclick = async () => {
+  const p = S.project;
+  p.archived = !p.archived; p.updated = Date.now(); await db.put('projects', p);
+  log(p.archived ? 'archiviert' : 'aus Archiv', p.name);
+  toast(p.archived ? 'Ins Archiv verschoben – in der Projektliste über „📦 Archiv“ zu finden' : 'Aus dem Archiv geholt', 3000);
+  if (p.archived) { renderHome(); show('home'); } else archiveUi();
+};
+function archiveUi() { $('#btnArchive').textContent = S.project && S.project.archived ? 'Aus Archiv holen' : 'Archivieren'; }
 
 $('#btnNewProj').onclick = async () => {
   const all = (await db.all('projects')).sort((a, b) => (b.updated || 0) - (a.updated || 0));
   const last = all[0] || {};
   const p = { id: uid(), name: '', kundeId: last.kundeId || null, firma: last.firma || '', kontakt: '', strasse: '', ort: last.ort || '', land: last.land || '',
-    telefon: '', datum: new Date().toISOString().slice(0, 10), kundenLogo: last.kundenLogo || null, created: Date.now(), updated: Date.now() };
+    telefon: '', datum: todayISO(), kundenLogo: last.kundenLogo || null, created: Date.now(), updated: Date.now() };
   // zuletzt verwendeter Kunde mit allen Daten
-  const lastC = last.kundeId && ((await db.setting('customers')) || []).find(x => x.id === last.kundeId);
+  const custs = (await db.setting('customers')) || [];
+  const lastC = (last.kundeId && custs.find(x => x.id === last.kundeId)) || (!all.length ? custs[custs.length - 1] : null); // erstes Projekt: zuletzt angelegter Kunde
   if (lastC) applyCustomerToProject(p, lastC); else p.kundeId = null;
   await db.put('projects', p);
   await openProject(p.id, true);
@@ -132,7 +194,7 @@ async function openProject(id, isNew = false) {
   $('#projDetails').open = isNew || !p.name;
   $('#projTitle').textContent = p.name || 'Neues Projekt';
   renderShots();
-  lockUi(); navUi();
+  lockUi(); navUi(); archiveUi();
   show('proj');
   if (isNew) setTimeout(() => $('#pStr').focus(), 200);
 }
@@ -269,7 +331,10 @@ function setWOrt(ort, auto) {
   db.put('projects', S.project); rememberStreetSoon();
   if (auto) toast('PLZ/Ort automatisch: ' + ort + ' (änderbar)');
 }
-$('#pStr').addEventListener('blur', () => setTimeout(() => $('#strSug').classList.remove('on'), 400));
+// Vorschläge zuklappen, wenn das Feld den Fokus verliert – außer die Standort-Vorschläge (📍) wurden gerade erst eingeblendet
+let sugShownAt = 0;
+$('#pStr').addEventListener('blur', () => { const blurAt = Date.now(); setTimeout(() => { if (sugShownAt < blurAt) $('#strSug').classList.remove('on'); }, 400); });
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#strSug, #pStr, #gpsBtn')) $('#strSug').classList.remove('on'); }, true);
 
 // ---------------- Adresse per Standort (draußen und drinnen; drinnen hilft WLAN-Ortung) ----------------
 $('#gpsBtn').onclick = () => {
@@ -309,7 +374,7 @@ $('#gpsBtn').onclick = () => {
         b.addEventListener('pointerdown', pick); b.addEventListener('click', pick);
         box.appendChild(b);
       }
-      box.classList.add('on');
+      box.classList.add('on'); sugShownAt = Date.now();
     } catch (e) { toast('Adresssuche braucht Internet', 3500); }
   }, err => toast(err.code === 1 ? 'Standort nicht erlaubt – in den Handy-Einstellungen freigeben' : 'Kein Standort gefunden', 4000),
   { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
@@ -381,7 +446,7 @@ function projectFieldToCustomer(pk) {
 async function customers() { return ((await db.setting('customers')) || []).sort((a, b) => a.name.localeCompare(b.name, 'de')); }
 function custButton(c, sel) {
   const b = document.createElement('button'); if (sel) b.classList.add('sel');
-  if (c.logo) { const i = document.createElement('img'); i.src = URL.createObjectURL(c.logo); b.appendChild(i); }
+  if (c.logo) { const i = document.createElement('img'); i.src = blobUrl(c.logo); b.appendChild(i); }
   const t = document.createElement('span'); t.innerHTML = '<b></b><small></small>';
   t.querySelector('b').textContent = c.name; t.querySelector('small').textContent = c.ort || '';
   b.appendChild(t); return b;
@@ -412,7 +477,7 @@ function editCustomer(c) {
     $('#custTitle').textContent = c ? 'Kunde bearbeiten' : 'Neuer Kunde';
     CF.forEach(([, ck, , cid]) => { $('#' + cid).value = c ? (c[ck] || '') : ''; });
     $('#cDbx').value = c ? (c.dbx || '') : '';
-    const prev = () => { if (logo) { $('#cLogoPrev').src = URL.createObjectURL(logo); $('#cLogoPrev').hidden = false; } else $('#cLogoPrev').hidden = true; };
+    const prev = () => { if (logo) { $('#cLogoPrev').src = blobUrl(logo); $('#cLogoPrev').hidden = false; } else $('#cLogoPrev').hidden = true; };
     prev(); $('#cLogo').value = '';
     $('#cDel').style.display = c ? '' : 'none';
     $('#cLogo').onchange = async e => { const f = e.target.files[0]; if (!f) return; logo = $('#cCut').checked ? await cutoutLogo(f) : f; prev(); };
@@ -439,26 +504,40 @@ function editCustomer(c) {
       await db.setting('customers', ((await db.setting('customers')) || []).filter(x => x.id !== c.id));
       close(null);
     };
+    document.body.appendChild(sh); // ans Ende → liegt über den Einstellungen
     sh.classList.add('on');
     if (!c) setTimeout(() => $('#cName').focus(), 200);
   });
 }
 async function renderCustManage() {
-  const el = $('#custManage'); el.innerHTML = '';
-  for (const c of await customers()) {
-    const b = custButton(c, false);
-    b.onclick = async () => { await editCustomer(c); renderCustManage(); };
-    el.appendChild(b);
+  const el = $('#custList'); el.innerHTML = '';
+  const list = await customers();
+  if (!list.length) el.innerHTML = '<p class="mute">Noch keine Kunden. Unten „+ Neuer Kunde“.</p>';
+  for (const c of list) {
+    const row = document.createElement('div'); row.className = 'custrow';
+    row.innerHTML = '<img alt=""><div class="t"><b></b><small></small><small></small><small></small></div><span>›</span>';
+    const img = row.querySelector('img'); if (c.logo) img.src = blobUrl(c.logo); else img.style.visibility = 'hidden';
+    const sm = row.querySelectorAll('small');
+    row.querySelector('b').textContent = c.name;
+    sm[0].textContent = [c.strasse, c.ort, c.land].filter(Boolean).join(' · ') || 'keine Adresse';
+    sm[1].textContent = [c.kontakt, c.telefon].filter(Boolean).join(' · ') || 'kein Kontakt';
+    sm[2].textContent = 'Dropbox-Ordner: ' + (c.dbx || c.name);
+    row.onclick = async () => { await editCustomer(c); renderCustManage(); if (S.project) renderCustChips(); };
+    el.appendChild(row);
   }
-  const add = document.createElement('button'); add.textContent = '+ Neuer Kunde';
-  add.onclick = async () => { await editCustomer(null); renderCustManage(); };
-  el.appendChild(add);
 }
+$('#custNew').onclick = async () => { await editCustomer(null); renderCustManage(); if (S.project) renderCustChips(); };
 $('#btnDelProj').onclick = async () => {
   if (!await confirmBox(`Projekt „${S.project.name || 'Ohne Namen'}“ mit allen Fotos löschen?`)) return;
-  for (const s of S.shots) await db.del('shots', s.id);
-  await db.del('projects', S.project.id);
+  const p = S.project, shots = S.shots;
+  for (const s of shots) await db.del('shots', s.id);
+  await db.del('projects', p.id);
+  log('Projekt gelöscht', p.name);
   renderHome(); show('home');
+  undoToast(`Projekt „${p.name || 'Ohne Namen'}“ gelöscht`, async () => {
+    await db.put('projects', p); for (const s of shots) await db.put('shots', s);
+    renderHome(); toast('Projekt wiederhergestellt');
+  });
 };
 
 // Hinweis mit „Rückgängig“-Knopf (6 s)
@@ -472,9 +551,10 @@ function undoToast(msg, undo) {
   undoToast._t = setTimeout(() => bar.classList.remove('on'), 6000);
   bar.querySelector('button').onclick = async () => { bar.classList.remove('on'); clearTimeout(undoToast._t); await undo(); };
 }
+let lastConfirm = null; // zuletzt geöffnete Rückfrage (um sie bei Bedarf wieder zu schließen)
 function confirmBox(msg, yesLabel = 'Löschen', noLabel = 'Abbrechen', yesClass = 'danger', detail = '') {
   return new Promise(res => {
-    const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+    const bg = document.createElement('div'); bg.className = 'sheet-bg on'; lastConfirm = bg;
     bg.innerHTML = `<div class="sheet"><h2></h2><p class="mute" style="white-space:pre-line;font-size:15px"></p><div style="display:flex;gap:8px"><button class="ghost" style="flex:1"></button><button style="flex:1"></button></div></div>`;
     bg.querySelector('h2').textContent = msg;
     const pd = bg.querySelector('p'); if (detail) pd.textContent = detail; else pd.remove();
@@ -494,7 +574,7 @@ function renderShots() {
     const vals = s.arrows.filter(a => a.cm != null).map(a => opt.mm ? `${a.mm != null ? a.mm : a.cm * 10}` : `${a.cm}`).join(' · ');
     const open = s.arrows.filter(a => a.cm == null).length;
     c.innerHTML = `<img><div class="t"><div class="room"></div><div class="vals"></div>${open ? `<div class="warn">${open} Pfeil${open > 1 ? 'e' : ''} ohne Maß</div>` : ''}</div><button class="del" aria-label="Foto löschen">🗑</button>`;
-    c.querySelector('img').src = URL.createObjectURL(s.photo);
+    c.querySelector('img').src = blobUrl(s.photo);
     c.querySelector('.room').textContent = `${i + 1}. ${s.room}`;
     c.querySelector('.vals').textContent = vals ? vals + (opt.mm ? ' mm' : ' cm') : '–';
     c.onclick = () => { if (!isLocked()) openEditor(s); };
@@ -611,6 +691,7 @@ function setCamRoom(r) {
 }
 async function openCam() {
   setCamRoom(S.room);
+  $('#camFallback').style.display = 'none';
   show('cam');
   try {
     S.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 3000 }, height: { ideal: 4000 } }, audio: false });
@@ -618,10 +699,12 @@ async function openCam() {
     await $('#video').play().catch(() => { });
     camCaps();
   } catch (e) {
-    toast('Kamera nicht verfügbar – System-Kamera wird geöffnet', 3000);
-    $('#fileIn').click();
+    log('Kamera', e.name, e.message);
+    $('#camFallback').style.display = 'flex';
+    toast(e.name === 'NotAllowedError' ? 'Kamera nicht erlaubt – bitte in den Handy-Einstellungen freigeben' : 'Kamera nicht verfügbar', 4000);
   }
 }
+$('#camFallbackBtn').onclick = () => $('#fileIn').click();
 function stopCam() {
   if (S.stream) { S.stream.getTracks().forEach(t => t.stop()); S.stream = null; }
 }
@@ -704,7 +787,7 @@ async function captureHdr() {
   return out;
 }
 $('#camRoom').onclick = async () => { const r = await resolveRoom(await pickRoom()); if (r) setCamRoom(r); };
-$('#camBack').onclick = () => { renderShots(); show('proj'); };
+$('#camBack').onclick = () => { renderShots(); if (S.shots.length) $('#projDetails').open = false; show('proj'); }; // Fotos sichtbar, Projektdaten eingeklappt
 $('#camGallery').onclick = () => $('#galIn').click();
 $('#fileIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) newShotFromBlob(f); else show('proj'); };
 $('#galIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) newShotFromBlob(f); };
@@ -754,6 +837,7 @@ async function openEditor(shot, fresh = false) {
   photoImg = await blobToImg(shot.photo);
   $('#lightA').classList.toggle('on', !!shot.orig);
   show('ed');
+  resetView(); ptrs.clear(); pinch = null; drag = null;
   fitCanvas();
   buildChips();
   S.active = firstOpen();
@@ -778,8 +862,11 @@ window.addEventListener('resize', () => { if ($('#ed').classList.contains('on'))
 
 function loop() {
   cancelAnimationFrame(raf);
+  let last = 0;
   const draw = (t) => {
     if (!$('#ed').classList.contains('on')) return;
+    if (t - last < 45 && !drag) { raf = requestAnimationFrame(draw); return; } // ~20 Bilder/s reichen, schont den Akku
+    last = t;
     blinkT = (Math.sin(t / 180) + 1) / 2;
     ctx.drawImage(photoImg, 0, 0, cv.width, cv.height);
     drawArrows(ctx, cv.width, cv.height, S.shot.arrows, S.active, blinkT, false, fmtVal);
@@ -826,12 +913,40 @@ $('#arrSheet').onclick = async e => {
 function setArrows(arrs, tpl) {
   // bereits gemessene Werte in gleicher Reihenfolge übernehmen
   const old = S.shot.arrows.filter(a => a.cm != null);
-  arrs.forEach((a, i) => { if (old[i]) { a.cm = old[i].cm; a.time = old[i].time; } });
+  const used = new Set();
+  // zuerst gleiche Art (Tür-Höhe → Tür-Höhe), dann der Reihe nach
+  arrs.forEach(a => { const o = old.find(x => !used.has(x) && x.el === a.el && x.kind === a.kind); if (o) { used.add(o); a.cm = o.cm; a.mm = o.mm; a.time = o.time; } });
+  arrs.forEach(a => { if (a.cm != null) return; const o = old.find(x => !used.has(x) && x.kind === a.kind); if (o) { used.add(o); a.cm = o.cm; a.mm = o.mm; a.time = o.time; } });
   S.shot.arrows = arrs; S.shot.tpl = tpl;
   S.active = firstOpen();
   saveShot(); buildChips(); updateCur();
 }
-function applyTemplate(k) { setArrows(TEMPLATES[k](), k); }
+async function learnedTemplate(k) {
+  const arrs = TEMPLATES[k]();
+  if (opt.learn === false) return arrs;
+  const L = (await db.setting('tplLearn')) || {}; const samples = L[k] || [];
+  if (samples.length < 3) return arrs;
+  // Median je Koordinate über die letzten Fotos → Pfeile liegen dort, wo du sie meist hinschiebst
+  const med = v => { const a = [...v].sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
+  arrs.forEach((a, i) => {
+    const pts = samples.map(sm => sm[i]).filter(Boolean);
+    if (pts.length < 3) return;
+    a.x1 = med(pts.map(p => p[0])); a.y1 = med(pts.map(p => p[1])); a.x2 = med(pts.map(p => p[2])); a.y2 = med(pts.map(p => p[3]));
+  });
+  return arrs;
+}
+async function applyTemplate(k) { setArrows(await learnedTemplate(k), k); }
+// nach einem fertig gemessenen Foto die Pfeil-Lage je Vorlage merken
+async function learnFromShot(shot) {
+  if (opt.learn === false || !shot || !TEMPLATES[shot.tpl]) return;
+  const ref = TEMPLATES[shot.tpl]();
+  if (shot.arrows.length !== ref.length || shot.arrows.some((a, i) => a.el !== ref[i].el || a.kind !== ref[i].kind || a.cm == null)) return;
+  const L = (await db.setting('tplLearn')) || {};
+  const list = L[shot.tpl] || [];
+  list.push(shot.arrows.map(a => [a.x1, a.y1, a.x2, a.y2].map(v => Math.round(v * 1000) / 1000)));
+  L[shot.tpl] = list.slice(-20);
+  await db.setting('tplLearn', L);
+}
 
 async function runDetect() {
   const busy = $('#busy'); busy.classList.add('on');
@@ -877,10 +992,17 @@ async function saveShot() { await db.put('shots', S.shot); }
 const fmtVal = a => opt.mm ? `${a.mm != null ? a.mm : a.cm * 10} mm` : `${a.cm} cm`;
 function setValue(cm, mm) {
   let a = activeArrow();
-  if (!a || a.cm != null) { const o = S.shot.arrows.find(x => x.cm == null); if (o) a = o; }
-  if (!a) { // kein Pfeil offen → neuen anlegen
-    if (!S.shot.arrows.length) { a = newArrow(); S.shot.arrows.push(a); } else { a = activeArrow() || S.shot.arrows[S.shot.arrows.length - 1]; }
+  // Hat der Nutzer einen Pfeil selbst angetippt, bekommt genau dieser den Wert (auch zum Neu-Messen).
+  // Sonst der nächste offene Pfeil.
+  if (!a || (a.cm != null && !S.manualPick)) {
+    const o = S.shot.arrows.find(x => x.cm == null);
+    if (o) a = o;
+    else if (S.shot.arrows.length) { // alles gemessen: ein weiterer Wert überschreibt nichts unbemerkt
+      beep(false); toast('Alle Pfeile haben ein Maß – zum Neu-Messen Pfeil antippen', 2500); return false;
+    }
   }
+  S.manualPick = false;
+  if (!a) { a = newArrow(); S.shot.arrows.push(a); } // noch gar kein Pfeil → neuen anlegen
   a.cm = cm; a.mm = mm != null ? mm : cm * 10; a.time = new Date().toISOString();
   saveShot();
   beep(true);
@@ -892,10 +1014,10 @@ function setValue(cm, mm) {
 }
 const arrowName = a => `${a.el === 'Maß' ? '' : a.el + ' '}${a.kind === 'H' ? 'Höhe' : 'Breite'}`;
 // Test-Optionen: großer Messmodus, Sprachansage
-const opt = { big: false, voice: false, mm: false, nav: '' };
+const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true };
 try { Object.assign(opt, JSON.parse(localStorage.getItem('mb_opt') || '{}')); } catch (e) { }
-const saveOpt = () => { try { localStorage.setItem('mb_opt', JSON.stringify(opt)); } catch (e) { } document.body.classList.toggle('bigmode', !!opt.big); };
-document.body.classList.toggle('bigmode', !!opt.big);
+const saveOpt = () => { try { localStorage.setItem('mb_opt', JSON.stringify(opt)); } catch (e) { } document.body.classList.toggle('bigmode', !!opt.big); document.body.classList.toggle('glove', !!opt.glove); };
+document.body.classList.toggle('bigmode', !!opt.big); document.body.classList.toggle('glove', !!opt.glove);
 function showBig(a) {
   const el = $('#bigVal'); el.innerHTML = `${fmtVal(a)}<small></small>`; el.querySelector('small').textContent = arrowName(a);
   el.classList.add('on'); clearTimeout(showBig._t); showBig._t = setTimeout(() => el.classList.remove('on'), 1400);
@@ -942,18 +1064,24 @@ function shotIssues(shot) {
   if (open.length) out.push({ a: open[0], m: `${open.length} Pfeil${open.length > 1 ? 'e' : ''} ohne Maß` });
   return out;
 }
-let finishing = 0;
+let finishing = 0, checkDlg = null;
 async function finishShot(auto) {
   clearTimeout(finishing);
+  // eine noch offene „Bitte prüfen“-Rückfrage schließen (z. B. wenn inzwischen neu gemessen wurde) – es gibt immer nur eine
+  if (checkDlg) { checkDlg.remove(); checkDlg = null; }
   const iss = shotIssues(S.shot);
   if (iss.length) {
     beep(false);
-    const go2 = await confirmBox('Bitte prüfen', 'Trotzdem weiter', 'Korrigieren', 'ghost', iss.map(x => '• ' + x.m).join('\n'));
-    if (!go2) { S.active = iss[0].a.id; updateCur(); return; }
+    const pr = confirmBox('Bitte prüfen', 'Trotzdem weiter', 'Korrigieren', 'ghost', iss.map(x => '• ' + x.m).join('\n'));
+    const mine = checkDlg = lastConfirm;
+    const go2 = await pr;
+    if (checkDlg === mine) checkDlg = null;
+    if (!go2) { S.active = iss[0].a.id; S.manualPick = true; updateCur(); return; }
     auto = false;
   }
   const go = async () => {
     await saveShot();
+    learnFromShot(S.shot).catch(() => { });
     if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
     openCam();
   };
@@ -965,6 +1093,7 @@ $('#edDone').onclick = () => finishShot(false);
 // zurück zum Projekt: sofort wechseln, Speichern läuft im Hintergrund
 $('#edBack').onclick = () => {
   clearTimeout(finishing); if (kb.on) setKb(false);
+  if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
   show('proj'); renderShots();
   saveShot().then(renderShots).catch(e => toast('Speichern fehlgeschlagen: ' + e.message, 4000));
 };
@@ -985,7 +1114,7 @@ const kb = { on: false, buf: '' };
     b.onclick = () => {
       if (k === '⌫') kb.buf = kb.buf.slice(0, -1);
       else if (k === 'C') kb.buf = '';
-      else if (k === 'OK') { const v = parseInt(kb.buf, 10); kb.buf = ''; if (v > 0) { if (opt.mm) setValue(Math.round(v / 10), v); else setValue(v); } }
+      else if (k === 'OK') { const v = parseInt(kb.buf, 10); kb.buf = ''; if (v > 0) { if (opt.mm) setValue(Math.round(v / 10), v); else setValue(v); if (!S.shot.arrows.some(x => x.cm == null)) setKb(false); } } // letzter Wert: Tastatur zu, Wert bleibt sichtbar
       else if (kb.buf.length < (opt.mm ? 5 : 4)) kb.buf += k;
       updateCur();
     };
@@ -1032,10 +1161,36 @@ $('#trashA').onclick = () => {
   });
 };
 
-// Pfeile ziehen: Endpunkt (Kreis) oder ganzer Pfeil; Tippen = aktiv
-let drag = null;
-cv.addEventListener('pointerdown', e => {
+// ---------------- Pfeile ziehen, Zoom (zwei Finger), Einrasten ----------------
+// Ansicht: Zoomfaktor + Verschiebung als CSS-Transform auf dem Canvas (Pfeil-Koordinaten bleiben normiert 0..1)
+const view = { s: 1, tx: 0, ty: 0 };
+function applyView() { cv.style.transform = `translate(-50%,-50%) translate(${view.tx}px,${view.ty}px) scale(${view.s})`; }
+function resetView() { view.s = 1; view.tx = 0; view.ty = 0; applyView(); }
+function clampView() {
+  const st = $('#stage').getBoundingClientRect(), w = cv.offsetWidth * view.s, h = cv.offsetHeight * view.s;
+  const mx = Math.max(0, (w - st.width) / 2) + 40, my = Math.max(0, (h - st.height) / 2) + 40;
+  view.tx = Math.max(-mx, Math.min(mx, view.tx)); view.ty = Math.max(-my, Math.min(my, view.ty));
+}
+let drag = null, pinch = null;
+const ptrs = new Map();
+let lastTap = { t: 0, x: 0, y: 0 };
+const stage = $('#stage');
+const inStage = e => { const s2 = stage.getBoundingClientRect(); return { x: e.clientX - s2.left - s2.width / 2, y: e.clientY - s2.top - s2.height / 2 }; };
+
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('button')) return;
   e.preventDefault();
+  try { stage.setPointerCapture(e.pointerId); } catch (err) { }
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (ptrs.size === 2) {
+    // zweiter Finger: laufendes Ziehen abbrechen, Zoom/Verschieben beginnen
+    if (drag) { const a = drag.a; if (drag.isNew) { S.shot.arrows = S.shot.arrows.filter(x => x !== a); S.active = drag.prev || firstOpen(); } else Object.assign(a, drag.o); drag = null; $('#loupe').style.display = 'none'; updateCur(); }
+    const [p1, p2] = [...ptrs.values()];
+    const m = inStage({ clientX: (p1.x + p2.x) / 2, clientY: (p1.y + p2.y) / 2 });
+    pinch = { d0: Math.hypot(p1.x - p2.x, p1.y - p2.y), m0: m, s0: view.s, tx0: view.tx, ty0: view.ty };
+    return;
+  }
+  if (ptrs.size > 2 || pinch) return;
   const r = cv.getBoundingClientRect();
   const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
   const rw = r.width, rh = r.height;
@@ -1054,51 +1209,85 @@ cv.addEventListener('pointerdown', e => {
   }
   clearTimeout(finishing);
   if (!best) {
+    if (x < -0.02 || x > 1.02 || y < -0.02 || y > 1.02) return; // neben dem Foto
     // freie Stelle: neuen Pfeil mit dem Finger aufziehen
-    const a = newArrow(); a.x1 = a.x2 = x; a.y1 = a.y2 = y;
+    const a = newArrow(); a.x1 = a.x2 = Math.min(1, Math.max(0, x)); a.y1 = a.y2 = Math.min(1, Math.max(0, y));
     S.shot.arrows.push(a);
     best = { a, k: 'p2', isNew: true, prev: S.active };
   }
-  S.active = best.a.id; kb.buf = ''; updateCur();
-  drag = { ...best, x, y, o: { ...best.a } };
-  cv.setPointerCapture(e.pointerId);
+  S.active = best.a.id; S.manualPick = !best.isNew; kb.buf = ''; updateCur();
+  drag = { ...best, x, y, o: { ...best.a }, sx: e.clientX, sy: e.clientY, moved: false };
 });
-cv.addEventListener('pointermove', e => {
+stage.addEventListener('pointermove', e => {
+  if (!ptrs.has(e.pointerId)) return;
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  e.preventDefault();
+  if (pinch && ptrs.size >= 2) {
+    const [p1, p2] = [...ptrs.values()];
+    const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+    const m = inStage({ clientX: (p1.x + p2.x) / 2, clientY: (p1.y + p2.y) / 2 });
+    const s1 = Math.max(1, Math.min(6, pinch.s0 * d / Math.max(1, pinch.d0)));
+    // Punkt unter der Fingermitte bleibt stehen
+    view.tx = m.x - (pinch.m0.x - pinch.tx0) * (s1 / pinch.s0);
+    view.ty = m.y - (pinch.m0.y - pinch.ty0) * (s1 / pinch.s0);
+    view.s = s1; if (s1 === 1) { view.tx = 0; view.ty = 0; }
+    clampView(); applyView();
+    return;
+  }
   if (!drag) return;
   const r = cv.getBoundingClientRect();
   const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
   const dx = x - drag.x, dy = y - drag.y, a = drag.a, o = drag.o, cl = v => Math.min(1, Math.max(0, v));
-  e.preventDefault();
+  if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4) drag.moved = true;
   if (drag.k === 'p1') { a.x1 = cl(o.x1 + dx); a.y1 = cl(o.y1 + dy); }
   else if (drag.k === 'p2') { a.x2 = cl(o.x2 + dx); a.y2 = cl(o.y2 + dy); }
   else { a.x1 = cl(o.x1 + dx); a.y1 = cl(o.y1 + dy); a.x2 = cl(o.x2 + dx); a.y2 = cl(o.y2 + dy); }
   if (drag.isNew) { const k = Math.abs((a.y2 - a.y1) * r.height) > Math.abs((a.x2 - a.x1) * r.width) ? 'H' : 'B'; if (k !== a.kind) { a.kind = k; updateCur(); } }
-  // Lupe über dem Finger (nur beim Ziehen eines Endpunkts)
   if (drag.k !== 'all') {
     const px = drag.k === 'p1' ? a.x1 : a.x2, py = drag.k === 'p1' ? a.y1 : a.y2;
     drawLoupe(px, py, r);
   }
 });
-const endDrag = () => {
+// Einrasten: fast senkrecht/waagrecht (±3°) wird exakt senkrecht/waagrecht
+function snapArrow(a, movedEnd) {
+  const r = cv.getBoundingClientRect();
+  const dx = (a.x2 - a.x1) * r.width, dy = (a.y2 - a.y1) * r.height;
+  if (Math.hypot(dx, dy) < 20) return;
+  const ang = Math.abs(Math.atan2(dy, dx) * 180 / Math.PI); // 0 = waagrecht, 90 = senkrecht
+  if (Math.abs(ang - 90) <= 3) { if (movedEnd === 'p1') a.x1 = a.x2; else a.x2 = a.x1; }
+  else if (ang <= 3 || ang >= 177) { if (movedEnd === 'p1') a.y1 = a.y2; else a.y2 = a.y1; }
+}
+const endDrag = e => {
+  if (e && ptrs.has(e.pointerId)) ptrs.delete(e.pointerId);
+  if (pinch) { if (ptrs.size < 2) pinch = null; return; }
   if (!drag) return;
   const d = drag; drag = null; $('#loupe').style.display = 'none';
+  const a = d.a;
   if (d.isNew) {
-    const a = d.a, r = cv.getBoundingClientRect();
+    const r = cv.getBoundingClientRect();
     const dx = (a.x2 - a.x1) * r.width, dy = (a.y2 - a.y1) * r.height;
-    if (Math.hypot(dx, dy) < 25) { // nur getippt → kein Pfeil
+    if (Math.hypot(dx, dy) < 25) { // nur getippt → kein Pfeil; Doppeltipp = Zoom rein/raus
       S.shot.arrows = S.shot.arrows.filter(x => x !== a); S.active = d.prev || firstOpen();
+      const now = Date.now();
+      if (e && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+        if (view.s > 1) resetView();
+        else { const m = inStage(e); view.s = 2.5; view.tx = -m.x * 1.5; view.ty = -m.y * 1.5; clampView(); applyView(); }
+        lastTap = { t: 0, x: 0, y: 0 };
+      } else lastTap = { t: now, x: e ? e.clientX : 0, y: e ? e.clientY : 0 };
     } else {
       a.kind = Math.abs(dy) > Math.abs(dx) ? 'H' : 'B';
+      snapArrow(a, 'p2');
       // Pfeile von unten nach oben bzw. links nach rechts speichern
       if ((a.kind === 'H' && a.y1 < a.y2) || (a.kind === 'B' && a.x1 > a.x2)) [a.x1, a.y1, a.x2, a.y2] = [a.x2, a.y2, a.x1, a.y1];
       S.active = a.id;
     }
     updateCur();
-  }
+  } else if (d.k !== 'all' && d.moved) snapArrow(a, d.k);
   saveShot();
 };
-// kein Scrollen/Zoomen der Seite im Editor
-['touchstart', 'touchmove'].forEach(t => $('#stage').addEventListener(t, e => { if (e.target.closest('button')) return; if (e.touches.length < 2 || drag) e.preventDefault(); }, { passive: false }));
+stage.addEventListener('pointerup', endDrag); stage.addEventListener('pointercancel', endDrag);
+// kein Scrollen/Zoomen der Seite im Editor (Zoom macht die App selbst)
+['touchstart', 'touchmove'].forEach(t => stage.addEventListener(t, e => { if (e.target.closest('button')) return; e.preventDefault(); }, { passive: false }));
 
 function drawLoupe(px, py, r) {
   const L = $('#loupe'), lc = L.getContext('2d'), Z = 3;
@@ -1117,7 +1306,6 @@ function drawLoupe(px, py, r) {
   lc.strokeStyle = '#ff2d2d'; lc.lineWidth = 3;
   lc.beginPath(); lc.moveTo(W / 2, H / 2 - 30); lc.lineTo(W / 2, H / 2 + 30); lc.moveTo(W / 2 - 30, H / 2); lc.lineTo(W / 2 + 30, H / 2); lc.stroke();
 }
-cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
 function segDist(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1, dy = y2 - y1, l = dx * dx + dy * dy;
   const t = l ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / l)) : 0;
@@ -1125,10 +1313,12 @@ function segDist(px, py, x1, y1, x2, y2) {
 }
 
 // ---------------- PDF ----------------
-async function makePdfFile() {
-  const fontBytes = new Uint8Array(await (await fetch('vendor/NotoSans.woff')).arrayBuffer());
+async function makePdfFile() { return makePdfFileFor(S.project, S.shots); }
+let fontBytesCache = null;
+async function pdfBytesFor(p, allShots) {
+  const fontBytes = fontBytesCache || (fontBytesCache = new Uint8Array(await (await fetch('vendor/NotoSans.woff')).arrayBuffer()));
   const shots = [];
-  for (const s of S.shots) {
+  for (const s of allShots) {
     const im = await blobToImg(s.photo);
     const c = document.createElement('canvas'); c.width = s.w; c.height = s.h;
     const g = c.getContext('2d'); g.drawImage(im, 0, 0, s.w, s.h);
@@ -1137,15 +1327,33 @@ async function makePdfFile() {
     const jb = await canvasToBlob(c, 'image/jpeg', 0.85);
     shots.push({ room: s.room, jpg: new Uint8Array(await jb.arrayBuffer()), values: measured.map(a => ({ cm: a.cm, time: new Date(a.time) })) });
   }
-  const p = S.project;
   const headLogo = await db.setting('headerLogo');
   const proj = { ...p, headerTitle: (await db.setting('headerTitle')) || 'Measuring Master',
     footer: (await db.setting('pdfFooter')) || '', overview: (await db.setting('pdfOverview')) !== false,
-    overviewRows: S.shots.map(s => ({ room: s.room, items: s.arrows.filter(a => a.cm != null).map(a => ({ el: a.el, kind: a.kind, cm: a.cm })) })),
+    overviewRows: allShots.map(s => ({ room: s.room, items: s.arrows.filter(a => a.cm != null).map(a => ({ el: a.el, kind: a.kind, cm: a.cm })) })),
     headerLogo: headLogo ? await fileToImgBytes(headLogo) : null,
     kundenLogo: p.kundenLogo ? await fileToImgBytes(p.kundenLogo) : null };
-  const bytes = await buildPdf(window.PDFLib, window.fontkit, fontBytes, proj, shots);
+  return buildPdf(window.PDFLib, window.fontkit, fontBytes, proj, shots);
+}
+async function makePdfFileFor(p, allShots) {
+  const bytes = await pdfBytesFor(p, allShots);
+  log('PDF erstellt', p.name, allShots.length + ' Fotos', Math.round(bytes.length / 1024) + ' KB');
   return new File([bytes], fileBase(p) + '.pdf', { type: 'application/pdf' });
+}
+// Mehrere Projekte → ein PDF (z. B. ganzes Haus): die einzelnen Maßblätter hintereinander
+async function makeCombinedPdf(projects) {
+  const { PDFDocument } = window.PDFLib;
+  const merged = await PDFDocument.create();
+  merged.setProducer('VIEWPORT 360 Massblatt'); merged.setTitle('Maßblätter');
+  for (const p of projects) {
+    const shots = await db.shotsOf(p.id);
+    const src = await PDFDocument.load(await pdfBytesFor(p, shots));
+    const pages = await merged.copyPages(src, src.getPageIndices());
+    pages.forEach(pg => merged.addPage(pg));
+  }
+  const streets = [...new Set(projects.map(p => streetOnly(p.str) + (houseNo(p.str) ? ' ' + houseNo(p.str) : '')))];
+  const base = streets.length === 1 ? `${streets[0]} – ${projects.length} Wohnungen` : `Maßblätter – ${projects.length} Projekte`;
+  return new File([await merged.save()], fileBase({ str: base }) + '.pdf', { type: 'application/pdf' });
 }
 // Dateiname = Projektname (Straße + Hausnummer, Geschoß, WG), z. B. "Kopernikusstrasse 22, 1.OG, WG 12.pdf"
 function fileBase(p) {
@@ -1177,7 +1385,7 @@ function lockUi() {
   $('#proj').classList.toggle('locked', !!l);
   $('#lockBar').style.display = l ? 'flex' : 'none';
   if (l) $('#lockTxt').textContent = `🔒 Gesperrt – ${l.how} am ${new Date(l.at).toLocaleDateString('de-AT')} ${new Date(l.at).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })}`;
-  $$('#projDetails input, #projDetails button, #custChips button').forEach(e => { if (e.id !== 'btnExpProj' && e.id !== 'btnDupProj') e.disabled = !!l; });
+  $$('#projDetails input, #projDetails button, #custChips button').forEach(e => { if (!['btnExpProj', 'btnDupProj', 'btnArchive'].includes(e.id) && !e.closest('#navBtn')) e.disabled = !!l; });
 }
 $('#unlockBtn').onclick = async () => { delete S.project.locked; await db.put('projects', S.project); lockUi(); toast('Entsperrt'); };
 const isLocked = () => { if (S.project && S.project.locked) { toast('Projekt ist gesperrt (exportiert) – oben „Entsperren“'); return true; } return false; };
@@ -1195,11 +1403,21 @@ $('#btnMail').onclick = async () => {
   try {
     const file = await makePdfFile();
     const subject = 'Massblatt ' + (S.project.name || fileBase(S.project));
+    const doShare = () => navigator.share({ files: [file], title: subject, text: subject }).then(() => lockProject('gemailt'));
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: subject, text: subject }); await lockProject('gemailt'); }
-      catch (e) { if (e.name !== 'AbortError') throw e; }
+      try { await doShare(); }
+      catch (e) {
+        if (e.name === 'AbortError') return;
+        // Berührung „verbraucht“ (iPhone): Dialog mit eigenem Knopf, der sofort teilt
+        const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+        bg.innerHTML = `<div class="sheet"><h2>✉ Mail senden</h2><p class="mute"></p><div style="display:flex;flex-direction:column;gap:8px"><button class="pri" data-go>Mail-Programm öffnen</button><button class="ghost" data-close>Abbrechen</button></div></div>`;
+        bg.querySelector('p').textContent = `Betreff: ${subject}`;
+        bg.querySelector('[data-go]').onclick = () => { bg.remove(); doShare().catch(err => { if (err.name !== 'AbortError') toast('Teilen nicht möglich: ' + err.message, 4000); }); };
+        bg.querySelector('[data-close]').onclick = () => bg.remove();
+        document.body.appendChild(bg);
+      }
     } else {
-      const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+      const a = document.createElement('a'); a.href = blobUrl(file); a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
       location.href = 'mailto:?subject=' + encodeURIComponent(subject);
       toast('PDF gespeichert – im Mail bitte anhängen', 4000);
     }
@@ -1266,7 +1484,7 @@ $('#btnExpProj').onclick = async () => {
 $('#btnDupProj').onclick = async () => {
   const p = S.project;
   if (!await confirmBox('Projekt duplizieren?', 'Duplizieren', 'Abbrechen', 'pri', 'Kunde, Straße, PLZ und Ort werden übernommen, Fotos nicht – z. B. für eine weitere Wohnung im selben Haus.')) return;
-  const n = { ...p, id: uid(), created: Date.now(), updated: Date.now(), datum: new Date().toISOString().slice(0, 10) }; delete n.locked;
+  const n = { ...p, id: uid(), created: Date.now(), updated: Date.now(), datum: todayISO() }; delete n.locked; delete n.archived;
   n.str = streetOnly(p.str) + (houseNo(p.str) ? ' ' + houseNo(p.str) : '') + ', ';
   await db.put('projects', n);
   await openProject(n.id, true);
@@ -1330,31 +1548,65 @@ async function previewPdf(file) {
   } catch (e) { pages.innerHTML = ''; const p = document.createElement('p'); p.style.color = '#fff'; p.textContent = 'Vorschau nicht möglich: ' + e.message; pages.appendChild(p); }
 }
 $('#pvwClose').onclick = () => { $('#pvw').classList.remove('on'); $('#pvwPages').innerHTML = ''; };
-async function sharePdf(file) {
-  const url = URL.createObjectURL(file);
+// opts: { onLock(how) – was nach Teilen/Speichern passieren soll, dbxSub – Dropbox-Unterordner, title }
+async function sharePdf(file, opts = {}) {
+  const url = blobUrl(file);
+  const canShare = !!(navigator.canShare && navigator.canShare({ files: [file] }));
+  const onLock = opts.onLock || (how => lockProject(how));
   const bg = document.createElement('div'); bg.className = 'sheet-bg on';
-  bg.innerHTML = `<div class="sheet"><h2>PDF fertig</h2><p class="mute"></p>
+  bg.innerHTML = `<div class="sheet"><h2></h2><p class="mute"></p>
     <div style="display:flex;flex-direction:column;gap:8px">
       <button class="pri" data-share>Teilen (Mail, WhatsApp, Drive …)</button>
+      <button class="ghost" data-dbx>In Dropbox speichern</button>
       <a data-dl style="display:block"><button class="ghost" style="width:100%">Am Handy speichern</button></a>
+      <button class="ghost" data-files>In „Dateien“ sichern</button>
       <button class="ghost" data-open>Vorschau ansehen</button>
       <button class="ghost" data-close>Schließen</button></div></div>`;
+  bg.querySelector('h2').textContent = opts.title || 'PDF fertig';
   bg.querySelector('p').textContent = file.name;
   const a = bg.querySelector('[data-dl]'); a.href = url; a.download = file.name;
-  a.addEventListener('click', () => lockProject('gespeichert'));
+  a.addEventListener('click', () => onLock('gespeichert'));
   const sb = bg.querySelector('[data-share]');
-  if (!(navigator.canShare && navigator.canShare({ files: [file] }))) sb.style.display = 'none';
-  sb.onclick = () => navigator.share({ files: [file], title: file.name }).then(() => lockProject('geteilt')).catch(() => { });
+  if (!canShare) sb.style.display = 'none';
+  sb.onclick = () => navigator.share({ files: [file], title: file.name }).then(() => onLock('geteilt')).catch(() => { });
+  // iPhone: ein Download-Link würde das PDF in der App öffnen (ohne Zurück) → stattdessen Teilen-Menü („In Dateien sichern“)
+  const fb = bg.querySelector('[data-files]');
+  if (isIOS && canShare) { a.style.display = 'none'; fb.onclick = sb.onclick; } else fb.style.display = 'none';
+  const dbx = bg.querySelector('[data-dbx]');
+  if (!dropbox.connected) dbx.style.display = 'none';
+  dbx.onclick = async () => {
+    dbx.disabled = true; dbx.textContent = 'Lade hoch …';
+    try {
+      if (!navigator.onLine) throw new TypeError('offline');
+      const path = await dropbox.upload(file, opts.dbxSub != null ? opts.dbxSub : await custFolder());
+      toast('In Dropbox gespeichert ✓ ' + path, 3500); beep(true); await onLock('in Dropbox'); bg.remove();
+    } catch (e) {
+      if (e instanceof TypeError || !navigator.onLine) { await queueAdd(file, opts.dbxSub != null ? opts.dbxSub : await custFolder()); await onLock('in Dropbox (wartet auf Netz)'); toast('Kein Netz – wird automatisch hochgeladen, sobald wieder Netz da ist', 4500); bg.remove(); }
+      else { toast('Dropbox-Fehler: ' + e.message, 6000); dbx.disabled = false; dbx.textContent = 'In Dropbox speichern'; }
+    }
+  };
   bg.querySelector('[data-open]').onclick = () => previewPdf(file);
   bg.querySelector('[data-close]').onclick = () => bg.remove();
   document.body.appendChild(bg);
 }
 
 // ---------------- Einstellungen ----------------
+$$('#setTabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+function showTab(t) {
+  $$('#setTabs button').forEach(b => b.classList.toggle('sel', b.dataset.tab === t));
+  $$('#setSheet .tab').forEach(e => e.classList.toggle('on', e.dataset.tab === t));
+  try { localStorage.setItem('mb_tab', t); } catch (e) { }
+  if (t === 'system') { runSelfTest(); showStorage(); }
+}
 $('#btnSettings').onclick = async () => {
+  let t = 'allg'; try { t = localStorage.getItem('mb_tab') || 'allg'; } catch (e) { }
+  showTab(t);
+  $('#sGlove').checked = !!opt.glove; $('#sLearn').checked = opt.learn !== false;
+  learnState();
+  gcalUi();
   $('#sTitle').value = (await db.setting('headerTitle')) || '';
   const lg = await db.setting('headerLogo');
-  if (lg) { $('#sLogoPrev').src = URL.createObjectURL(lg); $('#sLogoPrev').hidden = false; } else $('#sLogoPrev').hidden = true;
+  if (lg) { $('#sLogoPrev').src = blobUrl(lg); $('#sLogoPrev').hidden = false; } else $('#sLogoPrev').hidden = true;
   $('#sAi').value = S.ai ? '1' : '0';
   dbxUi();
   renderCustManage();
@@ -1371,6 +1623,14 @@ $('#btnSettings').onclick = async () => {
   showStorage();
   $('#setSheet').classList.add('on');
 };
+$('#sGlove').onchange = () => { opt.glove = $('#sGlove').checked; saveOpt(); };
+$('#sLearn').onchange = () => { opt.learn = $('#sLearn').checked; saveOpt(); };
+$('#sLearnReset').onclick = async () => { await db.setting('tplLearn', null); learnState(); toast('Gelernte Pfeil-Positionen gelöscht'); };
+async function learnState() {
+  const L = (await db.setting('tplLearn')) || {};
+  const parts = Object.entries(L).map(([k, v]) => `${k}: ${v.length}`);
+  $('#sLearnState').textContent = parts.length ? 'Gelernt aus Fotos – ' + parts.join(', ') : 'Noch nichts gelernt (ab 3 fertigen Fotos je Vorlage).';
+}
 $('#sBig').onchange = () => { opt.big = $('#sBig').checked; saveOpt(); if (opt.big) showBig({ el: 'Tür', kind: 'H', cm: 199, mm: 1990 }); };
 $('#sVoice').onchange = () => { opt.voice = $('#sVoice').checked; saveOpt(); if (opt.voice) say('Sprachansage ist an. Tür Höhe, 199'); };
 const DEMO = [
@@ -1396,13 +1656,143 @@ $('#demoNext').onclick = () => { if (demoI < DEMO.length - 1) { demoI++; demoSho
 $('#sUpdate').onclick = () => toast('Noch nicht aktiv – Updates kommen derzeit automatisch', 2500);
 $('#sNav').onchange = () => { opt.nav = $('#sNav').value; saveOpt(); };
 $('#sUnit').onchange = () => { opt.mm = $('#sUnit').value === 'mm'; saveOpt(); };
+// ---------------- Funktionstest ----------------
+const fmtB = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
+let lastCheck = [];
+async function selfTest() {
+  const res = [];
+  try { const e = await navigator.storage.estimate(); const pct = e.quota ? e.usage / e.quota : 0; res.push({ k: 'Speicher', lvl: pct > 0.9 ? 'fail' : pct > 0.7 ? 'warn' : 'ok', v: `${fmtB(e.usage || 0)} belegt` + (e.quota ? ` (${Math.round(pct * 100)} % von ${fmtB(e.quota)})` : '') }); }
+  catch (e) { res.push({ k: 'Speicher', lvl: 'warn', v: 'keine Angabe' }); }
+  try { const pr = await db.all('projects'); const sh = await db.all('shots'); res.push({ k: 'Datenbank', lvl: 'ok', v: `${pr.length} Projekte, ${sh.length} Fotos` }); }
+  catch (e) { res.push({ k: 'Datenbank', lvl: 'fail', v: 'Fehler: ' + e.message }); }
+  try { const devs = await navigator.mediaDevices.enumerateDevices(); const cams = devs.filter(d => d.kind === 'videoinput'); res.push({ k: 'Kamera', lvl: cams.length ? 'ok' : 'fail', v: cams.length ? `${cams.length} gefunden` : 'keine Kamera gefunden' }); }
+  catch (e) { res.push({ k: 'Kamera', lvl: 'fail', v: 'nicht verfügbar' }); }
+  res.push({ k: 'Bluetooth (Laser)', lvl: navigator.bluetooth ? 'ok' : 'warn', v: navigator.bluetooth ? (laser.state === 'verbunden' ? 'Laser verbunden' : 'verfügbar') : isIOS ? 'am iPhone nicht möglich (Apple) – Android nötig' : 'nicht verfügbar – Chrome auf Android nötig' });
+  try { const reg = await navigator.serviceWorker.getRegistration(); const c = await caches.keys(); res.push({ k: 'Offline-Betrieb', lvl: reg && reg.active ? 'ok' : 'warn', v: reg && reg.active ? `bereit (${c.length} Caches)` : 'noch nicht eingerichtet' }); }
+  catch (e) { res.push({ k: 'Offline-Betrieb', lvl: 'warn', v: 'nicht verfügbar' }); }
+  res.push({ k: 'Internet', lvl: navigator.onLine ? 'ok' : 'warn', v: navigator.onLine ? 'online' : 'offline' });
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  res.push({ k: 'Als App installiert', lvl: standalone ? 'ok' : 'warn', v: standalone ? 'ja' : 'nein – im Browser-Menü „Zum Home-Bildschirm“ / „App installieren“' });
+  res.push({ k: 'Dropbox', lvl: dropbox.connected ? 'ok' : 'warn', v: dropbox.connected ? 'verbunden' : 'nicht verbunden' });
+  let errs = []; try { errs = JSON.parse(localStorage.getItem('mb_errs') || '[]'); } catch (e) { }
+  const recent = errs.filter(x => Date.now() - new Date(x.t).getTime() < 7 * 864e5);
+  res.push({ k: 'Fehlermeldungen', lvl: recent.length ? 'warn' : 'ok', v: recent.length ? `${recent.length} in den letzten 7 Tagen (im Fehlerbericht)` : 'keine in den letzten 7 Tagen' });
+  lastCheck = res;
+  $('#btnSettings .badge').classList.toggle('on', res.some(x => x.lvl === 'fail'));
+  return res;
+}
+async function runSelfTest() {
+  const el = $('#checkList'); el.innerHTML = '<p class="mute">Prüfe …</p>';
+  const res = await selfTest();
+  el.innerHTML = '';
+  for (const x of res) { const d = document.createElement('div'); d.className = 'check'; d.innerHTML = '<span class="dot"></span><span class="k"></span><span class="v"></span>'; d.querySelector('.dot').classList.add(x.lvl); d.querySelector('.k').textContent = x.k; d.querySelector('.v').textContent = x.v; el.appendChild(d); }
+}
+$('#sCheck').onclick = runSelfTest;
+
+// ---------------- Fehlerbericht ----------------
+async function buildReport() {
+  const res = lastCheck.length ? lastCheck : await selfTest();
+  let errs = []; try { errs = JSON.parse(localStorage.getItem('mb_errs') || '[]'); } catch (e) { }
+  const sw = await navigator.serviceWorker.getRegistration().catch(() => null);
+  const lines = [
+    `Maßblatt-App Fehlerbericht – ${new Date().toLocaleString('de-AT')}`,
+    `Version: ${VERSION} · Service Worker: ${sw && sw.active ? 'aktiv' : 'keiner'}`,
+    `Gerät: ${navigator.userAgent}`,
+    `Bildschirm: ${screen.width}×${screen.height} @${devicePixelRatio} · Fenster ${innerWidth}×${innerHeight} · ${matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'installiert (standalone)' : 'im Browser'} · ${matchMedia('(prefers-color-scheme: light)').matches ? 'hell' : 'dunkel'}`,
+    `Sprache: ${navigator.language} · online: ${navigator.onLine} · Bluetooth-API: ${!!navigator.bluetooth} · Vibration: ${!!navigator.vibrate} · Teilen: ${!!navigator.share}`,
+    `Einstellungen: ${JSON.stringify({ ...opt, ai: S.ai, cam: camOpt, zoom: await db.setting('zoom'), mmEinheit: opt.mm, dropbox: dropbox.connected, dbxOrdner: dropbox.cfg.folder || '', gcal: gcal.configured ? (gcal.connected ? 'verbunden' : 'eingerichtet') : 'aus', pin: unlocked() })}`,
+    '', '== Funktionstest ==', ...res.map(x => `${x.lvl === 'ok' ? '✓' : x.lvl === 'warn' ? '!' : '✗'} ${x.k}: ${x.v}`),
+    '', `== Gespeicherte Fehler (${errs.length}) ==`, ...errs.slice(-30).map(e => `${e.t} [${e.v}] ${e.kind}: ${e.msg}`),
+    '', '== Bluetooth-Protokoll ==', ...(laser.log.length ? laser.log.slice(-80) : ['–']),
+    '', '== App-Protokoll (diese Sitzung) ==', ...LOG.slice(-150),
+  ];
+  return lines.join('\n');
+}
+$('#sReport').onclick = async () => {
+  const txt = await buildReport();
+  const name = `Massblatt-Fehlerbericht_${todayISO()}.txt`;
+  const file = new File([txt], name, { type: 'text/plain' });
+  const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+  bg.innerHTML = `<div class="sheet"><h2>🛠 Fehlerbericht</h2><p class="mute">Schick ihn Claude im Chat – als Datei oder eingefügten Text.</p>
+    <div style="display:flex;flex-direction:column;gap:8px"><button class="pri" data-share>Als Datei teilen</button><button class="ghost" data-copy>Text kopieren</button><button class="ghost" data-close>Schließen</button></div>
+    <textarea readonly style="width:100%;height:160px;margin-top:10px;font:11px monospace;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px"></textarea></div>`;
+  bg.querySelector('textarea').value = txt;
+  const sb = bg.querySelector('[data-share]');
+  if (navigator.canShare && navigator.canShare({ files: [file] })) sb.onclick = () => navigator.share({ files: [file], title: name }).catch(() => { });
+  else sb.onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove(); };
+  bg.querySelector('[data-copy]').onclick = async () => { try { await navigator.clipboard.writeText(txt); toast('Kopiert – im Chat einfügen'); } catch (e) { bg.querySelector('textarea').select(); toast('Bitte Text markieren und kopieren', 3000); } };
+  bg.querySelector('[data-close]').onclick = () => bg.remove();
+  document.body.appendChild(bg);
+};
+
+// ---------------- Google Kalender ----------------
+function gcalUi() {
+  $('#gcalId').value = gcal.cfg.clientId || '';
+  $('#gcalState').textContent = !gcal.configured ? 'Nicht eingerichtet (Client-ID eintragen).' : gcal.connected ? 'Angemeldet ✓' : gcal.everConnected ? 'Anmeldung abgelaufen – beim nächsten Öffnen der Termine neu anmelden.' : 'Eingerichtet, noch nicht angemeldet.';
+  $('#gcalOff').style.display = gcal.everConnected ? '' : 'none';
+  $('#btnCal').style.display = gcal.configured ? '' : 'none';
+}
+$('#gcalId').onchange = () => { gcal.setClientId($('#gcalId').value); gcalUi(); };
+$('#gcalLogin').onclick = () => { try { gcal.login(); } catch (e) { toast(e.message, 3000); } };
+$('#gcalOff').onclick = () => { gcal.logout(); const c = gcal.cfg; delete c.ever; localStorage.setItem('mb_gcal', JSON.stringify(c)); gcalUi(); toast('Von Google abgemeldet'); };
+$('#calClose').onclick = () => $('#calSheet').classList.remove('on');
+$('#btnCal').onclick = async () => {
+  if (!gcal.connected) {
+    if (await confirmBox('Bei Google anmelden?', 'Anmelden', 'Abbrechen', 'pri', 'Du wirst kurz zu Google weitergeleitet und kommst automatisch zurück. Die App liest Termine nur, ändert nichts.')) { try { gcal.login(); } catch (e) { toast(e.message, 3000); } }
+    return;
+  }
+  const body = $('#calBody'); body.innerHTML = '<p class="mute">Lade Termine …</p>'; $('#calSheet').classList.add('on');
+  try {
+    const evs = await gcal.events(7);
+    body.innerHTML = '';
+    if (!evs.length) { body.innerHTML = '<p class="mute">Keine Termine in den nächsten 7 Tagen.</p>'; return; }
+    const todayK = todayISO();
+    const stop = ((await db.setting('customers')) || []).flatMap(c => (c.name || '').split(/\s+/)).filter(Boolean); // Kundennamen sind keine Straßen
+    for (const ev of evs) {
+      const d = new Date(ev.start); const dk = ev.allDay ? ev.start : todayISO(d);
+      const addr = parseAddress(ev.location, stop) || parseAddress(ev.summary, stop) || parseAddress(ev.description, stop);
+      const row = document.createElement('div'); row.className = 'evrow';
+      row.innerHTML = '<div class="d"><b></b><span></span></div><div class="t"><b></b><small></small><small></small></div><span>›</span>';
+      row.querySelector('.d b').textContent = dk === todayK ? 'Heute' : d.toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit' });
+      row.querySelector('.d span').textContent = ev.allDay ? 'ganztägig' : d.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' });
+      row.querySelector('.t b').textContent = ev.summary;
+      const sm = row.querySelectorAll('.t small');
+      sm[0].textContent = ev.location || '(kein Ort im Termin)';
+      sm[1].textContent = addr ? `→ ${addr.str || '?'}${addr.plz ? ', ' + addr.plz + ' ' + addr.ort : ''}` : '→ keine Adresse erkannt (Projekt wird ohne Adresse angelegt)';
+      row.onclick = () => createFromEvent(ev, addr);
+      body.appendChild(row);
+    }
+  } catch (e) { body.innerHTML = ''; const pEl = document.createElement('p'); pEl.className = 'mute'; pEl.textContent = 'Termine konnten nicht geladen werden: ' + e.message; body.appendChild(pEl); gcalUi(); }
+};
+async function createFromEvent(ev, addr) {
+  $('#calSheet').classList.remove('on');
+  const d = new Date(ev.start);
+  const all = await db.all('projects');
+  const dup = all.find(p => p.gcalId === ev.id);
+  if (dup) { toast('Für diesen Termin gibt es schon ein Projekt – wird geöffnet'); return openProject(dup.id); }
+  const last = all.sort((a, b) => (b.updated || 0) - (a.updated || 0))[0] || {};
+  const cs = (await db.setting('customers')) || [];
+  // Kunde: im Termin-Text erwähnt (z. B. „WAG“)? sonst der zuletzt verwendete
+  const txt = (ev.summary + ' ' + ev.description + ' ' + ev.location).toLowerCase();
+  const byName = cs.find(c => c.name && txt.includes(c.name.toLowerCase()));
+  const cust = byName || (last.kundeId && cs.find(c => c.id === last.kundeId)) || null;
+  const p = { id: uid(), name: '', str: addr ? addr.str : '', plz: addr ? addr.plz : '', ortName: addr ? addr.ort : '', kundeId: cust ? cust.id : null,
+    datum: todayISO(isNaN(d) ? new Date() : d), created: Date.now(), updated: Date.now(), gcalId: ev.id, notizTermin: ev.summary };
+  applyCustomerToProject(p, cust);
+  await db.put('projects', p);
+  log('Projekt aus Termin', ev.summary);
+  await openProject(p.id, true);
+  if (addr && addr.str) { const el = $('#pStr'); el.value = addr.str + (addr.str.includes(',') ? '' : ', '); S.project.str = el.value; updateNamePrev(); db.put('projects', S.project); el.setSelectionRange(el.value.length, el.value.length); rememberStreetSoon(); }
+  toast(addr ? 'Aus Termin übernommen – Geschoß/WG ergänzen' : 'Projekt angelegt – Adresse bitte eintragen', 3000);
+}
+
 // ---------------- Statistik ----------------
 $('#sStats').onclick = async () => {
-  const now = new Date(), ym = now.toISOString().slice(0, 7), y = String(now.getFullYear());
+  const now = new Date(), ym = todayISO(now).slice(0, 7), y = String(now.getFullYear());
   const rows = new Map(); const tot = { m: 0, y: 0, g: 0 };
   for (const p of await db.all('projects')) {
     if (!(await db.shotsOf(p.id)).length) continue; // nur Projekte mit Fotos zählen
-    const d = (p.datum || new Date(p.created || 0).toISOString()).slice(0, 10), k = p.firma || 'ohne Kunde';
+    const d = (p.datum || todayISO(new Date(p.created || 0))).slice(0, 10), k = p.firma || 'ohne Kunde';
     if (!rows.has(k)) rows.set(k, { m: 0, y: 0, g: 0 });
     const r = rows.get(k);
     r.g++; tot.g++;
@@ -1426,7 +1816,7 @@ $('#sRooms').oninput = () => {
 };
 $('#sRoomsReset').onclick = async () => { await db.setting('rooms', null); $('#sRooms').value = DEFAULT_ROOMS.map(([k, t]) => t ? `${k} = ${t}` : k).join('\n'); };
 // Schriftgröße: nur Listen/Formulare vergrößern (nicht Foto-Bildschirm/Kamera, dort zählen Fingerpositionen)
-function applyZoom(z) { ['home', 'proj'].forEach(id => { $('#' + id).style.zoom = z; }); $$('.sheet').forEach(e => { e.style.zoom = z; }); }
+function applyZoom(z) { document.documentElement.style.setProperty('--z', z); }
 $('#sZoom').onchange = async () => { const z = parseFloat($('#sZoom').value); await db.setting('zoom', z); applyZoom(z); };
 async function showStorage() {
   const fmt = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
@@ -1438,7 +1828,7 @@ async function showStorage() {
 }
 $('#setClose').onclick = () => $('#setSheet').classList.remove('on');
 $('#sTitle').oninput = () => db.setting('headerTitle', $('#sTitle').value);
-$('#sLogo').onchange = async e => { let f = e.target.files[0]; if (!f) return; f = await cutoutLogo(f); await db.setting('headerLogo', f); $('#sLogoPrev').src = URL.createObjectURL(f); $('#sLogoPrev').hidden = false; };
+$('#sLogo').onchange = async e => { let f = e.target.files[0]; if (!f) return; f = await cutoutLogo(f); await db.setting('headerLogo', f); $('#sLogoPrev').src = blobUrl(f); $('#sLogoPrev').hidden = false; };
 $('#sLogoDel').onclick = async () => { await db.setting('headerLogo', null); $('#sLogoPrev').hidden = true; };
 $('#sAi').onchange = async () => { S.ai = $('#sAi').value === '1'; await db.setting('ai', S.ai); };
 $('#sAiLoad').onclick = async () => {
@@ -1533,10 +1923,15 @@ function askPin() {
 
 // ---------------- Start ----------------
 (async () => {
-  if (!unlocked()) await askPin();
-  const ai = await db.setting('ai'); S.ai = ai !== false;
+  if (!unlocked()) await askPin(); else $('#lock').style.display = 'none';
+  const ai = await db.setting('ai'); S.ai = ai === true; // KI vorerst aus, bis das Modell zuverlässig läuft
   applyZoom((await db.setting('zoom')) || 1);
   setTimeout(processQueue, 3000);
+  const back = gcal.handleRedirect();
+  if (back === true) { toast('Bei Google angemeldet ✓'); setTimeout(() => $('#btnCal').click(), 400); }
+  else if (back === 'error') toast('Google-Anmeldung abgebrochen', 3000);
+  gcalUi();
+  setTimeout(async () => { const res = await selfTest(); const bad = res.filter(x => x.lvl === 'fail'); if (bad.length) toast('Funktionstest: ' + bad.map(x => x.k).join(', ') + ' – Details in ⚙ System', 5000); }, 2500);
   laserUi();
   renderHome();
   if ('serviceWorker' in navigator) {
@@ -1545,5 +1940,5 @@ function askPin() {
     let reloaded = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
   }
-  window.__mb = { S, laser, onMeasure, applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
+  window.__mb = { S, laser, view, onMeasure, applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
 })();

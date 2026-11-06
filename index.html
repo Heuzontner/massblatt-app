@@ -17,8 +17,9 @@
   :root:not(.force-dark) #cam .camtop button, :root:not(.force-dark) #cam .cambar button.ghost { color:#fff; }
   :root:not(.force-dark) #toast, :root:not(.force-dark) #undoBar { background:#222e; }
 }
-:root { --bg:#10171f; --panel:#18222d; --panel2:#213040; --line:#2c3e51; --text:#e9eef3; --mute:#8fa3b6; --acc:#ffd400; --blue:#4aa3ff; --red:#ff5252; --green:#3ecf7a; }
+:root { --z:1; --bg:#10171f; --panel:#18222d; --panel2:#213040; --line:#2c3e51; --text:#e9eef3; --mute:#8fa3b6; --acc:#ffd400; --blue:#4aa3ff; --red:#ff5252; --green:#3ecf7a; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+#home, #proj, .sheet, #pvw .pbar { zoom: var(--z); }
 html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font-family:"Noto Sans", system-ui, sans-serif; font-size:16px; overscroll-behavior:none; }
 button { font:inherit; color:inherit; border:0; border-radius:12px; background:var(--panel2); padding:12px 14px; cursor:pointer; }
 button:active { filter:brightness(1.3); }
@@ -62,6 +63,57 @@ header.top h1 { font-size:18px; margin:0; flex:1; white-space:nowrap; overflow:h
 details.card summary { font-weight:700; cursor:pointer; }
 .row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
 .logo-prev { height:46px; max-width:160px; object-fit:contain; background:#fff; border-radius:6px; padding:3px; display:block; margin-top:6px; }
+/* Handschuh-Modus: alles größer */
+.glove button { min-height:54px; font-size:18px; }
+.glove .bottombar button { padding:22px 10px; font-size:19px; }
+.glove .edbar > button { height:66px; min-width:66px; font-size:26px; }
+.glove .edbar #edDone { font-size:19px; }
+.glove #trashA, .glove #lightA { width:70px; height:70px; font-size:30px; }
+.glove #ed .keypad { width:min(340px, 86vw); }
+.glove #ed .keypad button { padding:16px 0; font-size:22px; }
+.glove .roomgrid button { padding:24px 0; font-size:22px; }
+.glove #shutter { width:100px; height:100px; }
+.glove .camside button { width:68px; height:68px; }
+.glove .tiles button { padding:22px 8px; font-size:18px; }
+.glove .custs button { padding:14px 16px; }
+.glove header.top button, .glove .laser { min-height:48px; }
+/* Einstellungen mit Reitern */
+.tabs { display:flex; gap:6px; overflow-x:auto; padding-bottom:10px; margin-bottom:6px; border-bottom:1px solid var(--line); scrollbar-width:none; position:sticky; top:-16px; background:var(--panel); z-index:2; padding-top:4px; }
+.tabs button { flex:none; padding:9px 14px; font-size:15px; border-radius:18px; }
+.tabs button.sel { background:var(--blue); color:#fff; }
+.tab { display:none; }
+.tab.on { display:block; }
+.custrow { display:flex; gap:10px; align-items:center; padding:10px; border:1px solid var(--line); border-radius:12px; margin-bottom:8px; }
+.custrow img { width:54px; height:40px; object-fit:contain; background:#fff; border-radius:6px; flex:none; }
+.custrow .t { flex:1; min-width:0; font-size:14px; line-height:1.4; }
+.custrow .t b { font-size:16px; }
+.custrow .t small { color:var(--mute); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.check { display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); font-size:15px; }
+.check .dot { width:14px; height:14px; border-radius:50%; flex:none; }
+.check .dot.ok { background:var(--green); } .check .dot.warn { background:var(--acc); } .check .dot.fail { background:var(--red); }
+.check .k { font-weight:700; min-width:120px; }
+.check .v { color:var(--mute); flex:1; }
+#btnSettings { position:relative; }
+#btnSettings .badge { position:absolute; top:4px; right:4px; width:10px; height:10px; border-radius:50%; background:var(--red); display:none; }
+#btnSettings .badge.on { display:block; }
+/* Mehrfachauswahl Projekte */
+.plist.sel .card { padding-left:10px; }
+.plist .card .cb { width:26px; height:26px; border-radius:7px; border:2px solid var(--mute); flex:none; display:none; align-items:center; justify-content:center; font-weight:700; color:#111; }
+.plist.sel .card .cb { display:flex; }
+.plist .card.checked .cb { background:var(--acc); border-color:var(--acc); }
+.plist .card.checked { border-color:var(--acc); }
+.plist .card .arch { font-size:12px; color:var(--mute); margin-left:6px; }
+#selBar { display:none; }
+.plist.sel ~ .bottombar #btnNewProj { display:none; }
+.plist.sel ~ .bottombar #selBar { display:flex; gap:10px; flex:1; }
+/* Termine */
+.evrow { display:flex; gap:10px; padding:10px; border:1px solid var(--line); border-radius:12px; margin-bottom:8px; align-items:center; }
+.evrow .d { min-width:62px; text-align:center; font-size:13px; color:var(--mute); line-height:1.3; }
+.evrow .d b { display:block; font-size:18px; color:var(--text); }
+.evrow .t { flex:1; min-width:0; }
+.evrow .t b { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.evrow .t small { color:var(--mute); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#camFallback { position:absolute; inset:0; display:none; align-items:center; justify-content:center; flex-direction:column; gap:12px; color:#fff; padding:30px; text-align:center; background:#000; }
 /* Kamera */
 #cam { background:#000; }
 #cam video { flex:1; width:100%; object-fit:cover; min-height:0; }
@@ -79,7 +131,7 @@ details.card summary { font-weight:700; cursor:pointer; }
 #cam .hint { position:absolute; left:0; right:0; bottom:140px; text-align:center; color:#fff; text-shadow:0 1px 3px #000; font-size:14px; }
 /* Editor */
 #ed { background:#000; }
-#ed .stage { flex:1; position:relative; min-height:0; touch-action:none; }
+#ed .stage { flex:1; position:relative; min-height:0; touch-action:none; overflow:hidden; }
 #ed #cv { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); }
 #ed .busy { position:absolute; left:12px; right:12px; top:12px; background:rgba(0,0,0,.75); border-radius:12px; padding:10px 12px; font-size:14px; display:none; }
 #ed .busy.on { display:block; }
@@ -173,15 +225,18 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
   <header class="top">
     <h1>Maßblatt</h1>
     <div class="laser" data-laser><i></i><span>Laser</span></div>
-    <button class="ghost" id="btnSettings" aria-label="Einstellungen">⚙</button>
+    <button class="ghost" id="btnCal" aria-label="Termine" style="display:none">📅</button>
+    <button class="ghost" id="btnSettings" aria-label="Einstellungen">⚙<i class="badge"></i></button>
   </header>
   <div class="scroll plist">
     <input id="projSearch" type="search" placeholder="🔍 Suchen (Straße, Kunde)" style="margin-bottom:8px">
     <div class="chips2" id="sortChips"><span class="mute">Sortieren:</span>
-      <button data-sort="neu">Zuletzt</button><button data-sort="datum">Datum</button><button data-sort="strasse">Straße</button><button data-sort="kunde">Kunde</button></div>
+      <button data-sort="neu">Zuletzt</button><button data-sort="datum">Datum</button><button data-sort="strasse">Straße</button><button data-sort="kunde">Kunde</button>
+      <span style="flex:1"></span><button id="archChip">📦 Archiv</button><button id="selChip">☑ Auswählen</button></div>
     <div id="projList"></div>
   </div>
-  <div class="bottombar"><button class="pri" id="btnNewProj">+ Neues Projekt</button></div>
+  <div class="bottombar"><button class="pri" id="btnNewProj">+ Neues Projekt</button>
+    <div id="selBar"><button class="ghost" id="selCancel">Abbrechen</button><button class="pri" id="selPdf" style="flex:2">PDF aus 0 Projekten</button></div></div>
 </section>
 
 <!-- Projekt -->
@@ -221,6 +276,7 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="ghost" id="btnExpProj" style="flex:1">Exportieren</button>
         <button class="ghost" id="btnDupProj" style="flex:1">Duplizieren</button>
+        <button class="ghost" id="btnArchive" style="flex:1">Archivieren</button>
         <button class="danger" id="btnDelProj">Projekt löschen</button>
       </div>
     </details>
@@ -254,6 +310,7 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
     <div class="laser" data-laser style="background:#222"><i></i><span>Laser</span></div>
   </div>
   <div class="busycap" id="capBusy">HDR: ruhig halten …</div>
+  <div id="camFallback"><div>Die Kamera-Vorschau ist hier nicht verfügbar.</div><button class="pri" id="camFallbackBtn" style="font-size:18px;padding:16px 22px">📷 Handy-Kamera öffnen</button><div class="mute" style="color:#bbb">oder unten „Galerie“ für ein vorhandenes Foto</div></div>
   <input type="file" id="fileIn" accept="image/*" capture="environment" hidden>
   <input type="file" id="galIn" accept="image/*" hidden>
 </section>
@@ -334,71 +391,110 @@ pre.log { font-size:11px; white-space:pre-wrap; background:#000; padding:8px; bo
 </div></div>
 
 <!-- Einstellungen -->
-<div class="sheet-bg" id="setSheet"><div class="sheet">
-  <h2>Einstellungen</h2>
-  <label class="f">Kopfzeile Text (PDF)</label><input id="sTitle" placeholder="Measuring Master">
-  <label class="f">Kopfzeile Logo (PDF, rechts oben)</label>
-  <input type="file" id="sLogo" accept="image/*"><img class="logo-prev" id="sLogoPrev" hidden>
-  <button class="ghost" id="sLogoDel" style="margin-top:6px">Logo entfernen</button>
-  <label class="f">Fußzeile im PDF (z. B. deine Kontaktdaten, leer = keine)</label>
-  <input id="sFooter" placeholder="VIEWPORT 360° · office@viewport360.at · +43 …">
-  <label class="f">Übersichtsseite im PDF (alle Räume mit Tür-/Fenstermaßen)</label>
-  <select id="sOverview"><option value="1">An – am Ende des PDFs</option><option value="0">Aus</option></select>
-  <label class="f">Raum-Knöpfe (Kürzel = Bezeichnung, eine Zeile je Raum)</label>
-  <textarea id="sRooms" rows="7" style="width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px"></textarea>
-  <button class="ghost" id="sRoomsReset" style="margin-top:6px">Standard-Räume</button>
-  <label class="f">Navigations-Knopf 🧭 beim Projekt</label>
-  <select id="sNav"><option value="">Aus</option><option value="google">Google Maps</option><option value="apple">Apple Karten</option></select>
-  <label class="f">Maße in der App anzeigen in</label>
-  <select id="sUnit"><option value="cm">cm</option><option value="mm">mm</option></select>
-  <p class="mute" style="margin:4px 0 0">Das PDF bleibt in cm wie bei Bosch.</p>
-  <label class="f">Schriftgröße der App</label>
-  <select id="sZoom"><option value="1">Normal</option><option value="1.15">Groß</option><option value="1.3">Sehr groß</option></select>
-  <label class="f">Kunden</label>
-  <div class="custs" id="custManage"></div>
-  <label class="f">Kunden &amp; Straßen auf anderes Handy übertragen</label>
-  <div class="row2">
-    <button class="ghost" id="exBtn">Exportieren</button>
-    <button class="ghost" id="imBtn">Importieren</button>
+<div class="sheet-bg" id="setSheet"><div class="sheet" style="max-height:92vh">
+  <div class="tabs" id="setTabs">
+    <button data-tab="allg" class="sel">Allgemein</button><button data-tab="kunden">Kunden</button><button data-tab="pdf">PDF</button><button data-tab="cloud">Cloud</button><button data-tab="system">System</button>
   </div>
-  <input type="file" id="imFile" accept=".json,application/json" hidden>
-  <p class="mute" style="margin:6px 0 0">Exportieren erzeugt eine Datei (per WhatsApp, Mail oder Drive schicken). Am anderen Handy „Importieren“ und die Datei wählen.</p>
-  <label class="f">Projekt aus Datei wiederherstellen</label>
-  <button class="ghost" id="imProjBtn" style="width:100%">Projekt importieren</button>
-  <input type="file" id="imProjFile" accept=".json,.massblatt,application/json" hidden>
-  <label class="f">Dropbox (PDF direkt hochladen)</label>
-  <p class="mute" id="dbxState" style="margin:0 0 6px"></p>
-  <div id="dbxSetup">
-    <input id="dbxKey" placeholder="App-Key (von dropbox.com/developers)">
-    <a id="dbxAuth" target="_blank" rel="noopener" style="display:block;margin-top:8px"><button class="ghost" style="width:100%">1. Bei Dropbox anmelden (Code holen)</button></a>
-    <div style="display:flex;gap:8px;margin-top:8px"><input id="dbxCode" placeholder="2. Code hier einfügen"><button class="pri" id="dbxOk">OK</button></div>
+
+  <div class="tab on" data-tab="allg">
+    <label class="f">Schriftgröße der App</label>
+    <select id="sZoom"><option value="1">Normal</option><option value="1.15">Groß</option><option value="1.3">Sehr groß</option></select>
+    <label style="display:flex;gap:10px;align-items:center;margin:12px 0 4px"><input type="checkbox" id="sGlove" style="width:auto"> Handschuh-Modus (alle Knöpfe extra groß)</label>
+    <label class="f">Maße in der App anzeigen in</label>
+    <select id="sUnit"><option value="cm">cm</option><option value="mm">mm</option></select>
+    <p class="mute" style="margin:4px 0 0">Das PDF bleibt in cm wie bei Bosch.</p>
+    <label class="f">Navigations-Knopf 🧭 beim Projekt</label>
+    <select id="sNav"><option value="">Aus</option><option value="google">Google Maps</option><option value="apple">Apple Karten</option></select>
+    <label class="f">Raum-Knöpfe (Kürzel = Bezeichnung, eine Zeile je Raum)</label>
+    <textarea id="sRooms" rows="7" style="width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px"></textarea>
+    <button class="ghost" id="sRoomsReset" style="margin-top:6px">Standard-Räume</button>
+    <label class="f">Pfeil-Vorlagen</label>
+    <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sLearn" style="width:auto"> Lernen: Vorlagen passen sich deinen Fotos an</label>
+    <p class="mute" id="sLearnState" style="margin:0 0 6px"></p>
+    <button class="ghost" id="sLearnReset">Gelerntes zurücksetzen</button>
+    <label class="f">Messen (zum Testen)</label>
+    <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sBig" style="width:auto"> Großer Messmodus (Wert riesig anzeigen)</label>
+    <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sVoice" style="width:auto"> Sprachansage (Pfeil und Messwert ansagen)</label>
+    <button class="ghost" id="sDemo" style="width:100%;margin-top:14px">▶ Kurze Demo ansehen</button>
   </div>
-  <label class="f">Dropbox-Ordner</label><input id="dbxFolder" placeholder="/Maßblätter">
-  <button class="ghost" id="dbxOff" style="margin-top:8px">Dropbox trennen</button>
-  <label class="f">Tür-/Fenster-Erkennung (KI)</label>
-  <select id="sAi"><option value="1">An – Pfeile automatisch</option><option value="0">Aus – nur Vorlagen</option></select>
-  <p class="mute" id="sAiState"></p>
-  <button class="ghost" id="sAiLoad">KI-Modell jetzt laden (~150 MB, am besten im WLAN)</button>
-  <label class="f">Messen (zum Testen)</label>
-  <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sBig" style="width:auto"> Großer Messmodus (Wert riesig anzeigen)</label>
-  <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sVoice" style="width:auto"> Sprachansage (Pfeil und Messwert ansagen)</label>
-  <label class="f">Laser</label>
-  <p class="mute" id="sLasers" style="margin:0 0 6px"></p>
-  <button class="ghost" id="sLaserOff">Laser trennen</button>
-  <details style="margin-top:10px"><summary class="mute">Bluetooth-Protokoll (für Fehlersuche)</summary><pre class="log" id="sLog"></pre></details>
-  <button class="ghost" id="sStats" style="width:100%;margin-top:14px">📊 Statistik</button>
-  <label class="f">Speicher</label>
-  <p class="mute" id="sStorage" style="margin:0">…</p>
-  <label class="f">Updates</label>
-  <button class="ghost" id="sUpdate" style="width:100%;opacity:.5">⟳ Update installieren</button>
-  <p class="mute" style="margin:6px 0 0">Noch ohne Funktion – neue Versionen kommen derzeit automatisch. Später wird ein Update erst nach Antippen eingespielt.</p>
-  <button class="ghost" id="sDemo" style="width:100%;margin-top:14px">▶ Kurze Demo ansehen</button>
-  <p class="mute" style="margin-top:16px">Maßblatt-App · Version <span id="ver"></span> · Daten bleiben nur auf diesem Handy.</p>
-  <button class="pri" id="setClose" style="width:100%;margin-top:8px">Schließen</button>
+
+  <div class="tab" data-tab="kunden">
+    <p class="mute" style="margin:4px 0 10px">Antippen zum Bearbeiten. Diese Angaben kommen aufs PDF-Deckblatt und bestimmen den Dropbox-Ordner.</p>
+    <div id="custList"></div>
+    <button class="pri" id="custNew" style="width:100%">+ Neuer Kunde</button>
+    <label class="f">Kunden &amp; Straßen auf anderes Handy übertragen</label>
+    <div class="row2">
+      <button class="ghost" id="exBtn">Exportieren</button>
+      <button class="ghost" id="imBtn">Importieren</button>
+    </div>
+    <input type="file" id="imFile" accept=".json,application/json" hidden>
+    <p class="mute" style="margin:6px 0 0">Exportieren erzeugt eine Datei (per WhatsApp, Mail oder Drive schicken). Am anderen Handy „Importieren“ und die Datei wählen.</p>
+  </div>
+
+  <div class="tab" data-tab="pdf">
+    <label class="f">Kopfzeile Text</label><input id="sTitle" placeholder="Measuring Master">
+    <label class="f">Kopfzeile Logo (rechts oben)</label>
+    <input type="file" id="sLogo" accept="image/*"><img class="logo-prev" id="sLogoPrev" hidden>
+    <button class="ghost" id="sLogoDel" style="margin-top:6px">Logo entfernen</button>
+    <label class="f">Fußzeile (z. B. deine Kontaktdaten, leer = keine)</label>
+    <input id="sFooter" placeholder="VIEWPORT 360° · office@viewport360.at · +43 …">
+    <label class="f">Übersichtsseite (alle Räume mit Tür-/Fenstermaßen)</label>
+    <select id="sOverview"><option value="1">An – am Ende des PDFs</option><option value="0">Aus</option></select>
+  </div>
+
+  <div class="tab" data-tab="cloud">
+    <label class="f">Dropbox (PDF direkt hochladen)</label>
+    <p class="mute" id="dbxState" style="margin:0 0 6px"></p>
+    <div id="dbxSetup">
+      <input id="dbxKey" placeholder="App-Key (von dropbox.com/developers)">
+      <a id="dbxAuth" target="_blank" rel="noopener" style="display:block;margin-top:8px"><button class="ghost" style="width:100%">1. Bei Dropbox anmelden (Code holen)</button></a>
+      <div style="display:flex;gap:8px;margin-top:8px"><input id="dbxCode" placeholder="2. Code hier einfügen"><button class="pri" id="dbxOk">OK</button></div>
+    </div>
+    <label class="f">Dropbox-Ordner</label><input id="dbxFolder" placeholder="/Maßblätter">
+    <button class="ghost" id="dbxOff" style="margin-top:8px">Dropbox trennen</button>
+    <label class="f" style="margin-top:22px">Google Kalender (Termine → Projekt mit Adresse)</label>
+    <p class="mute" id="gcalState" style="margin:0 0 6px"></p>
+    <input id="gcalId" placeholder="Client-ID (…apps.googleusercontent.com)">
+    <div class="row2" style="margin-top:8px"><button class="ghost" id="gcalLogin">Bei Google anmelden</button><button class="ghost" id="gcalOff">Abmelden</button></div>
+    <p class="mute" style="margin:6px 0 0">Danach erscheint oben in der Projektliste 📅. Ein Tipp auf einen Termin legt das Projekt mit Adresse und Datum an.</p>
+    <label class="f" style="margin-top:22px">Projekt aus Datei wiederherstellen</label>
+    <button class="ghost" id="imProjBtn" style="width:100%">Projekt importieren</button>
+    <input type="file" id="imProjFile" accept=".json,.massblatt,application/json" hidden>
+  </div>
+
+  <div class="tab" data-tab="system">
+    <label class="f">Funktionstest</label>
+    <div id="checkList"></div>
+    <button class="ghost" id="sCheck" style="margin-top:8px">Erneut prüfen</button>
+    <label class="f">Laser</label>
+    <p class="mute" id="sLasers" style="margin:0 0 6px"></p>
+    <button class="ghost" id="sLaserOff">Laser trennen</button>
+    <details style="margin-top:10px"><summary class="mute">Bluetooth-Protokoll (für Fehlersuche)</summary><pre class="log" id="sLog"></pre></details>
+    <label class="f">Tür-/Fenster-Erkennung (KI) – in Arbeit</label>
+    <select id="sAi"><option value="0">Aus – Vorlagen (empfohlen, bis die KI fertig ist)</option><option value="1">An – Pfeile automatisch (Test)</option></select>
+    <p class="mute" id="sAiState"></p>
+    <button class="ghost" id="sAiLoad">KI-Modell jetzt laden (~150 MB, am besten im WLAN)</button>
+    <button class="ghost" id="sStats" style="width:100%;margin-top:14px">📊 Statistik</button>
+    <label class="f">Speicher</label>
+    <p class="mute" id="sStorage" style="margin:0">…</p>
+    <label class="f">Fehlerbericht</label>
+    <button class="ghost" id="sReport" style="width:100%">🛠 Fehlerbericht erstellen (an Claude schicken)</button>
+    <p class="mute" style="margin:6px 0 0">Enthält App-Stand, Funktionstest, Bluetooth-Protokoll und Fehlermeldungen – keine Fotos, keine Kundendaten.</p>
+    <label class="f">Updates</label>
+    <button class="ghost" id="sUpdate" style="width:100%;opacity:.5">⟳ Update installieren</button>
+    <p class="mute" style="margin:6px 0 0">Noch ohne Funktion – neue Versionen kommen derzeit automatisch. Später wird ein Update erst nach Antippen eingespielt.</p>
+    <p class="mute" style="margin-top:16px">Maßblatt-App · Version <span id="ver"></span> · Daten bleiben nur auf diesem Handy.</p>
+  </div>
+
+  <button class="pri" id="setClose" style="width:100%;margin-top:14px">Schließen</button>
 </div></div>
 
+<!-- Termine (Google Kalender) -->
+<div class="sheet-bg" id="calSheet"><div class="sheet"><h2>📅 Termine</h2><div id="calBody"></div>
+  <button class="pri" id="calClose" style="width:100%;margin-top:12px">Schließen</button></div></div>
+
 <!-- PIN-Sperre -->
-<div id="lock" style="position:fixed;inset:0;z-index:100;background:var(--bg);display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px">
+<div id="lock" style="position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px">
   <img src="icons/icon-192.png" style="width:72px;height:72px;border-radius:16px;margin-bottom:16px">
   <div style="font-size:20px;font-weight:700;margin-bottom:6px">Maßblatt</div>
   <div class="mute" id="lockMsg" style="margin-bottom:16px">PIN eingeben</div>

@@ -8,10 +8,12 @@ const BLUE = [0.165, 0.365, 0.561];
 const PAGE_W = 842, PAGE_H = 595;
 
 export function fmtDate(d) {
+  if (!(d instanceof Date) || isNaN(d)) return '';
   const p = n => String(n).padStart(2, '0');
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)}`;
 }
 export function fmtDateTime(d) {
+  if (!(d instanceof Date) || isNaN(d)) return '';
   const p = n => String(n).padStart(2, '0');
   return `${fmtDate(d)} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
@@ -99,36 +101,38 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
   p0.drawLine({ start: { x: 46, y: PAGE_H - 312 }, end: { x: 46 + uw, y: PAGE_H - 312 }, thickness: 0.8, color: black });
   let ty = 318;
   const tl = 11.5, ts = 10.5;
-  // bei vielen Fotos zweispaltig / kleiner
+  // bei vielen Fotos: zwei Spalten, bei sehr vielen zusätzlich kleiner
   const tocLines = shots.length + 2;
-  const tScale = tocLines > 20 ? Math.max(0.55, 20 / tocLines) : 1;
-  text(p0, '1. Aufmaß', 46, ty, ts * tScale); ty += tl * tScale;
-  shots.forEach((s, i) => {
-    text(p0, `1.${i + 1} ${s.room}`, 82, ty, ts * tScale);
-    const n = String(i + 1);
-    text(p0, n, 795 - font.widthOfTextAtSize(n, ts * tScale), ty, ts * tScale);
-    ty += tl * tScale;
-  });
-  if (ovPages) {
-    text(p0, '2. Übersicht', 46, ty, ts * tScale);
-    const on = String(ovStart);
-    text(p0, on, 795 - font.widthOfTextAtSize(on, ts * tScale), ty, ts * tScale);
-  }
+  const twoCol = tocLines > 20;
+  const perCol = twoCol ? Math.ceil(tocLines / 2) : tocLines;
+  const tScale = perCol > 20 ? Math.max(0.55, 20 / perCol) : 1;
+  const colX = [[46, 82, twoCol ? 400 : 795], [430, 466, 795]];
+  let line = 0;
+  const tocRow = (label, num, indent) => {
+    const col = twoCol && line >= perCol ? 1 : 0;
+    const yy = 318 + (line - col * perCol) * tl * tScale;
+    text(p0, label, indent ? colX[col][1] : colX[col][0], yy, ts * tScale);
+    if (num != null) { const n = String(num); text(p0, n, colX[col][2] - font.widthOfTextAtSize(n, ts * tScale), yy, ts * tScale); }
+    line++;
+  };
+  tocRow('1. Aufmaß', null, false);
+  shots.forEach((s, i) => tocRow(`1.${i + 1} ${s.room}`, i + 1, true));
+  if (ovPages) tocRow('2. Übersicht', ovStart, false);
 
   // ---------- Fotoseiten ----------
   const pageNo = (page, n) => {
     const s = String(n);
     text(page, s, 818 - font.widthOfTextAtSize(s, 10), 578, 10);
   };
-  const row = (page, x, yTop, cols, cells, size = 7.5, icon = -1) => {
+  const row = (page, x, yTop, cols, cells, size = 7.5, icon = -1, rh = 18) => {
     // cols: [[x, w], ...]
     cols.forEach(([cx, cw], k) => {
-      page.drawRectangle({ x: cx + 1, y: PAGE_H - yTop - 18 + 1, width: cw - 2, height: 18 - 2,
-        borderColor: c(BORDER), borderWidth: 2, color: rgb(1, 1, 1) });
+      page.drawRectangle({ x: cx + 1, y: PAGE_H - yTop - rh + 1, width: cw - 2, height: rh - 2,
+        borderColor: c(BORDER), borderWidth: Math.min(2, rh / 9), color: rgb(1, 1, 1) });
       const pad = k === 0 && icon >= 0 ? 24 : 12;
-      text(page, cells[k], cx + pad, yTop + 5.5, size);
+      text(page, cells[k], cx + pad, yTop + (rh - size * 1.2) / 2 + 0.5, size);
     });
-    if (icon >= 0) drawIcon(page, cols[0][0] + 10, PAGE_H - yTop - 14, icon);
+    if (icon >= 0 && rh >= 12) drawIcon(page, cols[0][0] + 10, PAGE_H - yTop - rh + 4, icon);
   };
   const ICON_COLS = [[0.85, 0.2, 0.2], [0.2, 0.55, 0.85], [0.3, 0.65, 0.3], [0.85, 0.55, 0.1]];
   const drawIcon = (page, x, y, i) => {
@@ -151,14 +155,15 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
     }
     const cols = [[418, 150], [568, 136], [704, 117]];
     let y = 81;
+    const rh = Math.min(18, Math.floor(490 / Math.max(1, s.values.length))); // passt auch bei sehr vielen Werten
     // Rahmen um die Tabelle (Bosch: dicker Außenrand)
     if (s.values.length) {
-      pg.drawRectangle({ x: 417, y: PAGE_H - 81 - s.values.length * 18 - 2, width: 405, height: s.values.length * 18 + 3,
+      pg.drawRectangle({ x: 417, y: PAGE_H - 81 - s.values.length * rh - 2, width: 405, height: s.values.length * rh + 3,
         borderColor: c(BORDER), borderWidth: 2.5 });
     }
     s.values.forEach((v, k) => {
-      row(pg, 418, y, cols, [`${v.cm} cm`, 'Länge', fmtDateTime(v.time)], 7.5, k);
-      y += 18;
+      row(pg, 418, y, cols, [`${v.cm} cm`, 'Länge', fmtDateTime(v.time)], Math.min(7.5, rh * 0.42), k, rh);
+      y += rh;
     });
     pageNo(pg, i + 1);
   }
