@@ -185,6 +185,13 @@ details.card summary { font-weight:700; cursor:pointer; }
 #undoBar button { background:var(--acc); color:#111; font-weight:700; padding:10px 14px; }
 #lightA { position:absolute; right:10px; bottom:10px; width:54px; height:54px; border-radius:50%; background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.4); color:#ffd400; font-size:26px; padding:0; z-index:5; }
 #lightA.on { background:#ffd400; color:#111; }
+#eyeA { position:absolute; right:10px; bottom:74px; width:54px; height:54px; border-radius:50%; background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.4); color:#fff; font-size:24px; padding:0; z-index:5; }
+#eyeA.on { background:#fff; color:#111; }
+.lefty #eyeA { right:auto; left:10px; }
+.glove #eyeA { width:70px; height:70px; font-size:30px; bottom:90px; }
+#poi { position:absolute; width:64px; height:64px; margin:-32px 0 0 -32px; border:2px solid #ffd400; border-radius:8px; pointer-events:none; display:none; box-shadow:0 0 0 1px #0008; }
+#poi.on { display:block; animation:poi .9s ease-out; }
+@keyframes poi { 0% { transform:scale(1.4); opacity:.4 } 30% { transform:scale(1); opacity:1 } 100% { opacity:0 } }
 #bigVal { position:absolute; left:50%; top:45%; transform:translate(-50%,-50%); background:rgba(0,0,0,.82); color:#fff; font-size:72px; font-weight:700; padding:10px 26px; border-radius:20px; display:none; z-index:7; pointer-events:none; white-space:nowrap; }
 #bigVal small { display:block; font-size:20px; font-weight:400; color:#ffd400; text-align:center; }
 #bigVal.on { display:block; }
@@ -334,6 +341,7 @@ ul.news li { margin-bottom:6px; }
     <button class="roomchip" id="camRoom">Raum</button>
   </div>
   <div id="horizon"><i class="ref l"></i><i class="line"></i><i class="ref r"></i></div>
+  <div id="poi"></div>
   <div class="camside">
     <button id="torchBtn" aria-label="Blitz">⚡<small>Blitz</small></button>
     <button id="hdrBtn" aria-label="HDR">HDR<small>aus</small></button>
@@ -361,6 +369,7 @@ ul.news li { margin-bottom:6px; }
   <div class="stage" id="stage"><canvas id="cv"></canvas><canvas id="loupe" width="300" height="300"></canvas>
     <button id="trashA" aria-label="Pfeil löschen">🗑</button>
     <button id="lightA" aria-label="Aufhellen">☀</button>
+    <button id="eyeA" aria-label="Pfeile ausblenden">👁</button>
     <div id="bigVal"></div>
     <div class="keypad" id="keypad"></div>
     <div class="busy" id="busy"><span id="busyTxt">Erkenne Tür/Fenster …</span><div class="bar"><div id="busyBar"></div></div></div>
@@ -444,6 +453,12 @@ ul.news li { margin-bottom:6px; }
     <label class="f">Raum-Knöpfe (Kürzel = Bezeichnung, eine Zeile je Raum)</label>
     <textarea id="sRooms" rows="7" style="width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px"></textarea>
     <button class="ghost" id="sRoomsReset" style="margin-top:6px">Standard-Räume</button>
+    <label class="f">Pfeile im Foto</label>
+    <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sMagnet" style="width:auto"> Magnet: Pfeilenden rasten an Bildkanten ein</label>
+    <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sDash" style="width:auto"> Breiten-Pfeile gestrichelt (Höhe/Breite ohne Farbe unterscheidbar)</label>
+    <label class="f">Kamera</label>
+    <select id="sCam"><option value="">Automatisch (Rückkamera)</option></select>
+    <p class="mute" id="sCamHint" style="margin:4px 0 0"></p>
     <label class="f">Pfeil-Vorlagen</label>
     <label style="display:flex;gap:10px;align-items:center;margin:6px 0"><input type="checkbox" id="sLearn" style="width:auto"> Lernen: Vorlagen passen sich deinen Fotos an</label>
     <p class="mute" id="sLearnState" style="margin:0 0 6px"></p>

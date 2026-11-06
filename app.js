@@ -1,15 +1,16 @@
 import { db, uid } from './db.js';
 import { Laser } from './ble.js';
-import { TEMPLATES, arrowsFromObjects, newArrow, drawArrows } from './arrows.js';
+import { TEMPLATES, arrowsFromObjects, newArrow, drawArrows, labelBoxes } from './arrows.js';
+import { grayFromImage, magnetArrow } from './magnet.js';
 import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '2.5.0';
+const VERSION = '2.6.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Zurück-Taste (Android) schließt zuerst Blatt, Tastatur oder Bildschirm statt die App', 'Projekt lange drücken → Schnellmenü (PDF, Mail, Dropbox, Anheften, Archiv, Löschen)', 'Symbole in der Liste: 📌 angeheftet, 🔒 gesperrt, ☁ Dropbox, ✉ gemailt, 📤 geteilt', 'Kein Netz → Hinweisbalken; Linkshänder-Modus in ⚙; Tablet-/Querformat-Ansicht', 'PIN gilt jetzt auf allen Geräten (Datei pin.json im Repo) – ändern in ⚙ System'];
+const NEWS = ['Magnet: losgelassene Pfeilenden rasten an der nächsten Bildkante ein (⚙ abschaltbar)', 'Maß-Etiketten weichen sich aus; Etikett antippen = Lage wechseln (Mitte / Anfang / Ende)', '👁 im Foto blendet die Pfeile kurz aus; Option: Breiten-Pfeile gestrichelt', 'Neue Vorlagen „Tür + 2 Fenster“ und „Balkontür + Fenster“', 'Kamera: Gerät in ⚙ wählbar, Tipp ins Bild stellt Belichtung/Fokus (Android), Auslöser kurz gesperrt gegen Doppelfotos'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -817,7 +818,12 @@ async function openCam(viaPop = false) {
   $('#camFallback').style.display = 'none';
   show('cam', viaPop);
   try {
-    S.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 3000 }, height: { ideal: 4000 } }, audio: false });
+    const base = { width: { ideal: 3000 }, height: { ideal: 4000 } };
+    if (opt.cam) {
+      try { S.stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: opt.cam }, ...base }, audio: false }); }
+      catch (e) { log('gewählte Kamera nicht verfügbar', e.name); toast('Gewählte Kamera nicht verfügbar – nehme Rückkamera', 2500); }
+    }
+    if (!S.stream) S.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', ...base }, audio: false });
     $('#video').srcObject = S.stream;
     await $('#video').play().catch(() => { });
     camCaps();
@@ -910,6 +916,21 @@ async function captureHdr() {
   return out;
 }
 $('#camRoom').onclick = async () => { const r = await resolveRoom(await pickRoom()); if (r) setCamRoom(r); };
+// Tipp ins Kamerabild: Belichtung/Fokus auf diese Stelle (Android/Chrome, wo die Kamera es kann)
+let poiWarned = false;
+$('#video').addEventListener('click', async e => {
+  const t = camTrack(); if (!t) return;
+  const v = $('#video'), r = v.getBoundingClientRect();
+  const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+  const m = $('#poi'); m.style.left = (e.clientX - r.left) + 'px'; m.style.top = (e.clientY - r.top) + 'px'; m.classList.add('on'); clearTimeout(poiT); poiT = setTimeout(() => m.classList.remove('on'), 900);
+  const can = (caps.focusMode && caps.focusMode.length) || (caps.exposureMode && caps.exposureMode.length);
+  if (!can) { if (!poiWarned) { poiWarned = true; toast('Belichtung antippen kann diese Kamera nicht (Android + Chrome nötig)', 3000); } return; }
+  const adv = { pointsOfInterest: [{ x, y }] };
+  if (caps.focusMode && caps.focusMode.includes('continuous')) adv.focusMode = 'continuous';
+  if (caps.exposureMode && caps.exposureMode.includes('continuous')) adv.exposureMode = 'continuous';
+  try { await t.applyConstraints({ advanced: [adv] }); } catch (err) { log('pointsOfInterest', err.name); }
+});
+let poiT = 0;
 function leaveCam(viaPop) { renderShots(); if (S.shots.length && !wide()) $('#projDetails').open = false; show('proj', viaPop); } // Fotos sichtbar, Projektdaten eingeklappt
 $('#camBack').onclick = () => leaveCam();
 $('#camGallery').onclick = () => $('#galIn').click();
@@ -919,7 +940,7 @@ let shooting = false;
 $('#shutter').onclick = async () => {
   const v = $('#video');
   if (!v.videoWidth || shooting) return;
-  shooting = true;
+  shooting = true; const sb = $('#shutter'); sb.disabled = true; setTimeout(() => { sb.disabled = false; }, 1000); // Serienschutz: 1 s kein zweites Foto
   try {
     let blob = null;
     if (camOpt.hdr && caps.exposureCompensation) {
@@ -952,13 +973,14 @@ async function newShotFromBlob(blob) {
 
 // ---------------- Editor ----------------
 const cv = $('#cv'), ctx = cv.getContext('2d');
-let photoImg = null, blinkT = 0, raf = 0;
+let photoImg = null, blinkT = 0, raf = 0, grayImg = null;
+const grayOf = () => grayImg || (grayImg = grayFromImage(photoImg, 1000));
 
 async function openEditor(shot, fresh = false) {
   S.shot = shot;
   if (kb.on) setKb(false);
   $('#edTitle').textContent = shot.room;
-  photoImg = await blobToImg(shot.photo);
+  photoImg = await blobToImg(shot.photo); grayImg = null; S.hideArrows = false; $('#eyeA').classList.remove('on');
   $('#lightA').classList.toggle('on', !!shot.orig);
   show('ed');
   resetView(); ptrs.clear(); pinch = null; drag = null;
@@ -993,7 +1015,7 @@ function loop() {
     last = t;
     blinkT = (Math.sin(t / 180) + 1) / 2;
     ctx.drawImage(photoImg, 0, 0, cv.width, cv.height);
-    drawArrows(ctx, cv.width, cv.height, S.shot.arrows, S.active, blinkT, false, fmtVal);
+    if (!S.hideArrows) drawArrows(ctx, cv.width, cv.height, S.shot.arrows, S.active, blinkT, false, fmtVal, { dash: opt.dash });
     raf = requestAnimationFrame(draw);
   };
   raf = requestAnimationFrame(draw);
@@ -1115,6 +1137,7 @@ async function saveShot() { await db.put('shots', S.shot); }
 // Anzeige in cm oder mm (nur App; gespeichert wird cm wie bei Bosch, mm zusätzlich wenn vom Laser bekannt)
 const fmtVal = a => opt.mm ? `${a.mm != null ? a.mm : a.cm * 10} mm` : `${a.cm} cm`;
 function setValue(cm, mm) {
+  if (S.hideArrows) { S.hideArrows = false; $('#eyeA').classList.remove('on'); }
   let a = activeArrow();
   // Hat der Nutzer einen Pfeil selbst angetippt, bekommt genau dieser den Wert (auch zum Neu-Messen).
   // Sonst der nächste offene Pfeil.
@@ -1138,7 +1161,7 @@ function setValue(cm, mm) {
 }
 const arrowName = a => `${a.el === 'Maß' ? '' : a.el + ' '}${a.kind === 'H' ? 'Höhe' : 'Breite'}`;
 // Test-Optionen: großer Messmodus, Sprachansage
-const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true, left: false };
+const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true, left: false, magnet: true, dash: false, cam: '' };
 try { Object.assign(opt, JSON.parse(localStorage.getItem('mb_opt') || '{}')); } catch (e) { }
 const applyOptClasses = () => { document.body.classList.toggle('bigmode', !!opt.big); document.body.classList.toggle('glove', !!opt.glove); document.body.classList.toggle('lefty', !!opt.left); };
 const saveOpt = () => { try { localStorage.setItem('mb_opt', JSON.stringify(opt)); } catch (e) { } applyOptClasses(); };
@@ -1179,9 +1202,10 @@ function checkArrow(a, room) {
   if (a.cm == null) return null;
   const v = a.cm, H = a.kind === 'H';
   if (a.el === 'Raumhöhe' || room === 'Rh') return v < 200 || v > 400 ? `Raumhöhe ${v} cm (üblich 200–400)` : null;
-  if (a.el === 'Tür') {
-    if (H && (v < 180 || v > 250)) return `Tür-Höhe ${v} cm (üblich 180–250)`;
-    if (!H && (v < 50 || v > 150)) return `Tür-Breite ${v} cm (üblich 50–150)`;
+  if (a.el === 'Tür' || a.el === 'Balkontür') {
+    const maxH = a.el === 'Balkontür' ? 270 : 250;
+    if (H && (v < 180 || v > maxH)) return `${a.el}-Höhe ${v} cm (üblich 180–${maxH})`;
+    if (!H && (v < 50 || v > 150)) return `${a.el}-Breite ${v} cm (üblich 50–150)`;
     return null;
   }
   if (a.el.startsWith('Fenster')) {
@@ -1194,7 +1218,7 @@ function checkArrow(a, room) {
 function shotIssues(shot) {
   const out = [];
   shot.arrows.forEach(a => { const m = checkArrow(a, shot.room); if (m) out.push({ a, m }); });
-  const door = shot.arrows.filter(a => a.el === 'Tür' && a.cm != null);
+  const door = shot.arrows.filter(a => (a.el === 'Tür' || a.el === 'Balkontür') && a.cm != null);
   const dh = door.find(a => a.kind === 'H'), dw = door.find(a => a.kind === 'B');
   if (dh && dw && dw.cm >= dh.cm) out.push({ a: dw, m: `Tür breiter (${dw.cm}) als hoch (${dh.cm}) – Höhe/Breite vertauscht?` });
   const open = shot.arrows.filter(a => a.cm == null);
@@ -1263,6 +1287,7 @@ const kb = { on: false, buf: '' };
 function setKb(on) { kb.on = on; kb.buf = ''; $('#keypad').classList.toggle('on', on); $('#kbBtn').classList.toggle('on', on); updateCur(); }
 $('#kbBtn').onclick = () => setKb(!kb.on);
 // Aufhellen: automatische Tonwertkorrektur + Aufhellung dunkler Bereiche; Original bleibt für „zurück“ erhalten
+$('#eyeA').onclick = () => { S.hideArrows = !S.hideArrows; $('#eyeA').classList.toggle('on', S.hideArrows); if (S.hideArrows) toast('Pfeile ausgeblendet – nochmal tippen zeigt sie wieder', 1500); };
 $('#lightA').onclick = async () => {
   clearTimeout(finishing);
   const shot = S.shot;
@@ -1284,7 +1309,7 @@ $('#lightA').onclick = async () => {
     shot.orig = shot.photo; shot.photo = await canvasToBlob(c, 'image/jpeg', 0.9);
     toast('Aufgehellt – nochmal ☀ = Original');
   }
-  photoImg = await blobToImg(shot.photo);
+  photoImg = await blobToImg(shot.photo); grayImg = null;
   $('#lightA').classList.toggle('on', !!shot.orig);
   saveShot();
 };
@@ -1340,6 +1365,9 @@ stage.addEventListener('pointerdown', e => {
       if (d < 48 && d < bd) { bd = d; best = { a, k }; }
     }
   }
+  // Etikett des gewählten Pfeils: hat Vorrang, außer man tippt direkt (< 24 px) auf ein Pfeilende
+  const act = activeArrow(), albx = act && labelBoxes.get(act.id);
+  if (albx && x >= albx.x && x <= albx.x + albx.w && y >= albx.y && y <= albx.y + albx.h && !(best && bd < 24)) best = { a: act, k: 'all' };
   if (!best) {
     for (const a of S.shot.arrows) {
       const d = segDist(x * rw, y * rh, a.x1 * rw, a.y1 * rh, a.x2 * rw, a.y2 * rh);
@@ -1354,8 +1382,9 @@ stage.addEventListener('pointerdown', e => {
     S.shot.arrows.push(a);
     best = { a, k: 'p2', isNew: true, prev: S.active };
   }
+  const wasActive = S.active === best.a.id;
   S.active = best.a.id; S.manualPick = !best.isNew; kb.buf = ''; updateCur();
-  drag = { ...best, x, y, o: { ...best.a }, sx: e.clientX, sy: e.clientY, moved: false };
+  drag = { ...best, x, y, o: { ...best.a }, sx: e.clientX, sy: e.clientY, moved: false, wasActive };
 });
 stage.addEventListener('pointermove', e => {
   if (!ptrs.has(e.pointerId)) return;
@@ -1387,6 +1416,16 @@ stage.addEventListener('pointermove', e => {
     drawLoupe(px, py, r);
   }
 });
+// Kanten-Magnet (Idee 16): losgelassenes Pfeilende rastet an der nächsten klaren Bildkante ein (quer zum Pfeil gesucht)
+function magnet(a, which) {
+  if (!opt.magnet || !photoImg) return;
+  try {
+    const g = grayOf(), r = cv.getBoundingClientRect();
+    const radius = Math.max(4, Math.round(10 * g.w / r.width)); // ≈ 10 Bildschirm-Pixel, beim Zoomen entsprechend feiner
+    const res = magnetArrow(g, a, which, { radius, minContrast: 12, k: 2, lateral: 3 });
+    if (res.moved.length) { try { navigator.vibrate && navigator.vibrate(8); } catch (e) { } }
+  } catch (e) { log('Magnet', e.message); }
+}
 // Einrasten: fast senkrecht/waagrecht (±3°) wird exakt senkrecht/waagrecht
 function snapArrow(a, movedEnd) {
   const r = cv.getBoundingClientRect();
@@ -1415,19 +1454,28 @@ const endDrag = e => {
       } else lastTap = { t: now, x: e ? e.clientX : 0, y: e ? e.clientY : 0 };
     } else {
       a.kind = Math.abs(dy) > Math.abs(dx) ? 'H' : 'B';
-      snapArrow(a, 'p2');
+      snapArrow(a, 'p2'); magnet(a, 'both');
       // Pfeile von unten nach oben bzw. links nach rechts speichern
       if ((a.kind === 'H' && a.y1 < a.y2) || (a.kind === 'B' && a.x1 > a.x2)) [a.x1, a.y1, a.x2, a.y2] = [a.x2, a.y2, a.x1, a.y1];
       S.active = a.id;
     }
     updateCur();
-  } else if (d.k !== 'all' && d.moved) snapArrow(a, d.k);
+  } else if (d.k !== 'all' && d.moved) { snapArrow(a, d.k); magnet(a, d.k); }
+  else if (d.k === 'all' && !d.moved && d.wasActive) { // schon gewählter Pfeil nochmal angetippt: war es das Etikett? → Lage wechseln (Mitte → Anfang → Ende)
+    const lb = labelBoxes.get(a.id);
+    if (lb && e && hitLabel(lb, e)) { a.lab = ((a.lab || 0) + 1) % 3; toast(['Etikett in der Mitte', 'Etikett am Anfang', 'Etikett am Ende'][a.lab], 1200); }
+  }
   saveShot();
 };
 stage.addEventListener('pointerup', endDrag); stage.addEventListener('pointercancel', endDrag);
 // kein Scrollen/Zoomen der Seite im Editor (Zoom macht die App selbst)
 ['touchstart', 'touchmove'].forEach(t => stage.addEventListener(t, e => { if (e.target.closest('button')) return; e.preventDefault(); }, { passive: false }));
 
+function hitLabel(lb, e) {
+  const r = cv.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+  return x >= lb.x && x <= lb.x + lb.w && y >= lb.y && y <= lb.y + lb.h;
+}
 function drawLoupe(px, py, r) {
   const L = $('#loupe'), lc = L.getContext('2d'), Z = 3;
   const sr = $('#stage').getBoundingClientRect();
@@ -1742,6 +1790,7 @@ $('#btnSettings').onclick = async () => {
   let t = 'allg'; try { t = localStorage.getItem('mb_tab') || 'allg'; } catch (e) { }
   showTab(t);
   $('#sGlove').checked = !!opt.glove; $('#sLearn').checked = opt.learn !== false; $('#sLeft').checked = !!opt.left;
+  $('#sMagnet').checked = opt.magnet !== false; $('#sDash').checked = !!opt.dash; fillCamList();
   learnState();
   gcalUi();
   $('#sTitle').value = (await db.setting('headerTitle')) || '';
@@ -1765,6 +1814,18 @@ $('#btnSettings').onclick = async () => {
 };
 $('#sGlove').onchange = () => { opt.glove = $('#sGlove').checked; saveOpt(); };
 $('#sLeft').onchange = () => { opt.left = $('#sLeft').checked; saveOpt(); };
+$('#sMagnet').onchange = () => { opt.magnet = $('#sMagnet').checked; saveOpt(); };
+$('#sDash').onchange = () => { opt.dash = $('#sDash').checked; saveOpt(); };
+$('#sCam').onchange = () => { opt.cam = $('#sCam').value; saveOpt(); };
+// Kameraliste (Namen gibt es erst, wenn die Kamera einmal erlaubt wurde)
+async function fillCamList() {
+  const sel = $('#sCam'); const cur = opt.cam || '';
+  let devs = [];
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (e) { }
+  sel.innerHTML = '<option value="">Automatisch (Rückkamera)</option>' + devs.map((d, i) => `<option value="${d.deviceId}">${d.label ? d.label.replace(/\(.*?\)/, '').trim() : 'Kamera ' + (i + 1)}</option>`).join('');
+  sel.value = devs.some(d => d.deviceId === cur) ? cur : '';
+  $('#sCamHint').textContent = devs.length ? (devs.some(d => d.label) ? 'Bei verzerrtem Bild (Weitwinkel) hier die Hauptkamera wählen.' : 'Namen erscheinen, sobald die Kamera einmal benutzt wurde.') : 'Keine Kamera gefunden.';
+}
 $('#sLearn').onchange = () => { opt.learn = $('#sLearn').checked; saveOpt(); };
 $('#sLearnReset').onclick = async () => { await db.setting('tplLearn', null); learnState(); toast('Gelernte Pfeil-Positionen gelöscht'); };
 async function learnState() {
@@ -2160,5 +2221,5 @@ function whatsNew() {
     let reloaded = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
   }
-  window.__mb = { S, laser, view, nav, onMeasure, applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
+  window.__mb = { S, laser, view, nav, onMeasure, magnet, labelBoxes, grayOf: () => grayOf(), applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
 })();
