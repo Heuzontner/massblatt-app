@@ -55,18 +55,18 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
   };
 
   // Seitennummern: Deckblatt ohne Nummer, Fotoseiten ab 1
-  // Übersicht: je Foto eine Zeile, Höhe/Breite paarweise je Element (Fenster 1, Tür …)
+  // Übersicht: je Foto eine Zeile, Höhe × Breite paarweise in Pfeil-Reihenfolge (ohne Tür-/Fenster-Bezeichnung, Manuel 09.11.)
   const ovRows = [];
   if (project.overview && project.overviewRows) {
     for (const r of project.overviewRows) {
-      const by = new Map();
-      for (const it of r.items) { const k = it.el || 'Maß'; if (!by.has(k)) by.set(k, []); by.get(k).push(it); }
       const parts = [];
-      for (const [el, its] of by) {
-        if (el === 'Raumhöhe') { parts.push(`Raumhöhe ${its.map(x => x.cm).join('/')} cm`); continue; }
-        const hs = its.filter(x => x.kind === 'H').map(x => x.cm), bs = its.filter(x => x.kind === 'B').map(x => x.cm);
-        const n = Math.max(hs.length, bs.length);
-        for (let i = 0; i < n; i++) parts.push(`${el}${n > 1 ? ' ' + (i + 1) : ''}: ${hs[i] ?? '–'} × ${bs[i] ?? '–'}`);
+      const rh = r.items.filter(x => x.el === 'Raumhöhe');
+      if (rh.length) parts.push(`Raumhöhe ${rh.map(x => x.cm).join('/')} cm`);
+      const its = r.items.filter(x => x.el !== 'Raumhöhe');
+      for (let i = 0; i < its.length;) {
+        const a = its[i], b = its[i + 1];
+        if (b && a.kind !== b.kind) { const h = a.kind === 'H' ? a : b, w = a.kind === 'H' ? b : a; parts.push(`${h.cm} × ${w.cm}`); i += 2; }
+        else { parts.push(`${a.kind === 'H' ? 'H' : 'B'} ${a.cm}`); i += 1; }
       }
       ovRows.push([r.room, parts.join('   ·   ') || '–']);
     }

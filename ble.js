@@ -103,6 +103,7 @@ export class Laser extends EventTarget {
   // Auswahlfenster: alle bekannten Hersteller
   async connect() {
     if (!this.supported) throw new Error('Dieses Gerät/dieser Browser kann kein Web-Bluetooth. Bitte Chrome auf Android verwenden.');
+    if (this._abort) { this._abort.abort(); this._abort = null; }
     this._set('suche');
     if (await this._tryKnown()) return;
     this.device = await navigator.bluetooth.requestDevice({
@@ -131,7 +132,7 @@ export class Laser extends EventTarget {
     return false;
   }
   // beim App-Start ohne Antippen: auf Funksignale der gemerkten Laser warten (Chrome/Android), dann verbinden
-  async autoConnect(timeoutMs = 25000) {
+  async autoConnect(timeoutMs = 0) { // 0 = ohne Zeitlimit horchen, bis der Laser eingeschaltet wird
     if (!this.supported || !navigator.bluetooth.getDevices || !this.known.length || this.device) return false;
     let devs = []; try { devs = await navigator.bluetooth.getDevices(); } catch (e) { return false; }
     const mine = this.known.map(k => devs.find(x => x.id === k.id)).filter(Boolean);
@@ -140,7 +141,8 @@ export class Laser extends EventTarget {
     if (!mine[0].watchAdvertisements) return false;
     this._abort = new AbortController();
     const done = new Promise(res => {
-      const t = setTimeout(() => { this._abort.abort(); res(false); }, timeoutMs);
+      const t = timeoutMs ? setTimeout(() => { this._abort.abort(); res(false); }, timeoutMs) : 0;
+      this._abort.signal.addEventListener('abort', () => res(false));
       for (const d of mine) {
         d.addEventListener('advertisementreceived', async () => {
           if (this.device) return; clearTimeout(t); this._abort.abort();
@@ -184,15 +186,18 @@ export class Laser extends EventTarget {
     return await chr.writeValue(bytes);
   }
 
+  // Verbindung weg (Laser schaltet sich ab, außer Reichweite): so lange weiterprobieren, bis der Laser wieder da ist
+  // oder der Nutzer trennt – „beides eingeschaltet = verbunden“ (Manuel 09.11.). Im Hintergrund pausiert.
   async _onDisconnect() {
+    const d = this.device;
     this._set('getrennt');
     this._log('getrennt');
-    for (let i = 0; i < 5 && this.device; i++) {
-      await new Promise(r => setTimeout(r, 1500 * (i + 1)));
-      if (!this.device) return;
-      try { await this._open(); return; } catch (e) { this._log('Neuverbindung fehlgeschlagen: ' + e.message); }
+    for (let i = 0; this.device === d; i++) {
+      await new Promise(r => setTimeout(r, Math.min(1500 * (i + 1), 5000)));
+      while (this.device === d && typeof document !== 'undefined' && document.visibilityState === 'hidden') await new Promise(r => setTimeout(r, 1000));
+      if (this.device !== d) return;
+      try { await this._open(); return; } catch (e) { if (i < 3 || i % 20 === 0) this._log('Neuverbindung fehlgeschlagen: ' + e.message); }
     }
-    if (this.device) { this.device = null; this._set('aus'); }
   }
 
   // Lernmodus: beliebiges BLE-Gerät verbinden, alle meldenden Kennungen abonnieren, Rohdaten protokollieren (für neue Hersteller)

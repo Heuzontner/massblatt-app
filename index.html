@@ -221,6 +221,9 @@ i.amp.ok, .ampel.ok i { background:#3ddc84; } i.amp.warn, .ampel.warn i { backgr
 .roomgrid button small { display:block; font-size:10px; font-weight:400; color:var(--mute); }
 #undoBar { position:fixed; left:12px; right:12px; bottom:calc(env(safe-area-inset-bottom) + 90px); background:#000e; color:#fff; border-radius:14px; padding:8px 8px 8px 14px; display:none; align-items:center; gap:10px; z-index:85; font-size:15px; }
 #undoBar.on { display:flex; }
+/* im Foto-Editor oben (unten sitzen Mülleimer, Keypad, Aufhellen) */
+#undoBar.top { bottom:auto; top:calc(env(safe-area-inset-top) + 64px); left:50%; right:auto; transform:translateX(-50%); width:min(calc(100% - 24px), 440px); }
+body:has(#undoBar.top.on) #toast { top:calc(env(safe-area-inset-top) + 124px); }
 #undoBar span { flex:1; }
 #undoBar button { background:var(--acc); color:#111; font-weight:700; padding:10px 14px; }
 #lightA { position:absolute; right:10px; bottom:10px; width:54px; height:54px; border-radius:50%; background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.4); color:#ffd400; font-size:26px; padding:0; z-index:5; }
@@ -549,7 +552,7 @@ ul.news li { margin-bottom:6px; }
     <button class="ghost" id="sLogoDel" style="margin-top:6px">Logo entfernen</button>
     <label class="f">Fußzeile (z. B. deine Kontaktdaten, leer = keine)</label>
     <input id="sFooter" placeholder="VIEWPORT 360° · office@viewport360.at · +43 …">
-    <label class="f">Übersichtsseite (alle Räume mit Tür-/Fenstermaßen)</label>
+    <label class="f">Übersichtsseite (alle Räume mit allen Maßen)</label>
     <select id="sOverview"><option value="1">An – am Ende des PDFs</option><option value="0">Aus</option></select>
     <label class="f">Fotoqualität im PDF</label>
     <select id="sPdfQ"><option value="klein">Klein – für Mail (ca. ⅓ Größe)</option><option value="normal">Normal (wie bisher)</option><option value="druck">Druck – größte Fotos</option></select>
@@ -589,7 +592,8 @@ ul.news li { margin-bottom:6px; }
     <label class="f">Laser</label>
     <p class="mute" id="sLasers" style="margin:0 0 6px"></p>
     <div id="sLaserList"></div>
-    <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px"><input type="checkbox" id="sLaserAuto" style="width:auto"> Gemerkten Laser beim Start automatisch verbinden (Android/Chrome)</label>
+    <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px"><input type="checkbox" id="sLaserAuto" style="width:auto"> Laser automatisch verbinden, sobald beide eingeschaltet sind</label>
+    <p class="mute" id="sLaserAutoHint" style="margin:4px 0 0;font-size:13px"></p>
     <button class="ghost" id="sLaserLearn" style="width:100%;margin-top:8px">🔍 Unbekannter Laser: Protokoll aufzeichnen</button>
     <p class="mute" style="margin:4px 0 6px">Unterstützt: Bosch GLM/PLR (C-Modelle), Leica DISTO, Mileseey/Hersch/Suaoki, Stanley TLM99s. Andere Marken: Lernmodus, dann Fehlerbericht an Claude.</p>
     <button class="ghost" id="sLaserOff">Laser trennen</button>

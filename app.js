@@ -8,9 +8,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.1.0';
+const VERSION = '3.1.1';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Laser-Multi-Tool: neben Bosch auch Leica DISTO, Mileseey/Hersch/Suaoki und Stanley; mehrere Laser gemerkt, Akkustand, automatisch verbinden beim Start (⚙ System)', 'Notiz je Foto und je Projekt (kleiner Pfeil ▸ öffnet eine Zeile)', 'Vorab-Schätzung grauer Werte im Foto (Test, ⚙ abschaltbar); Raumvorschlag nach gelernter Reihenfolge; 🎤 Raum per Sprache; Gitterlinien im Sucher', 'PDF-Fotoqualität wählbar; wöchentliche Sicherung in Dropbox; Sperre nach Pause; Gerätewechsel mit QR-Code'];
+const NEWS = ['Keine Tür-/Fenster-Bezeichnung mehr – nur Höhe/Breite wie im Bosch-Maßblatt (die Pfeil-Vorlagen unter „Pfeile“ bleiben)', 'Rückgängig-Leiste im Foto-Editor jetzt oben – der Mülleimer bleibt frei', 'Übersichtsseite im PDF: Höhe × Breite je Pfeilpaar', 'Laser: wird beim ersten 📷 Foto angeboten und nach dem Abschalten von selbst wieder verbunden, sobald er an ist', 'Dropbox: Anmelde-Link ist sofort nach dem Eintippen des App-Keys bereit'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -146,7 +146,7 @@ function laserUi() {
     el.classList.toggle('busy', st === 'suche' || st === 'verbinde' || st === 'getrennt');
     el.querySelector('span').textContent = st === 'verbunden' ? 'Laser ✓' + (laser.battery != null ? ` ${laser.battery}%` : '') : st === 'aus' ? 'Laser' : st === 'getrennt' ? 'Laser …' : 'Verbinde …';
   });
-  if ($('#setSheet').classList.contains('on')) laserListUi();
+  if ($('#setSheet').classList.contains('on')) { laserListUi(); laserAutoHint(); }
 }
 laser.addEventListener('battery', () => { laserUi(); if (laser.battery != null && laser.battery <= 15) toast(`Laser-Akku nur noch ${laser.battery} %`, 4000); });
 laser.addEventListener('hint', e => toast(e.detail.msg, 4500));
@@ -169,6 +169,12 @@ function laserListUi() {
   }
 }
 $('#sLaserAuto').onchange = () => { opt.laserAuto = $('#sLaserAuto').checked; saveOpt(); };
+function laserAutoHint() {
+  const h = $('#sLaserAutoHint'); if (!h) return;
+  h.textContent = !laser.supported ? 'Dieser Browser kann kein Bluetooth (Chrome auf Android nötig).'
+    : navigator.bluetooth.getDevices ? 'Beim Start und sobald der Laser eingeschaltet wird, verbindet die App von selbst.'
+    : 'Dieser Chrome erlaubt das Verbinden nur nach Antippen: die App bietet den Laser beim ersten 📷 Foto an und hält die Verbindung danach selbst (auch nach Abschalten des Lasers). Ganz ohne Antippen: in Chrome „chrome://flags“ öffnen, „Web Bluetooth new permissions backend“ und „Experimental Web Platform features“ auf „Enabled“, Chrome neu starten.';
+}
 // Lernmodus: unbekannten Laser verbinden und alle Meldungen ins Protokoll schreiben (für neue Hersteller)
 $('#sLaserLearn').onclick = async () => {
   if (!laser.supported) { toast('Kein Web-Bluetooth in diesem Browser (Chrome auf Android nötig)', 4000); return; }
@@ -929,6 +935,7 @@ function undoToast(msg, undo) {
   if (!bar) { bar = document.createElement('div'); bar.id = 'undoBar'; document.body.appendChild(bar); }
   bar.innerHTML = '<span></span><button>Rückgängig</button>';
   bar.querySelector('span').textContent = msg;
+  bar.classList.toggle('top', $('#ed').classList.contains('on')); // im Editor oben, damit der Mülleimer frei bleibt
   bar.classList.add('on');
   clearTimeout(undoToast._t);
   undoToast._t = setTimeout(() => bar.classList.remove('on'), 6000);
@@ -1099,7 +1106,16 @@ $('#btnShoot').onclick = async () => {
   if (isLocked()) return;
   const r = await resolveRoom(await pickRoom()); if (!r) return;
   S.room = r; openCam();
+  offerLaser();
 };
+// Beim ersten Foto je App-Start den Laser gleich anbieten (Auswahlfenster) – der Browser verlangt dafür ein Antippen,
+// also hängen wir uns an den Foto-Knopf. Danach hält die App die Verbindung selbst (auch wenn der Laser zwischendurch aus war).
+let laserOffered = false;
+async function offerLaser() {
+  if (laserOffered || opt.laserAuto === false || laser.state !== 'aus' || !laser.supported) return;
+  laserOffered = true;
+  try { await laser.connect(); } catch (err) { laserUi(); if (err.name !== 'NotFoundError') log('Laser-Angebot: ' + err.message); }
+}
 // Waagrechter Strich wie bei der iPhone-Kamera: gelb, wenn das Handy gerade gehalten wird
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 let motionAsked = false;
@@ -1457,7 +1473,7 @@ function updateCur() {
   estimateArrows();
   const a = activeArrow();
   const i = S.shot.arrows.indexOf(a);
-  $('#curLbl').textContent = a ? `${a.el} · ${a.kind === 'H' ? 'Höhe' : 'Breite'}   (${i + 1} von ${S.shot.arrows.length})` : 'Kein Pfeil – oben „Pfeile“ antippen';
+  $('#curLbl').textContent = a ? `${arrowName(a)}   (Pfeil ${i + 1} von ${S.shot.arrows.length})` : 'Kein Pfeil – oben „Pfeile“ antippen';
   const v = $('#curVal');
   const num = a && (kb.on || a.cm != null);
   v.classList.toggle('hint', !num);
@@ -1492,7 +1508,8 @@ function setValue(cm, mm) {
   if (next) { S.active = next.id; updateCur(); }
   else { S.active = a.id; updateCur(); finishShot(true); }
 }
-const arrowName = a => `${a.el === 'Maß' ? '' : a.el + ' '}${a.kind === 'H' ? 'Höhe' : 'Breite'}`;
+// keine Tür-/Fenster-Bezeichnung (Manuel 09.11.): nur Höhe/Breite wie im Bosch-Maßblatt; Raumhöhe bleibt benannt
+const arrowName = a => a.el === 'Raumhöhe' ? 'Raumhöhe' : a.kind === 'H' ? 'Höhe' : 'Breite';
 // Test-Optionen: großer Messmodus, Sprachansage
 const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true, left: false, magnet: true, dash: false, cam: '', shrink: false, remind: true, est: true, grid: false, laserAuto: true, autoBackup: false, bgLock: 0 };
 try { Object.assign(opt, JSON.parse(localStorage.getItem('mb_opt') || '{}')); } catch (e) { }
@@ -1530,30 +1547,19 @@ function onMeasure(cm, mm) {
   toast(`${cm} cm gemessen – erst ein Foto machen`, 2000); beep(false);
 }
 
-// Plausibilität: grobe Grenzen in cm (Türen wie im Maßblatt-Leser: H 180–245, B 50–145)
+// Plausibilität: grobe Grenzen in cm – ohne Tür-/Fenster-Unterscheidung (Vorlage sagt nichts über das Fotografierte)
 function checkArrow(a, room) {
   if (a.cm == null) return null;
   const v = a.cm, H = a.kind === 'H';
   if (a.el === 'Raumhöhe' || room === 'Rh') return v < 200 || v > 400 ? `Raumhöhe ${v} cm (üblich 200–400)` : null;
-  if (a.el === 'Tür' || a.el === 'Balkontür') {
-    const maxH = a.el === 'Balkontür' ? 270 : 250;
-    if (H && (v < 180 || v > maxH)) return `${a.el}-Höhe ${v} cm (üblich 180–${maxH})`;
-    if (!H && (v < 50 || v > 150)) return `${a.el}-Breite ${v} cm (üblich 50–150)`;
-    return null;
-  }
-  if (a.el.startsWith('Fenster')) {
-    if (H && (v < 30 || v > 300)) return `Fenster-Höhe ${v} cm (üblich 30–300)`;
-    if (!H && (v < 30 || v > 400)) return `Fenster-Breite ${v} cm (üblich 30–400)`;
-    return null;
-  }
-  return v < 10 || v > 600 ? `${H ? 'Höhe' : 'Breite'} ${v} cm ungewöhnlich` : null;
+  if (a.el === 'Maß') return v < 10 || v > 600 ? `${H ? 'Höhe' : 'Breite'} ${v} cm ungewöhnlich` : null; // freier Pfeil (Wand, Nische …)
+  if (H && (v < 30 || v > 300)) return `Höhe ${v} cm (üblich 30–300)`;
+  if (!H && (v < 30 || v > 400)) return `Breite ${v} cm (üblich 30–400)`;
+  return null;
 }
 function shotIssues(shot) {
   const out = [];
   shot.arrows.forEach(a => { const m = checkArrow(a, shot.room); if (m) out.push({ a, m }); });
-  const door = shot.arrows.filter(a => (a.el === 'Tür' || a.el === 'Balkontür') && a.cm != null);
-  const dh = door.find(a => a.kind === 'H'), dw = door.find(a => a.kind === 'B');
-  if (dh && dw && dw.cm >= dh.cm) out.push({ a: dw, m: `Tür breiter (${dw.cm}) als hoch (${dh.cm}) – Höhe/Breite vertauscht?` });
   const open = shot.arrows.filter(a => a.cm == null);
   if (open.length) out.push({ a: open[0], m: `${open.length} Pfeil${open.length > 1 ? 'e' : ''} ohne Maß` });
   return out;
@@ -2104,7 +2110,7 @@ async function dbxUi() {
   const log = (await db.setting('dbxLog')) || []; const bad = log.filter(e => !e.ok).length;
   $('#dbxLogBtn').textContent = `Verlauf (${log.length}${bad ? `, ${bad} fehlgeschlagen` : ''})`; $('#dbxLogBtn').style.display = log.length ? '' : 'none';
   $('#dbxYearHint').textContent = `z. B. ${dropbox.pathFor(withYear('WAG', null))}/Kopernikusstrasse 22, EG.pdf`;
-  if (!dropbox.connected && c.appKey) { try { $('#dbxAuth').href = await dropbox.authUrl(); } catch (e) { } } else $('#dbxAuth').removeAttribute('href');
+  prepDbxLink();
   checkDbxFolder();
 }
 // Prüfung, ob der eingetragene Ordner existiert (Idee 79)
@@ -2203,7 +2209,25 @@ async function dbxLogSheet() {
   document.body.appendChild(bg);
 }
 $('#dbxKey').onchange = () => { dropbox.setAppKey($('#dbxKey').value); dbxUi(); };
-$('#dbxAuth').onclick = e => { if (!$('#dbxAuth').href) { e.preventDefault(); toast('Zuerst den App-Key eintragen'); } };
+// Anmelde-Link: Adresse sofort beim Tippen/Einfügen des Keys vorbereiten (am Tablet kam das „change“ erst beim Antippen des Links → Link noch leer, 09.11.)
+let dbxLinkT = 0;
+function prepDbxLink() {
+  // nacheinander ausführen: jede Adresse gehört zu genau einem gespeicherten PKCE-Verifier
+  const run = async () => {
+    const k = $('#dbxKey').value.trim();
+    if (k && k !== dropbox.cfg.appKey) dropbox.setAppKey(k);
+    if (!k || dropbox.connected) { $('#dbxAuth').removeAttribute('href'); return false; }
+    try { $('#dbxAuth').href = await dropbox.authUrl(); return true; } catch (e) { toast('Dropbox: ' + e.message, 4000); return false; }
+  };
+  return prepDbxLink._p = (prepDbxLink._p || Promise.resolve()).then(run, run);
+}
+$('#dbxKey').oninput = () => { clearTimeout(dbxLinkT); dbxLinkT = setTimeout(prepDbxLink, 250); };
+$('#dbxAuth').onclick = async e => {
+  if ($('#dbxAuth').href) return;
+  e.preventDefault();
+  if (!$('#dbxKey').value.trim()) { toast('Zuerst den App-Key eintragen'); return; }
+  if (await prepDbxLink()) { const w = window.open($('#dbxAuth').href, '_blank'); if (!w) toast('Jetzt nochmal „Bei Dropbox anmelden“ antippen', 3000); }
+};
 $('#dbxFolder').oninput = () => { dropbox.setFolder($('#dbxFolder').value); checkDbxFolder(); };
 $('#dbxOk').onclick = async () => {
   try { await dropbox.finishAuth($('#dbxCode').value); $('#dbxCode').value = ''; toast('Dropbox verbunden ✓'); }
@@ -2320,7 +2344,7 @@ $('#btnSettings').onclick = async () => {
   $('#sGlove').checked = !!opt.glove; $('#sLearn').checked = opt.learn !== false; $('#sLeft').checked = !!opt.left;
   $('#sMagnet').checked = opt.magnet !== false; $('#sDash').checked = !!opt.dash; fillCamList();
   $('#sShrink').checked = !!opt.shrink; $('#sRemind').checked = opt.remind !== false; $('#sLockDays').value = String(lockDays()); bioUi(); backupUi(); offlineUiList();
-  $('#sGrid').checked = !!opt.grid; $('#sEst').checked = opt.est !== false; $('#sLaserAuto').checked = opt.laserAuto !== false; $('#sAutoBackup').checked = !!opt.autoBackup; $('#sBgLock').value = String(opt.bgLock || 0);
+  $('#sGrid').checked = !!opt.grid; $('#sEst').checked = opt.est !== false; $('#sLaserAuto').checked = opt.laserAuto !== false; laserAutoHint(); $('#sAutoBackup').checked = !!opt.autoBackup; $('#sBgLock').value = String(opt.bgLock || 0);
   $('#sPdfQ').value = (await db.setting('pdfQuality')) || 'normal'; $('#sNotesPdf').checked = !!(await db.setting('pdfNotes')); laserListUi();
   $('#sAutoBackupInfo').textContent = dropbox.connected ? `Ordner ${dropbox.pathFor('_Sicherung')} · ${(await db.setting('autoBackupAt')) ? 'zuletzt ' + fmtWhen(await db.setting('autoBackupAt')) : 'noch nie'}` : 'Dropbox ist nicht verbunden (⚙ Cloud)';
   learnState();
@@ -2631,7 +2655,7 @@ async function learnState() {
   $('#sLearnState').textContent = parts.length ? 'Gelernt aus Fotos – ' + parts.join(', ') : 'Noch nichts gelernt (ab 3 fertigen Fotos je Vorlage).';
 }
 $('#sBig').onchange = () => { opt.big = $('#sBig').checked; saveOpt(); if (opt.big) showBig({ el: 'Tür', kind: 'H', cm: 199, mm: 1990 }); };
-$('#sVoice').onchange = () => { opt.voice = $('#sVoice').checked; saveOpt(); if (opt.voice) say('Sprachansage ist an. Tür Höhe, 199'); };
+$('#sVoice').onchange = () => { opt.voice = $('#sVoice').checked; saveOpt(); if (opt.voice) say('Sprachansage ist an. Höhe, 199'); };
 const DEMO = [
   ['📁', 'Projekt anlegen', 'Unten „+ Neues Projekt“. Straße + Hausnummer (+ Geschoß, WG), PLZ und Ort eintragen – bekannte Straßen füllen PLZ/Ort selbst aus. Kunde antippen.'],
   ['📷', 'Raum wählen & fotografieren', '„📷 Foto“ → Raum antippen (Kz, Sz, Wz …). Tür bzw. Fenster ganz ins Bild nehmen. Der waagrechte Strich wird gelb, wenn das Handy gerade ist.'],
