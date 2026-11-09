@@ -104,6 +104,8 @@ details.card summary { font-weight:700; cursor:pointer; }
 .plist .card.checked { border-color:var(--acc); }
 .plist .card .arch { font-size:12px; color:var(--mute); margin-left:6px; }
 #selBar { display:none; }
+#selBar button { font-size:14px; padding:12px 8px; white-space:normal; line-height:1.2; }
+#selBar #selCancel { flex:0 0 48px; padding:12px 0; }
 .plist.sel ~ .bottombar #btnNewProj { display:none; }
 .plist.sel ~ .bottombar #selBar { display:flex; gap:10px; flex:1; }
 /* Termine */
@@ -119,6 +121,9 @@ details.card summary { font-weight:700; cursor:pointer; }
 #cam video { flex:1; width:100%; object-fit:cover; min-height:0; }
 #cam .camtop { position:absolute; top:0; left:0; right:0; display:flex; gap:8px; align-items:center; padding:calc(env(safe-area-inset-top) + 10px) 12px 10px; background:linear-gradient(rgba(0,0,0,.6), transparent); }
 #cam .camtop .roomchip { font-size:20px; font-weight:700; background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.3); }
+/* Raumknopf im Editor-Kopf: antippen = Raum ändern */
+#ed header.top #edTitle { flex:1; min-width:0; text-align:left; font-size:18px; font-weight:700; padding:8px 12px; background:rgba(255,255,255,.08); border:1px solid var(--line); border-radius:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#ed header.top #edTitle::after { content:' ▾'; font-weight:400; opacity:.7; }
 #cam .cambar { display:flex; align-items:center; justify-content:space-around; padding:16px 12px calc(env(safe-area-inset-bottom) + 18px); background:#000; }
 #shutter { width:78px; height:78px; border-radius:50%; background:#fff; border:5px solid #888; padding:0; }
 #cam .camside { position:absolute; right:10px; top:40%; transform:translateY(-50%); display:flex; flex-direction:column; gap:12px; }
@@ -322,7 +327,7 @@ ul.news li { margin-bottom:6px; }
     <div id="projList"></div>
   </div>
   <div class="bottombar"><button class="pri" id="btnNewProj">+ Neues Projekt</button>
-    <div id="selBar"><button class="ghost" id="selCancel">Abbrechen</button><button class="pri" id="selPdf" style="flex:2">PDF aus 0 Projekten</button></div></div>
+    <div id="selBar"><button class="ghost" id="selCancel" aria-label="Abbrechen">✕</button><button class="pri" id="selPdf" style="flex:2">1 PDF aus 0 Projekten</button><button class="pri" id="selDbx" style="flex:2">☁ 0 PDFs in Dropbox</button></div></div>
 </section>
 
 <!-- Projekt -->
@@ -395,7 +400,7 @@ ul.news li { margin-bottom:6px; }
     <button id="torchBtn" aria-label="Blitz">⚡<small>Blitz</small></button>
     <button id="hdrBtn" aria-label="HDR">HDR<small>aus</small></button>
   </div>
-  <div class="hint" id="camHint">Tür und Fenster ganz ins Bild nehmen</div>
+  <div class="hint" id="camHint"></div>
   <div class="cambar">
     <button class="ghost" id="camGallery" style="background:#222">Galerie</button>
     <button id="shutter" aria-label="Auslösen"></button>
@@ -411,7 +416,7 @@ ul.news li { margin-bottom:6px; }
 <section class="screen" id="ed">
   <header class="top">
     <button class="ghost" id="edBack" style="font-size:15px;padding:10px 12px">‹ Projekt</button>
-    <h1 id="edTitle">Kz</h1>
+    <button class="roomchip" id="edTitle" aria-label="Raum ändern">Kz</button>
     <div class="laser" data-laser><i></i><span>Laser</span></div>
     <button id="arrowsBtn" class="ghost">Pfeile</button>
   </header>
@@ -568,7 +573,7 @@ ul.news li { margin-bottom:6px; }
       <div style="display:flex;gap:8px;margin-top:8px"><input id="dbxCode" placeholder="2. Code hier einfügen"><button class="pri" id="dbxOk">OK</button></div>
     </div>
     <label class="f">Dropbox-Ordner</label>
-    <div style="display:flex;gap:8px"><input id="dbxFolder" placeholder="/Maßblätter" style="flex:1"><button class="ghost" id="dbxBrowse" style="padding:0 14px">📁 Wählen</button></div>
+    <div style="display:flex;gap:8px"><input id="dbxFolder" placeholder="/VR Austausch" style="flex:1"><button class="ghost" id="dbxBrowse" style="padding:0 14px">📁 Wählen</button></div>
     <p class="mute" id="dbxFolderState" style="margin:4px 0 0;min-height:18px"></p>
     <label style="display:flex;gap:8px;align-items:center;margin:10px 0 0;font-size:14px"><input type="checkbox" id="dbxYear" style="width:auto"> Jahresordner automatisch</label>
     <p class="mute" id="dbxYearHint" style="margin:2px 0 0 26px"></p>

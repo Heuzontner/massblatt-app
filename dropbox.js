@@ -21,7 +21,8 @@ export const dropbox = {
   disconnect() { const c = load(); delete c.refresh; delete c.access; delete c.exp; delete c.verifier; save(c); },
 
   // Basisordner (immer mit führendem /, ohne / am Ende)
-  get base() { let f = (load().folder || '/Maßblätter').replace(/\/+$/, ''); if (!f.startsWith('/')) f = '/' + f; return f; },
+  get base() { let f = (load().folder || '/VR Austausch') // Standard: Manuels Austauschordner (09.11.), in ⚙ Cloud änderbar
+    .replace(/\/+$/, ''); if (!f.startsWith('/')) f = '/' + f; return f; },
   cleanSub(sub) { return (sub || '').replace(/[\\:*?"<>|]+/g, ' ').replace(/\/{2,}/g, '/').replace(/^\/+|\/+$/g, '').trim(); },
   pathFor(sub, name) { sub = this.cleanSub(sub); return this.base + (sub ? '/' + sub : '') + (name ? '/' + name : ''); },
 

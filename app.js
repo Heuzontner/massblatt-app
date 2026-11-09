@@ -8,9 +8,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.1.1';
+const VERSION = '3.1.2';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Keine Tür-/Fenster-Bezeichnung mehr – nur Höhe/Breite wie im Bosch-Maßblatt (die Pfeil-Vorlagen unter „Pfeile“ bleiben)', 'Rückgängig-Leiste im Foto-Editor jetzt oben – der Mülleimer bleibt frei', 'Übersichtsseite im PDF: Höhe × Breite je Pfeilpaar', 'Laser: wird beim ersten 📷 Foto angeboten und nach dem Abschalten von selbst wieder verbunden, sobald er an ist', 'Dropbox: Anmelde-Link ist sofort nach dem Eintippen des App-Keys bereit'];
+const NEWS = ['Auswählen → „☁ 3 PDFs in Dropbox“: jedes Projekt als eigenes PDF in den Ordner seines Kunden', 'Dropbox-Standardordner ist jetzt „/VR Austausch“ (⚙ Cloud, änderbar)', 'Raum im Editor ändern: Raumname oben antippen', 'Kamera ohne Tür/Fenster-Hinweis', 'Keine Tür-/Fenster-Bezeichnung mehr – nur Höhe/Breite (Vorlagen unter „Pfeile“ bleiben)', 'Rückgängig-Leiste im Editor oben – der Mülleimer bleibt frei', 'Laser: Angebot beim ersten 📷 Foto, verbindet nach dem Abschalten von selbst wieder', 'Dropbox: Anmelde-Link sofort nach dem Eintippen des App-Keys bereit'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -232,7 +232,53 @@ $('#trashChip').onclick = () => { showTrash = !showTrash; showArch = false; rend
 function setSelMode(on) { selMode = on; selIds.clear(); $('.plist').classList.toggle('sel', on); $('#selChip').classList.toggle('sel', on); updateSelBar(); renderHome(); }
 $('#selChip').onclick = () => setSelMode(!selMode);
 $('#selCancel').onclick = () => setSelMode(false);
-function updateSelBar() { $('#selPdf').textContent = `PDF aus ${selIds.size} Projekt${selIds.size === 1 ? '' : 'en'}`; $('#selPdf').disabled = !selIds.size; }
+function updateSelBar() {
+  const n = selIds.size;
+  $('#selPdf').textContent = `1 PDF aus ${n} Projekt${n === 1 ? '' : 'en'}`; $('#selPdf').disabled = !n;
+  // je Projekt ein eigenes PDF in den Ordner seines Kunden (Manuel 09.11.: „muss die Kunden trennen und richtig ablegen“)
+  $('#selDbx').textContent = `☁ ${n} PDF${n === 1 ? '' : 's'} in Dropbox`; $('#selDbx').disabled = !n; $('#selDbx').style.display = dropbox.connected ? '' : 'none';
+}
+$('#selDbx').onclick = async () => {
+  if (!selIds.size || !dropbox.connected) return;
+  const all = await liveProjects();
+  const sel = all.filter(p => selIds.has(p.id)).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'de', { numeric: true }));
+  const warn = [];
+  for (const p of sel) {
+    const shots = await db.shotsOf(p.id);
+    if (!shots.length) { warn.push(`${p.name || 'Ohne Namen'}: keine Fotos`); continue; }
+    for (const i of issuesFor(p, shots)) warn.push(`${p.name || 'Ohne Namen'}: ${i}`);
+  }
+  if (warn.length && !await confirmBox('Vor dem Hochladen bitte prüfen', 'Trotzdem', 'Abbrechen', 'ghost', warn.slice(0, 12).map(x => '• ' + x).join('\n') + (warn.length > 12 ? `\n… und ${warn.length - 12} weitere` : ''))) return;
+  const b = $('#selDbx'); b.disabled = true; $('#selPdf').disabled = true;
+  const byCust = new Map(), failed = []; let queued = 0, ok = 0;
+  for (let i = 0; i < sel.length; i++) {
+    const p = sel[i]; b.textContent = `☁ ${i + 1} von ${sel.length} …`;
+    try {
+      const shots = await db.shotsOf(p.id);
+      if (!shots.length) continue;
+      const file = await makePdfFileFor(p, shots);
+      const sub = await custFolderFor(p);
+      const meta = { projectId: p.id, photos: await photosFor(p, shots) };
+      let how, extra;
+      try {
+        if (!navigator.onLine) throw new TypeError('offline');
+        const r = await dbxUpload(file, sub, meta);
+        how = 'in Dropbox'; extra = { path: r.path, size: file.size, fotos: r.fotos }; ok++;
+        const k = dropbox.cleanSub(sub).split('/')[0] || 'ohne Kunde'; byCust.set(k, (byCust.get(k) || 0) + 1);
+      } catch (e) {
+        if (e instanceof TypeError || !navigator.onLine) { await queueAdd(file, sub, meta); how = 'in Dropbox (wartet auf Netz)'; extra = { size: file.size }; queued++; }
+        else { failed.push(`${p.name || fileBase(p)}: ${e.message}`); continue; }
+      }
+      p.locked = { at: Date.now(), how }; noteExport(p, how, extra); await db.put('projects', p);
+    } catch (e) { log('Sammel-Dropbox', p.name, e.message); failed.push(`${p.name || fileBase(p)}: ${e.message}`); }
+  }
+  setSelMode(false);
+  const parts = [];
+  if (ok) parts.push(`${ok} PDF${ok === 1 ? '' : 's'} in Dropbox ✓ (${[...byCust].map(([k, n]) => `${k}: ${n}`).join(', ')})`);
+  if (queued) parts.push(`${queued} wartet auf Netz`);
+  if (failed.length) await confirmBox(`${failed.length} nicht hochgeladen`, 'OK', '', 'ghost', failed.join('\n'));
+  if (parts.length) { toast(parts.join(' · '), 5000); if (ok) beep(true); }
+};
 $('#selPdf').onclick = async () => {
   if (!selIds.size) return;
   const all = await liveProjects();
@@ -950,6 +996,7 @@ function confirmBox(msg, yesLabel = 'Löschen', noLabel = 'Abbrechen', yesClass 
     const pd = bg.querySelector('p'); if (detail) pd.textContent = detail; else pd.remove();
     const [no, yes] = bg.querySelectorAll('button');
     no.textContent = noLabel; yes.textContent = yesLabel; yes.className = yesClass;
+    if (!noLabel) no.remove(); // nur ein Knopf (reine Mitteilung)
     no.onclick = () => { bg.remove(); res(false); }; yes.onclick = () => { bg.remove(); res(true); };
     document.body.appendChild(bg);
   });
@@ -1139,7 +1186,7 @@ window.addEventListener('devicemotion', e => {
 function setCamRoom(r) {
   S.room = r;
   $('#camRoom').textContent = r;
-  $('#camHint').textContent = r === 'Rh' ? 'Wand von Boden bis Decke ins Bild nehmen' : 'Tür und Fenster ganz ins Bild nehmen';
+  $('#camHint').textContent = r === 'Rh' ? 'Wand von Boden bis Decke ins Bild nehmen' : ''; // Tür/Fenster-Hinweis entfernt (Manuel 09.11.)
 }
 async function openCam(viaPop = false) {
   $('#camGrid').classList.toggle('on', !!opt.grid);
@@ -1362,6 +1409,13 @@ function buildChips() {
   });
 }
 const closeArr = () => $('#arrSheet').classList.remove('on');
+// Raum des aktuellen Fotos ändern – über den Raumknopf im Editor-Kopf (Manuel 09.11.) oder „Raum ändern“ im Pfeile-Blatt
+async function changeRoom() {
+  clearTimeout(finishing);
+  const r = await resolveRoom(await pickRoom(), S.shot);
+  if (r && S.shot) { S.shot.room = r; S.room = r; $('#edTitle').textContent = r; saveShot(); renderShots(); }
+}
+$('#edTitle').onclick = () => changeRoom();
 $('#arrowsBtn').onclick = () => { clearTimeout(finishing); buildChips(); $('#arrSheet').classList.add('on'); };
 $('#arrSheet').onclick = async e => {
   if (e.target.id === 'arrSheet') return closeArr();
@@ -1372,7 +1426,7 @@ $('#arrSheet').onclick = async e => {
   if (act === 'flip' && a) a.kind = a.kind === 'H' ? 'B' : 'H';
   if (act === 'clear' && a) { a.cm = null; a.time = null; }
   if (act === 'del' && a) { S.shot.arrows = S.shot.arrows.filter(x => x !== a); S.active = firstOpen(); }
-  if (act === 'room') { closeArr(); const r = await resolveRoom(await pickRoom(), S.shot); if (r) { S.shot.room = r; S.room = r; $('#edTitle').textContent = r; } }
+  if (act === 'room') { closeArr(); changeRoom(); }
   if (act === 'up' || act === 'down') {
     const i = S.shots.findIndex(x => x.id === S.shot.id);
     await moveShot(i, act === 'up' ? -1 : 1);
@@ -2658,7 +2712,7 @@ $('#sBig').onchange = () => { opt.big = $('#sBig').checked; saveOpt(); if (opt.b
 $('#sVoice').onchange = () => { opt.voice = $('#sVoice').checked; saveOpt(); if (opt.voice) say('Sprachansage ist an. Höhe, 199'); };
 const DEMO = [
   ['📁', 'Projekt anlegen', 'Unten „+ Neues Projekt“. Straße + Hausnummer (+ Geschoß, WG), PLZ und Ort eintragen – bekannte Straßen füllen PLZ/Ort selbst aus. Kunde antippen.'],
-  ['📷', 'Raum wählen & fotografieren', '„📷 Foto“ → Raum antippen (Kz, Sz, Wz …). Tür bzw. Fenster ganz ins Bild nehmen. Der waagrechte Strich wird gelb, wenn das Handy gerade ist.'],
+  ['📷', 'Raum wählen & fotografieren', '„📷 Foto“ → Raum antippen (Kz, Sz, Wz …). Der waagrechte Strich wird gelb, wenn das Handy gerade ist. Im Editor: Raumname oben antippen = Raum ändern.'],
   ['↕️', 'Pfeile setzen', 'Mit dem Finger über das Foto ziehen: senkrecht = Höhe, waagrecht = Breite. Enden verschieben (Lupe hilft), 🗑 löscht den ausgewählten Pfeil. Vorlagen unter „Pfeile“.'],
   ['📏', 'Messen', 'Oben „Laser“ verbinden (Android + Chrome) und am Laser messen – der Wert springt in den blinkenden Pfeil, dann zum nächsten. Ohne Laser: ⌨ antippen und eintippen.'],
   ['✅', 'Prüfen & weiter', 'Nach dem letzten Pfeil prüft die App die Maße und öffnet die Kamera fürs nächste Foto. „‹ Projekt“ führt zurück zur Fotoliste.'],
