@@ -19,13 +19,13 @@
 @font-face { font-family: "JetBrains Mono"; font-weight: 400; font-display: swap; src: url(vendor/fonts/jetbrains-mono-latin-400-normal.woff2) format("woff2"); }
 @font-face { font-family: "JetBrains Mono"; font-weight: 500; font-display: swap; src: url(vendor/fonts/jetbrains-mono-latin-500-normal.woff2) format("woff2"); }
 @media (prefers-color-scheme: light) {
-  :root:not(.force-dark) { --bg:#f6f8f7; --panel:#ffffff; --panel2:#eaeff2; --line:#d5dee3; --text:#16202a; --mute:#4b5a66; --acc:#0b7fc0; --acc-ink:#ffffff; --acc-soft:rgba(11,127,192,.12); --blue:#0b7fc0; --red:#c0392b; --green:#1f8a4c; --warn:#b7791f; --grid:rgba(19,120,180,.07); --shadow:0 14px 30px -24px rgba(10,40,60,.45); }
+  :root:not(.force-dark) { --bg:#f6f8f7; --panel:#ffffff; --panel2:#eaeff2; --line:#d5dee3; --text:#16202a; --mute:#4b5a66; --acc:#0b7fc0; --acc-ink:#ffffff; --acc-soft:rgba(11,127,192,.12); --blue:#0b7fc0; --red:#c0392b; --green:#1f8a4c; --warn:#b7791f; --grid:rgba(19,120,180,.07); --shadow:0 14px 30px -24px rgba(10,40,60,.45); --yellow:#f5c400; }
   :root:not(.force-dark) button.danger, :root:not(.force-dark) .shot .del { background:#fbe3e3; color:#a3221b; }
   :root:not(.force-dark) .laser { background:var(--panel2); }
   :root:not(.force-dark) #cam .camtop button, :root:not(.force-dark) #cam .cambar button.ghost { color:#fff; }
   :root:not(.force-dark) #toast, :root:not(.force-dark) #undoBar { background:#16202ae6; }
 }
-:root { --z:1; --bg:#12171c; --panel:#191f26; --panel2:#222b34; --line:#2c3742; --text:#e8eef2; --mute:#9fb0bc; --acc:#13aeff; --acc-ink:#06121b; --acc-soft:rgba(19,174,255,.14); --blue:#13aeff; --red:#ff5a5a; --green:#3cc47a; --warn:#e0a84a; --grid:rgba(19,174,255,.06); --shadow:0 14px 30px -24px rgba(0,0,0,.7);
+:root { --z:1; --bg:#12171c; --panel:#191f26; --panel2:#222b34; --line:#2c3742; --text:#e8eef2; --mute:#9fb0bc; --acc:#13aeff; --acc-ink:#06121b; --acc-soft:rgba(19,174,255,.14); --blue:#13aeff; --red:#ff5a5a; --green:#3cc47a; --warn:#e0a84a; --grid:rgba(19,174,255,.06); --shadow:0 14px 30px -24px rgba(0,0,0,.7); --yellow:#ffd400; --yellow-ink:#111;
   --display:"Space Grotesk", "Segoe UI", system-ui, sans-serif; --body:"IBM Plex Sans", "Noto Sans", "Segoe UI", system-ui, sans-serif; --mono:"JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace; --radius:6px; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 #home, #proj, .sheet, #pvw .pbar { zoom: var(--z); }
@@ -36,7 +36,8 @@ h1, h2, h3 { font-family:var(--display); letter-spacing:-0.01em; }
 .mono, .cur b, .shot .vals, .keypad button, #bigVal, .stat td, .evrow .d b, .today .trow .tt, .dbxrow .mute, pre.log, .custrow .t small { font-family:var(--mono); font-variant-numeric:tabular-nums; }
 button { font:inherit; color:inherit; border:0; border-radius:var(--radius); background:var(--panel2); padding:12px 14px; cursor:pointer; }
 button:active { filter:brightness(1.3); }
-button.pri { background:var(--acc); color:var(--acc-ink); font-weight:600; }
+/* Hauptknöpfe bleiben gelb wie bisher (Manuel 09.11.), der Rest im FloorplanAI-Blau */
+button.pri { background:var(--yellow); color:var(--yellow-ink); font-weight:700; }
 button.ghost { background:transparent; border:1px solid var(--line); }
 :focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
 button.danger { background:#3a1c1f; color:#ffb3b3; }
@@ -73,6 +74,7 @@ header.top h1.marke span { font-family:var(--mono); font-weight:400; font-size:1
 .shot .warn { color:var(--warn); font-size:13px; }
 .bottombar { z-index:10; position:fixed; left:0; right:0; bottom:0; display:flex; gap:10px; padding:10px 12px calc(env(safe-area-inset-bottom) + 10px); background:linear-gradient(transparent, var(--bg) 30%); }
 .bottombar button { flex:1; padding:16px; font-size:17px; }
+.bottombar.inline { position:static; padding:12px 0 0; background:none; max-width:none; margin:0; }
 .chips2 { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
 .chips2 button { padding:6px 12px; font-size:14px; border-radius:4px; border:1px solid var(--line); background:transparent; }
 .chips2 button.sel { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); }
@@ -114,10 +116,10 @@ details.card summary { font-weight:700; cursor:pointer; }
 #btnSettings .badge.on { display:block; }
 /* Mehrfachauswahl Projekte */
 .plist.sel .card { padding-left:10px; }
-.plist .card .cb { width:26px; height:26px; border-radius:4px; border:2px solid var(--mute); flex:none; display:none; align-items:center; justify-content:center; font-weight:700; color:var(--acc-ink); }
+.plist .card .cb { width:26px; height:26px; border-radius:4px; border:2px solid var(--mute); flex:none; display:none; align-items:center; justify-content:center; font-weight:700; color:var(--yellow-ink); }
 .plist.sel .card .cb { display:flex; }
-.plist .card.checked .cb { background:var(--acc); border-color:var(--acc); }
-.plist .card.checked { border-color:var(--acc); }
+.plist .card.checked .cb { background:var(--yellow); border-color:var(--yellow); }
+.plist .card.checked { border-color:var(--yellow); }
 .plist .card .arch { font-size:12px; color:var(--mute); margin-left:6px; }
 #selBar { display:none; }
 #selBar button { font-size:14px; padding:12px 8px; white-space:normal; line-height:1.2; }
@@ -145,7 +147,7 @@ details.card summary { font-weight:700; cursor:pointer; }
 #cam .camside { position:absolute; right:10px; top:40%; transform:translateY(-50%); display:flex; flex-direction:column; gap:12px; }
 #cam .camside button { width:56px; height:56px; border-radius:50%; background:rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.35); color:#fff; font-size:18px; font-weight:700; padding:0; display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1; }
 #cam .camside button small { font-size:9px; font-weight:400; margin-top:3px; }
-#cam .camside button.on { background:var(--acc); color:var(--acc-ink); border-color:var(--acc); }
+#cam .camside button.on { background:var(--yellow); color:var(--yellow-ink); border-color:var(--yellow); }
 #cam .camside button.off { opacity:.35; }
 #cam .busycap { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.35); color:#fff; font-size:18px; }
 #cam .busycap.on { display:flex; }
@@ -246,7 +248,7 @@ i.amp.ok, .ampel.ok i { background:var(--green); } i.amp.warn, .ampel.warn i { b
 #undoBar.top { bottom:auto; top:calc(env(safe-area-inset-top) + 64px); left:50%; right:auto; transform:translateX(-50%); width:min(calc(100% - 24px), 440px); }
 body:has(#undoBar.top.on) #toast { top:calc(env(safe-area-inset-top) + 124px); }
 #undoBar span { flex:1; }
-#undoBar button { background:var(--acc); color:var(--acc-ink); font-weight:600; padding:10px 14px; }
+#undoBar button { background:var(--yellow); color:var(--yellow-ink); font-weight:700; padding:10px 14px; }
 #lightA { position:absolute; right:10px; bottom:10px; width:54px; height:54px; border-radius:50%; background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.4); color:#ffd400; font-size:26px; padding:0; z-index:5; }
 #lightA.on { background:#ffd400; color:#111; }
 #eyeA { position:absolute; right:10px; bottom:74px; width:54px; height:54px; border-radius:50%; background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.4); color:#fff; font-size:24px; padding:0; z-index:5; }
@@ -261,13 +263,6 @@ body:has(#undoBar.top.on) #toast { top:calc(env(safe-area-inset-top) + 124px); }
 #bigVal.on { display:block; }
 .bigmode .cur b:not(.hint) { font-size:40px !important; }
 .bigmode .cur small { font-size:16px !important; }
-#horizon { position:absolute; left:0; right:0; top:45%; height:0; pointer-events:none; display:none; }
-#horizon.on { display:block; }
-#horizon i { position:absolute; top:0; height:1px; background:rgba(255,255,255,.85); box-shadow:0 0 2px #000; }
-#horizon .ref { width:34px; }
-#horizon .ref.l { left:calc(50% - 110px); } #horizon .ref.r { left:calc(50% + 76px); }
-#horizon .line { left:calc(50% - 70px); width:140px; transform-origin:50% 50%; }
-#horizon.level i { background:#ffd400; height:2px; }
 #pvw { position:fixed; inset:0; background:#333; z-index:90; display:none; flex-direction:column; }
 #pvw.on { display:flex; }
 #pvw .pbar { display:flex; align-items:center; gap:8px; padding:calc(env(safe-area-inset-top) + 8px) 12px 8px; background:var(--panel); }
@@ -386,8 +381,10 @@ ul.news li { margin-bottom:6px; }
         <button class="ghost" id="btnDupProj" style="flex:1">Duplizieren</button>
         <button class="ghost" id="btnArchive" style="flex:1">Archivieren</button>
         <button class="ghost" id="btnPin" style="flex:1">📌 Anheften</button>
-        <button class="danger" id="btnDelProj" style="flex:1 1 100%">Projekt löschen</button>
       </div>
+      <!-- solange die Projektdaten offen sind, sitzt die Leiste PDF/Mail/Dropbox/Foto hier (sonst verschwindet sie hinter der Tastatur, Manuel 09.11.) -->
+      <div id="actSlot"></div>
+      <div style="display:flex;margin-top:8px"><button class="danger" id="btnDelProj" style="flex:1">Projekt löschen</button></div>
     </details>
     <div class="ampel" id="ampel" style="display:none"><i></i><span></span></div>
     <div class="exprow" id="expRow" style="display:none"><span></span><b>›</b></div>
@@ -410,7 +407,6 @@ ul.news li { margin-bottom:6px; }
     <button class="roomchip" id="camRoom">Raum</button>
   </div>
   <div id="camGrid"></div>
-  <div id="horizon"><i class="ref l"></i><i class="line"></i><i class="ref r"></i></div>
   <div id="poi"></div>
   <div class="camside">
     <button id="torchBtn" aria-label="Blitz">⚡<small>Blitz</small></button>
@@ -650,6 +646,7 @@ ul.news li { margin-bottom:6px; }
     <button class="ghost" id="sPin" style="width:100%;margin-top:8px">🔑 PIN ändern (gilt auf allen Geräten)</button>
     <label class="f">Updates</label>
     <button class="ghost" id="sUpdate" style="width:100%;opacity:.5">⟳ Update installieren</button>
+    <button class="ghost" id="sNews" style="width:100%;margin-top:8px">📋 Was ist neu in dieser Version</button>
     <p class="mute" style="margin:6px 0 0">Noch ohne Funktion – neue Versionen kommen derzeit automatisch. Später wird ein Update erst nach Antippen eingespielt.</p>
     <label class="f">Handy weitergeben</label>
     <button class="danger" id="sWipe" style="width:100%">🗑 Alles löschen (Projekte, Fotos, Kunden, Anmeldungen)</button>

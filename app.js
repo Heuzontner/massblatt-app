@@ -8,9 +8,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.2.0';
+const VERSION = '3.2.1';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Neues Design wie FloorplanAI: Zeichenpapier hell / Anthrazit dunkel, Blau als Akzent, Schriften Space Grotesk · IBM Plex Sans · JetBrains Mono – PDF und gelbe Pfeile bleiben wie bei Bosch', 'Auswählen → „☁ 3 PDFs in Dropbox“: jedes Projekt als eigenes PDF in den Ordner seines Kunden', 'Raum im Editor ändern: Raumname oben antippen', 'Dropbox-Standardordner „/VR Austausch“'];
+const NEWS = ['Neues Design wie FloorplanAI: Zeichenpapier hell / Anthrazit dunkel, Blau als Akzent, Schriften Space Grotesk · IBM Plex Sans · JetBrains Mono – PDF und gelbe Pfeile bleiben wie bei Bosch', 'Leiste PDF/Mail/Dropbox/Foto steht bei offenen Projektdaten in der Karte über „Projekt löschen“ (verschwindet nicht mehr hinter der Tastatur)', 'Wasserwaage-Strich in der Kamera entfernt', 'KI-Erkennung: der Fehler „Cast(13)“ am Tablet ist behoben (die App nutzt jetzt die vollständige WASM-Laufzeit) – zum Testen in ⚙ System einschalten', 'Diese Neuigkeiten bleiben stehen, bis du sie schließt (✕) – und sind in ⚙ System jederzeit wieder abrufbar', 'Auswählen → „☁ 3 PDFs in Dropbox“: jedes Projekt als eigenes PDF in den Ordner seines Kunden', 'Raum im Editor ändern: Raumname oben antippen'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -476,7 +476,7 @@ async function openProject(id, isNew = false) {
   $('#pTel').value = p.telefon || ''; $('#pDatum').value = (p.datum || '').slice(0, 10);
   $('#pNote').value = p.note || ''; $('#pNoteRow').classList.toggle('has', !!p.note); $('#pNoteRow').classList.remove('open');
   renderCustChips();
-  $('#projDetails').open = isNew || !p.name || wide();
+  $('#projDetails').open = isNew || !p.name || wide(); placeActions();
   $('#projTitle').textContent = p.name || 'Neues Projekt';
   renderShots();
   lockUi(); navUi(); archiveUi(); pinUi(); ampelUi(); expUi();
@@ -1149,7 +1149,6 @@ async function resolveRoom(r, except = null) {
   return base + (Math.max(...nums) + 1);
 }
 $('#btnShoot').onclick = async () => {
-  askMotion();
   if (isLocked()) return;
   const r = await resolveRoom(await pickRoom()); if (!r) return;
   S.room = r; openCam();
@@ -1163,25 +1162,8 @@ async function offerLaser() {
   laserOffered = true;
   try { await laser.connect(); } catch (err) { laserUi(); if (err.name !== 'NotFoundError') log('Laser-Angebot: ' + err.message); }
 }
-// Waagrechter Strich wie bei der iPhone-Kamera: gelb, wenn das Handy gerade gehalten wird
+// (Der waagrechte Strich „Wasserwaage“ wurde am 09.11. auf Manuels Wunsch entfernt – am Tablet stimmte die Achse nicht, „bringt nichts“.)
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-let motionAsked = false;
-function askMotion() { // muss direkt in einem Tipp passieren (iPhone)
-  if (motionAsked) return; motionAsked = true;
-  try { if (window.DeviceMotionEvent && DeviceMotionEvent.requestPermission) DeviceMotionEvent.requestPermission().catch(() => { }); } catch (e) { }
-}
-let roll = 0;
-window.addEventListener('devicemotion', e => {
-  const g = e.accelerationIncludingGravity; if (!g || g.x == null) return;
-  const t = isIOS ? Math.atan2(g.x, -g.y) : Math.atan2(-g.x, g.y);
-  roll = roll * 0.7 + (t * 180 / Math.PI) * 0.3;
-  if (!$('#cam').classList.contains('on')) return;
-  const h = $('#horizon'); h.classList.add('on');
-  const lvl = Math.abs(roll) < 1;
-  h.classList.toggle('level', lvl);
-  h.querySelector('.line').style.transform = `rotate(${lvl ? 0 : -roll}deg)`;
-  h.style.opacity = Math.abs(roll) > 30 ? 0 : 1;
-});
 // Raum + Hinweis immer gemeinsam setzen (Raumhöhe ↔ Türen/Fenster)
 function setCamRoom(r) {
   S.room = r;
@@ -1993,8 +1975,15 @@ function lockUi() {
   $('#proj').classList.toggle('locked', !!l);
   $('#lockBar').style.display = l ? 'flex' : 'none';
   if (l) $('#lockTxt').textContent = `🔒 Gesperrt – ${l.how} am ${new Date(l.at).toLocaleDateString('de-AT')} ${new Date(l.at).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })}`;
-  $$('#projDetails input, #projDetails button, #custChips button').forEach(e => { if (!['btnExpProj', 'btnDupProj', 'btnArchive'].includes(e.id) && !e.closest('#navBtn')) e.disabled = !!l; });
+  $$('#projDetails input, #projDetails button, #custChips button').forEach(e => { if (!['btnExpProj', 'btnDupProj', 'btnArchive'].includes(e.id) && !e.closest('#navBtn') && !e.closest('.bottombar')) e.disabled = !!l; });
 }
+// Leiste PDF/Mail/Dropbox/Foto: bei offenen Projektdaten in die Karte (über „Projekt löschen“), sonst fix unten
+function placeActions() {
+  const bar = $('#proj .bottombar'), open = $('#projDetails').open;
+  if (open && bar.parentElement !== $('#actSlot')) { $('#actSlot').appendChild(bar); bar.classList.add('inline'); }
+  else if (!open && bar.parentElement === $('#actSlot')) { $('#proj').appendChild(bar); bar.classList.remove('inline'); }
+}
+$('#projDetails').addEventListener('toggle', placeActions);
 $('#unlockBtn').onclick = async () => { delete S.project.locked; await db.put('projects', S.project); lockUi(); toast('Entsperrt'); };
 const isLocked = () => { if (S.project && S.project.locked) { toast('Projekt ist gesperrt (exportiert) – oben „Entsperren“'); return true; } return false; };
 
@@ -2712,7 +2701,7 @@ $('#sBig').onchange = () => { opt.big = $('#sBig').checked; saveOpt(); if (opt.b
 $('#sVoice').onchange = () => { opt.voice = $('#sVoice').checked; saveOpt(); if (opt.voice) say('Sprachansage ist an. Höhe, 199'); };
 const DEMO = [
   ['📁', 'Projekt anlegen', 'Unten „+ Neues Projekt“. Straße + Hausnummer (+ Geschoß, WG), PLZ und Ort eintragen – bekannte Straßen füllen PLZ/Ort selbst aus. Kunde antippen.'],
-  ['📷', 'Raum wählen & fotografieren', '„📷 Foto“ → Raum antippen (Kz, Sz, Wz …). Der waagrechte Strich wird gelb, wenn das Handy gerade ist. Im Editor: Raumname oben antippen = Raum ändern.'],
+  ['📷', 'Raum wählen & fotografieren', '„📷 Foto“ → Raum antippen (Kz, Sz, Wz …), Tür bzw. Fenster fotografieren. Im Editor: Raumname oben antippen = Raum ändern.'],
   ['↕️', 'Pfeile setzen', 'Mit dem Finger über das Foto ziehen: senkrecht = Höhe, waagrecht = Breite. Enden verschieben (Lupe hilft), 🗑 löscht den ausgewählten Pfeil. Vorlagen unter „Pfeile“.'],
   ['📏', 'Messen', 'Oben „Laser“ verbinden (Android + Chrome) und am Laser messen – der Wert springt in den blinkenden Pfeil, dann zum nächsten. Ohne Laser: ⌨ antippen und eintippen.'],
   ['✅', 'Prüfen & weiter', 'Nach dem letzten Pfeil prüft die App die Maße und öffnet die Kamera fürs nächste Foto. „‹ Projekt“ führt zurück zur Fotoliste.'],
@@ -3206,23 +3195,34 @@ function askPin() {
   });
 }
 
-function infoBox(title, lines, btn = 'OK') {
+// Mitteilungsblatt: bleibt stehen, bis es mit ✕ oder dem Knopf geschlossen wird (kein Zeitlimit, kein Schließen durch Tipp daneben)
+function infoBox(title, lines, btn = 'OK', onClose = null) {
   return new Promise(res => {
-    const bg = document.createElement('div'); bg.className = 'sheet-bg on';
-    bg.innerHTML = `<div class="sheet"><h2></h2><ul class="news"></ul><button class="pri" style="width:100%;margin-top:12px" data-close></button></div>`;
+    const bg = document.createElement('div'); bg.className = 'sheet-bg on'; bg.dataset.info = '1';
+    bg.innerHTML = `<div class="sheet"><div style="display:flex;align-items:center;gap:8px"><h2 style="flex:1;margin:0"></h2><button class="ghost" data-x aria-label="Schließen" style="padding:6px 12px;font-size:18px">✕</button></div><ul class="news" style="margin-top:10px"></ul><button class="pri" style="width:100%;margin-top:12px" data-close></button></div>`;
     bg.querySelector('h2').textContent = title;
     const ul = bg.querySelector('ul'); for (const l of lines) { const li = document.createElement('li'); li.textContent = l; ul.appendChild(li); }
-    const b = bg.querySelector('[data-close]'); b.textContent = btn; b.onclick = () => { bg.remove(); res(true); };
+    const done = () => { bg.remove(); if (onClose) onClose(); res(true); };
+    const b = bg.querySelector('[data-close]'); b.textContent = btn; b.onclick = done; bg.querySelector('[data-x]').onclick = done;
     document.body.appendChild(bg);
   });
 }
+// „Neu in Version …“ nach einem Update: gilt erst als gelesen, wenn Manuel es schließt (Manuel 09.11.: „stehen bleiben, bis ich es wegdrücke“).
+// Lädt die App zwischendurch neu (zweites Update, Service Worker), kommt es danach wieder.
+const WAS_INSTALLED = (() => { try { return !!localStorage.getItem('mb_unlock'); } catch (e) { return false; } })(); // vor der ersten PIN-Eingabe gemerkt
 function whatsNew() {
-  let seen = null, installed = false;
-  try { seen = localStorage.getItem('mb_seenV'); installed = !!localStorage.getItem('mb_unlock'); localStorage.setItem('mb_seenV', VERSION); } catch (e) { return; }
+  let seen = null;
+  try { seen = localStorage.getItem('mb_seenV'); } catch (e) { return; }
   if (seen === VERSION) return;
-  if (!seen && !installed) return; // Erstinstallation: nichts anzeigen
-  setTimeout(() => infoBox('Neu in Version ' + VERSION, NEWS, 'Alles klar'), 900);
+  if (!seen && !WAS_INSTALLED) { try { localStorage.setItem('mb_seenV', VERSION); } catch (e) { } return; } // Erstinstallation: nichts anzeigen
+  setTimeout(() => showNews(() => { try { localStorage.setItem('mb_seenV', VERSION); } catch (e) { } }), 900);
 }
+let newsOpen = false, reloadAfterNews = false;
+function showNews(onClose = null) {
+  if (newsOpen) return; newsOpen = true;
+  return infoBox('Neu in Version ' + VERSION, NEWS, 'Alles klar', () => { newsOpen = false; if (onClose) onClose(); if (reloadAfterNews) location.reload(); });
+}
+$('#sNews').onclick = () => { $('#setClose').click(); showNews(); };
 
 // ---------------- Start ----------------
 (async () => {
@@ -3249,7 +3249,7 @@ function whatsNew() {
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => { });
     // neue Version übernommen → einmal neu laden
     let reloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloaded) { reloaded = true; location.reload(); } });
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloaded) return; reloaded = true; if (newsOpen) reloadAfterNews = true; else location.reload(); }); // nicht mitten im Lesen neu laden
   }
   window.__mb = { S, laser, view, nav, onMeasure, magnet, labelBoxes, grayOf: () => grayOf(), applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
 })();

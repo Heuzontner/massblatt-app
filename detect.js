@@ -13,12 +13,18 @@ export function modelState() {
 export function loadModel(onProgress) {
   if (detectorP) return detectorP;
   detectorP = (async () => {
-    // Bibliothek vom CDN (feste Version); der Service Worker hält sie danach offline bereit
+    // Bibliothek vom CDN (feste Version 4.3.2); der Service Worker hält sie danach offline bereit.
+    // (Bündeln im Repo scheitert an GitHubs Geheimnis-Scanner, der im Minifikat einen „API-Key“ zu sehen glaubt.)
     const T = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2/dist/transformers.min.js');
     T.env.allowLocalModels = false;
     T.env.useBrowserCache = true;
-    T.env.backends.onnx.wasm.wasmPaths = new URL('./vendor/', location.href).href;
+    // WICHTIG (09.11., Tablet): transformers.js lädt von sich aus die WebGPU-Variante „asyncify“ der ONNX-Laufzeit.
+    // Der hat die double-Kerne nicht, und OWL-ViT rechnet im Klassenkopf kurz in double →
+    // „Could not find an implementation for Cast(13) node with name '/class_head/Cast'“.
+    // Darum ausdrücklich die reine WASM-Variante laden (hat alle Kerne, ist auch nur halb so groß).
+    T.env.backends.onnx.wasm.wasmPaths = { mjs: new URL('./vendor/ort-wasm-simd-threaded.mjs', location.href).href, wasm: new URL('./vendor/ort-wasm-simd-threaded.wasm', location.href).href };
     T.env.backends.onnx.wasm.numThreads = 1;
+    T.env.backends.onnx.wasm.proxy = false;
     const files = {};
     const det = await T.pipeline('zero-shot-object-detection', MODEL, {
       dtype: 'q8',
