@@ -8,9 +8,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.1.2';
+const VERSION = '3.2.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Auswählen → „☁ 3 PDFs in Dropbox“: jedes Projekt als eigenes PDF in den Ordner seines Kunden', 'Dropbox-Standardordner ist jetzt „/VR Austausch“ (⚙ Cloud, änderbar)', 'Raum im Editor ändern: Raumname oben antippen', 'Kamera ohne Tür/Fenster-Hinweis', 'Keine Tür-/Fenster-Bezeichnung mehr – nur Höhe/Breite (Vorlagen unter „Pfeile“ bleiben)', 'Rückgängig-Leiste im Editor oben – der Mülleimer bleibt frei', 'Laser: Angebot beim ersten 📷 Foto, verbindet nach dem Abschalten von selbst wieder', 'Dropbox: Anmelde-Link sofort nach dem Eintippen des App-Keys bereit'];
+const NEWS = ['Neues Design wie FloorplanAI: Zeichenpapier hell / Anthrazit dunkel, Blau als Akzent, Schriften Space Grotesk · IBM Plex Sans · JetBrains Mono – PDF und gelbe Pfeile bleiben wie bei Bosch', 'Auswählen → „☁ 3 PDFs in Dropbox“: jedes Projekt als eigenes PDF in den Ordner seines Kunden', 'Raum im Editor ändern: Raumname oben antippen', 'Dropbox-Standardordner „/VR Austausch“'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
