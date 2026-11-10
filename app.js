@@ -8,9 +8,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.2.1';
+const VERSION = '3.3.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Neues Design wie FloorplanAI: Zeichenpapier hell / Anthrazit dunkel, Blau als Akzent, Schriften Space Grotesk · IBM Plex Sans · JetBrains Mono – PDF und gelbe Pfeile bleiben wie bei Bosch', 'Leiste PDF/Mail/Dropbox/Foto steht bei offenen Projektdaten in der Karte über „Projekt löschen“ (verschwindet nicht mehr hinter der Tastatur)', 'Wasserwaage-Strich in der Kamera entfernt', 'KI-Erkennung: der Fehler „Cast(13)“ am Tablet ist behoben (die App nutzt jetzt die vollständige WASM-Laufzeit) – zum Testen in ⚙ System einschalten', 'Diese Neuigkeiten bleiben stehen, bis du sie schließt (✕) – und sind in ⚙ System jederzeit wieder abrufbar', 'Auswählen → „☁ 3 PDFs in Dropbox“: jedes Projekt als eigenes PDF in den Ordner seines Kunden', 'Raum im Editor ändern: Raumname oben antippen'];
+const NEWS = ['Schnellablauf: Vorlage (Tür, Fenster, Tür + Fenster …) direkt in der Kamera wählen – die App merkt sich je Raum die letzte Wahl', 'Pfeil setzen mit zwei Tipps: Kante oben antippen, Kante unten antippen – der Pfeil springt hin (Ziehen geht weiterhin)', 'Große Anweisung im Editor: was als Nächstes zu tun ist', 'Hauptknöpfe wieder gelb, Leiste PDF/Mail/Dropbox/Foto über „Projekt löschen“, „Was ist neu“ bleibt bis zum Schließen'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
@@ -1169,6 +1169,33 @@ function setCamRoom(r) {
   S.room = r;
   $('#camRoom').textContent = r;
   $('#camHint').textContent = r === 'Rh' ? 'Wand von Boden bis Decke ins Bild nehmen' : ''; // Tür/Fenster-Hinweis entfernt (Manuel 09.11.)
+  camTplUi();
+}
+// Schnellablauf (3.3): Vorlage vor dem Foto in der Kamera wählen – zuletzt je Raum gemerkt (Einstellung roomTpl),
+// damit es meistens null Tipps sind (Kz → Fenster, Vz → Tür …). „Frei“ = ohne Pfeile, der erste Laserwert legt einen an.
+const CAM_TPLS = ['Tür', 'Fenster', 'Tür + Fenster', '2 Fenster', 'Tür + 2 Fenster', 'Balkontür + Fenster', 'Frei'];
+let roomTplCache = null;
+async function roomTpls() { if (!roomTplCache) roomTplCache = (await db.setting('roomTpl')) || {}; return roomTplCache; }
+async function rememberRoomTpl(room, tpl) {
+  if (!room || room === 'Rh' || !tpl || !CAM_TPLS.includes(tpl)) return;
+  const R = await roomTpls(); if (R[room] === tpl) return;
+  R[room] = tpl; await db.setting('roomTpl', R);
+}
+async function camTplUi() {
+  const row = $('#camTpl'); if (!row) return;
+  const r = S.room;
+  row.classList.toggle('off', r === 'Rh');
+  if (r === 'Rh') return; // Raumhöhe hat ihre feste Vorlage; die gemerkte Wahl des vorigen Raums bleibt unberührt
+  const R = await roomTpls();
+  if (!S.camTplRoom || S.camTplRoom !== r) { S.camTpl = R[r] || 'Tür'; S.camTplRoom = r; }
+  row.innerHTML = '';
+  for (const k of CAM_TPLS) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = k; b.dataset.tpl = k;
+    if (k === S.camTpl) b.classList.add('sel');
+    b.onclick = () => { S.camTpl = k; rememberRoomTpl(r, k); camTplUi(); };
+    row.appendChild(b);
+  }
+  const sel = row.querySelector('.sel'); if (sel) sel.scrollIntoView({ inline: 'nearest', block: 'nearest' });
 }
 async function openCam(viaPop = false) {
   $('#camGrid').classList.toggle('on', !!opt.grid);
@@ -1342,7 +1369,7 @@ async function openEditor(shot, fresh = false) {
   photoImg = await blobToImg(shot.photo); grayImg = null; S.hideArrows = false; $('#eyeA').classList.remove('on');
   $('#lightA').classList.toggle('on', !!shot.orig);
   show('ed');
-  resetView(); ptrs.clear(); pinch = null; drag = null;
+  resetView(); ptrs.clear(); pinch = null; drag = null; clearPlacing();
   fitCanvas();
   buildChips();
   S.active = firstOpen();
@@ -1352,7 +1379,8 @@ async function openEditor(shot, fresh = false) {
   if (fresh) {
     if (shot.room === 'Rh') applyTemplate('Raumhöhe');
     else if (S.ai) runDetect();
-    else applyTemplate('Tür');
+    else if (S.camTpl === 'Frei') { setArrows([], 'Frei'); toast('Frei: Pfeil mit dem Finger aufziehen oder gleich messen', 2500); }
+    else applyTemplate(S.camTpl && TEMPLATES[S.camTpl] ? S.camTpl : 'Tür'); // Vorlage aus der Kamera-Chipzeile (3.3)
   }
 }
 
@@ -1509,7 +1537,13 @@ function updateCur() {
   estimateArrows();
   const a = activeArrow();
   const i = S.shot.arrows.indexOf(a);
-  $('#curLbl').textContent = a ? `${arrowName(a)}   (Pfeil ${i + 1} von ${S.shot.arrows.length})` : 'Kein Pfeil – oben „Pfeile“ antippen';
+  const lbl = $('#curLbl');
+  if (!a) { lbl.textContent = 'Kein Pfeil – oben „Pfeile“ antippen oder mit dem Finger aufziehen'; lbl.classList.remove('step'); }
+  else if (a.cm == null) { // Schnellablauf: sagen, was als Nächstes zu tun ist
+    const where = a.el === 'Raumhöhe' ? 'Boden + Decke' : a.kind === 'H' ? 'oben + unten' : 'links + rechts';
+    lbl.textContent = `${arrowName(a)} ${i + 1}/${S.shot.arrows.length}: ${placing ? 'jetzt das Ende antippen' : `Kante ${where} antippen (oder ziehen), dann messen`}`;
+    lbl.classList.add('step');
+  } else { lbl.textContent = `${arrowName(a)}   (Pfeil ${i + 1} von ${S.shot.arrows.length}) ✓`; lbl.classList.remove('step'); }
   const v = $('#curVal');
   const num = a && (kb.on || a.cm != null);
   v.classList.toggle('hint', !num);
@@ -1532,6 +1566,7 @@ function setValue(cm, mm) {
     }
   }
   S.manualPick = false;
+  if (placing && placing.id === a.id) clearPlacing(); // halb gesetzter Pfeil bekommt den Wert – Setz-Modus verfällt
   if (!a) { a = newArrow(); S.shot.arrows.push(a); } // noch gar kein Pfeil → neuen anlegen
   const est = a.est; delete a.est;
   a.cm = cm; a.mm = mm != null ? mm : cm * 10; a.time = new Date().toISOString();
@@ -1618,6 +1653,7 @@ async function finishShot(auto) {
   const go = async () => {
     await saveShot();
     learnFromShot(S.shot).catch(() => { });
+    if (S.shot.tpl) rememberRoomTpl(S.shot.room, S.shot.tpl).then(() => { S.camTplRoom = null; }).catch(() => { });
     if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
     openCam();
   };
@@ -1713,6 +1749,39 @@ function clampView() {
 let drag = null, pinch = null;
 const ptrs = new Map();
 let lastTap = { t: 0, x: 0, y: 0 };
+// Setz-Modus (3.3, Manuel: „super einfacher Workflow“): freie Stelle antippen = Anfang des aktiven Pfeils merken,
+// zweiter Tipp = Ende → der Pfeil springt hin (senkrecht/waagrecht je nach Art, Kanten-Magnet an beiden Enden).
+// Ziehen bleibt wie gehabt möglich; Doppeltipp an derselben Stelle bleibt Zoom.
+let placing = null, placingT = 0, tapT = 0;
+function clearPlacing() { placing = null; clearTimeout(placingT); $('#placeMark').style.display = 'none'; }
+function showPlaceMark(x, y) {
+  const r = cv.getBoundingClientRect(), st = stage.getBoundingClientRect(), m = $('#placeMark');
+  m.style.left = (r.left - st.left + x * r.width) + 'px'; m.style.top = (r.top - st.top + y * r.height) + 'px'; m.style.display = 'block';
+}
+function placeTap(x, y) {
+  const a = activeArrow(); if (!a) return false;
+  if (!placing) {
+    placing = { id: a.id, x, y }; showPlaceMark(x, y); updateCur();
+    clearTimeout(placingT); placingT = setTimeout(() => { clearPlacing(); updateCur(); }, 20000);
+    try { navigator.vibrate && navigator.vibrate(10); } catch (e) { }
+    return true;
+  }
+  const p = placing; clearPlacing();
+  if (p.id !== a.id) return placeTap(x, y); // inzwischen anderer Pfeil gewählt → neu anfangen
+  const r = cv.getBoundingClientRect();
+  const dx = (x - p.x) * r.width, dy = (y - p.y) * r.height;
+  if (Math.hypot(dx, dy) < 25) { updateCur(); return true; } // zweimal dieselbe Stelle: nichts
+  const cl = v => Math.min(1, Math.max(0, v));
+  if (a.el !== 'Maß' && a.el) { // Vorlagen-Pfeil: Richtung bleibt (Höhe senkrecht, Breite waagrecht)
+    if (a.kind === 'H') { const mx = cl((p.x + x) / 2); a.x1 = a.x2 = mx; a.y1 = cl(p.y); a.y2 = cl(y); }
+    else { const my = cl((p.y + y) / 2); a.y1 = a.y2 = my; a.x1 = cl(p.x); a.x2 = cl(x); }
+  } else { a.x1 = cl(p.x); a.y1 = cl(p.y); a.x2 = cl(x); a.y2 = cl(y); a.kind = Math.abs(dy) > Math.abs(dx) ? 'H' : 'B'; snapArrow(a, 'p2'); }
+  magnet(a, 'both');
+  if ((a.kind === 'H' && a.y1 < a.y2) || (a.kind === 'B' && a.x1 > a.x2)) [a.x1, a.y1, a.x2, a.y2] = [a.x2, a.y2, a.x1, a.y1];
+  try { navigator.vibrate && navigator.vibrate(15); } catch (e) { }
+  saveShot(); updateCur();
+  return true;
+}
 const stage = $('#stage');
 const inStage = e => { const s2 = stage.getBoundingClientRect(); return { x: e.clientX - s2.left - s2.width / 2, y: e.clientY - s2.top - s2.height / 2 }; };
 
@@ -1758,6 +1827,7 @@ stage.addEventListener('pointerdown', e => {
     best = { a, k: 'p2', isNew: true, prev: S.active };
   }
   const wasActive = S.active === best.a.id;
+  if (!best.isNew && placing && placing.id !== best.a.id) clearPlacing(); // anderer Pfeil angetippt → Setz-Modus verwerfen
   S.active = best.a.id; S.manualPick = !best.isNew; kb.buf = ''; updateCur();
   drag = { ...best, x, y, o: { ...best.a }, sx: e.clientX, sy: e.clientY, moved: false, wasActive };
 });
@@ -1819,15 +1889,20 @@ const endDrag = e => {
   if (d.isNew) {
     const r = cv.getBoundingClientRect();
     const dx = (a.x2 - a.x1) * r.width, dy = (a.y2 - a.y1) * r.height;
-    if (Math.hypot(dx, dy) < 25) { // nur getippt → kein Pfeil; Doppeltipp = Zoom rein/raus
+    if (Math.hypot(dx, dy) < 25) { // nur getippt → kein neuer Pfeil; Doppeltipp = Zoom rein/raus, sonst Setz-Modus
       S.shot.arrows = S.shot.arrows.filter(x => x !== a); S.active = d.prev || firstOpen();
       const now = Date.now();
       if (e && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
+        clearTimeout(tapT); clearPlacing(); // Doppeltipp: kein Setzen, sondern Zoom
         if (view.s > 1) resetView();
         else { const m = inStage(e); view.s = 2.5; view.tx = -m.x * 1.5; view.ty = -m.y * 1.5; clampView(); applyView(); }
         lastTap = { t: 0, x: 0, y: 0 };
-      } else lastTap = { t: now, x: e ? e.clientX : 0, y: e ? e.clientY : 0 };
+      } else {
+        lastTap = { t: now, x: e ? e.clientX : 0, y: e ? e.clientY : 0 };
+        clearTimeout(tapT); tapT = setTimeout(() => placeTap(d.x, d.y), 330); // erst nach dem Doppeltipp-Fenster setzen
+      }
     } else {
+      clearPlacing();
       a.kind = Math.abs(dy) > Math.abs(dx) ? 'H' : 'B';
       snapArrow(a, 'p2'); magnet(a, 'both');
       // Pfeile von unten nach oben bzw. links nach rechts speichern
