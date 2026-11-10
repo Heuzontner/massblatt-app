@@ -140,6 +140,8 @@ details.card summary { font-weight:700; cursor:pointer; }
 #cam { background:#000; }
 #cam video { flex:1; width:100%; object-fit:cover; min-height:0; }
 #cam .camtop { position:absolute; top:0; left:0; right:0; display:flex; gap:8px; align-items:center; padding:calc(env(safe-area-inset-top) + 10px) 12px 10px; background:linear-gradient(rgba(0,0,0,.6), transparent); }
+#cam .camtop .camlaser { font-size:14px; padding:11px 14px; background:rgba(0,0,0,.6); color:#fff; border:1px solid #ffd400; border-radius:6px; }
+#cam .camtop .camlaser.ok { border-color:rgba(255,255,255,.3); }
 #cam .camtop .roomchip { font-size:20px; font-weight:700; background:rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.3); }
 /* Raumknopf im Editor-Kopf: antippen = Raum ändern */
 #ed header.top #edTitle { flex:1; min-width:0; text-align:left; font-size:18px; font-weight:700; font-family:var(--display); padding:8px 12px; background:var(--acc-soft); border:1px solid var(--line); border-radius:var(--radius); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -349,6 +351,7 @@ ul.news li { margin-bottom:6px; }
   #ed .keypad { width:320px; }
   #offline { max-width:1100px; margin:0 auto; }
 }
+#edDone.next { font-size:17px; padding:16px 14px; white-space:nowrap; }
 </style>
 </head>
 <body>
@@ -437,6 +440,7 @@ ul.news li { margin-bottom:6px; }
   <div class="camtop">
     <button class="ghost" id="camBack" style="background:rgba(0,0,0,.5)">‹ Fertig</button>
     <div style="flex:1"></div>
+    <div class="laser camlaser" data-laser><i></i><span>Laser verbinden</span></div>
     <button class="roomchip" id="camRoom">Raum</button>
   </div>
   <div id="camGrid"></div>
@@ -451,7 +455,7 @@ ul.news li { margin-bottom:6px; }
   <div class="cambar">
     <button class="ghost" id="camGallery" style="background:#222">Galerie</button>
     <button id="shutter" aria-label="Auslösen"></button>
-    <div class="laser" data-laser style="background:#222"><i></i><span>Laser</span></div>
+    <div style="width:74px"></div>
   </div>
   <div class="busycap" id="capBusy">HDR: ruhig halten …</div>
   <div id="camFallback"><div>Die Kamera-Vorschau ist hier nicht verfügbar.</div><button class="pri" id="camFallbackBtn" style="font-size:18px;padding:16px 22px">📷 Handy-Kamera öffnen</button><div class="mute" style="color:#bbb">oder unten „Galerie“ für ein vorhandenes Foto</div></div>
@@ -622,8 +626,7 @@ ul.news li { margin-bottom:6px; }
     <label class="f">Dropbox-Ordner</label>
     <div style="display:flex;gap:8px"><input id="dbxFolder" placeholder="/VR Austausch" style="flex:1"><button class="ghost" id="dbxBrowse" style="padding:0 14px">📁 Wählen</button></div>
     <p class="mute" id="dbxFolderState" style="margin:4px 0 0;min-height:18px"></p>
-    <label style="display:flex;gap:8px;align-items:center;margin:10px 0 0;font-size:14px"><input type="checkbox" id="dbxYear" style="width:auto"> Jahresordner automatisch</label>
-    <p class="mute" id="dbxYearHint" style="margin:2px 0 0 26px"></p>
+    <p class="mute" id="dbxYearHint" style="margin:6px 0 0"></p>
     <p class="mute" style="margin:8px 0 0">Gleicher Dateiname → Versionen „_v2“, „_v3“ … (nicht „(1)“). Fotos je Kunde unter ⚙ Kunden einschaltbar.</p>
     <div style="display:flex;gap:8px;margin-top:8px"><button class="ghost" id="dbxLogBtn" style="flex:1">Verlauf</button><button class="ghost" id="dbxOff" style="flex:1">Dropbox trennen</button></div>
     <label class="f" style="margin-top:22px">Google Kalender (Termine → Projekt mit Adresse)</label>
@@ -655,8 +658,8 @@ ul.news li { margin-bottom:6px; }
     <p class="mute" id="sAiState"></p>
     <button class="ghost" id="sAiLoad">KI-Modell jetzt laden (14 MB)</button>
     <label class="f">Erkennung verbessern</label>
-    <p class="mute" style="margin:0 0 6px">Sendet deine fertig gemessenen Fotos samt Pfeil-Positionen in die Dropbox (Ordner „Massblatt Training“). Damit lernt die Erkennung deine Türen und Fenster.</p>
-    <button class="pri" id="sTrain" style="width:100%">📤 Trainingsdaten senden</button>
+    <p class="mute" style="margin:0 0 6px">Fertig gemessene Fotos gehen samt Pfeil-Positionen bei jedem Dropbox-Upload von selbst in den Ordner „Massblatt Training“. Damit lernt die Erkennung deine Türen und Fenster.</p>
+    <button class="ghost" id="sTrain" style="width:100%">📤 Jetzt senden</button>
     <p class="mute" id="sTrainState" style="margin:4px 0 0"></p>
     <button class="ghost" id="sStats" style="width:100%;margin-top:14px">📊 Statistik</button>
     <label class="f">Speicher</label>

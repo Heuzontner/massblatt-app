@@ -9,9 +9,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.6.2';
+const VERSION = '3.7.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Dropbox: PDFs liegen jetzt in „Massblätter/Kunde“ (z. B. VR Austausch / Massblätter / WAG), ohne Jahresordner', 'Neues App-Symbol: FPM (Floorplan AI Massblatt) mit gelbem Maßpfeil. Am Startbildschirm erscheint es nach dem Neu-Installieren der App', 'Die App heißt jetzt „Floorplan AI Massblatt“ – by VIEWPORT 360°', 'Neu in ⚙ System: „Keine Pfeile – selbst ziehen“. Das Foto startet leer, du ziehst jeden Pfeil mit dem Finger von Kante zu Kante und drückst am Ende „✓ Fertig“', 'Pfeil mit zwei Tipps setzen geht jetzt zuverlässig: auch schnell hintereinander und auch dort, wo schon ein Pfeil liegt', '📷↻ Foto neu fragt jetzt immer nach', 'PDF-Deckblatt: in der Kopfzeile steht der Projektname dabei', 'Foto verwackelt? Neuer Knopf 📷↻ rechts unten im Foto (über 👁): nimmt das Foto sofort neu auf – gleicher Raum, ohne Umweg übers Projekt', 'Erkennung vorerst AUS (traf zu oft daneben) – es starten wieder zwei Pfeile zum Selbersetzen. Einschalten zum Testen: ⚙ System', 'Neu in ⚙ System: „📤 Trainingsdaten senden“ legt deine gemessenen Fotos + Pfeile in die Dropbox (Ordner „Massblatt Training“) – damit wird die Erkennung auf deine Türen und Fenster trainiert', 'Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
+const NEWS = ['Trainingsfotos gehen jetzt bei jedem Dropbox-Upload von selbst mit; in ⚙ System steht, wie viele schon gesendet sind', 'Laser direkt in der Kamera verbinden: Feld „Laser verbinden“ oben im Kamerabild', '„Keine Pfeile“: nach dem Messen großer Knopf „✓ Fertig – nächstes Foto“', 'Rückfrage vor PDF/Dropbox nur noch, wenn Raumhöhe oder Eingangstür fehlt', 'Jahresordner-Option entfernt; überall „Massblatt“', 'Dropbox: PDFs liegen jetzt in „Massblätter/Kunde“ (z. B. VR Austausch / Massblätter / WAG), ohne Jahresordner', 'Neues App-Symbol: FPM (Floorplan AI Massblatt) mit gelbem Maßpfeil. Am Startbildschirm erscheint es nach dem Neu-Installieren der App', 'Die App heißt jetzt „Floorplan AI Massblatt“ – by VIEWPORT 360°', 'Neu in ⚙ System: „Keine Pfeile – selbst ziehen“. Das Foto startet leer, du ziehst jeden Pfeil mit dem Finger von Kante zu Kante und drückst am Ende „✓ Fertig“', 'Pfeil mit zwei Tipps setzen geht jetzt zuverlässig: auch schnell hintereinander und auch dort, wo schon ein Pfeil liegt', '📷↻ Foto neu fragt jetzt immer nach', 'PDF-Deckblatt: in der Kopfzeile steht der Projektname dabei', 'Foto verwackelt? Neuer Knopf 📷↻ rechts unten im Foto (über 👁): nimmt das Foto sofort neu auf – gleicher Raum, ohne Umweg übers Projekt', 'Erkennung vorerst AUS (traf zu oft daneben) – es starten wieder zwei Pfeile zum Selbersetzen. Einschalten zum Testen: ⚙ System', 'Neu in ⚙ System: „📤 Trainingsdaten senden“ legt deine gemessenen Fotos + Pfeile in die Dropbox (Ordner „Massblatt Training“) – damit wird die Erkennung auf deine Türen und Fenster trainiert', 'Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -146,7 +146,8 @@ function laserUi() {
   $$('[data-laser]').forEach(el => {
     el.classList.toggle('ok', st === 'verbunden');
     el.classList.toggle('busy', st === 'suche' || st === 'verbinde' || st === 'getrennt');
-    el.querySelector('span').textContent = st === 'verbunden' ? 'Laser ✓' + (laser.battery != null ? ` ${laser.battery}%` : '') : st === 'aus' ? 'Laser' : st === 'getrennt' ? 'Laser …' : 'Verbinde …';
+    const big = el.classList.contains('camlaser');
+    el.querySelector('span').textContent = st === 'verbunden' ? 'Laser ✓' + (laser.battery != null ? ` ${laser.battery}%` : '') : st === 'aus' ? (big ? 'Laser verbinden' : 'Laser') : st === 'getrennt' ? 'Laser …' : 'Verbinde …';
   });
   if ($('#setSheet').classList.contains('on')) { laserListUi(); laserAutoHint(); }
 }
@@ -261,7 +262,7 @@ $('#selDbx').onclick = async () => {
   for (const p of sel) {
     const shots = await db.shotsOf(p.id);
     if (!shots.length) { warn.push(`${p.name || 'Ohne Namen'}: keine Fotos`); continue; }
-    for (const i of issuesFor(p, shots)) warn.push(`${p.name || 'Ohne Namen'}: ${i}`);
+    for (const i of exportIssues(p, shots)) warn.push(`${p.name || 'Ohne Namen'}: ${i}`);
   }
   if (warn.length && !await confirmBox('Vor dem Hochladen bitte prüfen', 'Trotzdem', 'Abbrechen', 'ghost', warn.slice(0, 12).map(x => '• ' + x).join('\n') + (warn.length > 12 ? `\n… und ${warn.length - 12} weitere` : ''))) return;
   const b = $('#selDbx'); b.disabled = true; $('#selPdf').disabled = true;
@@ -409,6 +410,8 @@ function issuesFor(p, shots) {
   for (const sh of shots) for (const x of shotIssues(sh)) out.push(`${sh.room}: ${x.m}`);
   return out;
 }
+// Rückfrage vor PDF/Dropbox/Mail nur, wenn Raumhöhe oder Eingangstür fehlt (Manuel 10.11.) – alles andere zeigt die Ampel
+function exportIssues(p, shots) { return issuesFor(p, shots).filter(x => /^Raumhöhe \(Rh\) fehlt|^Eingangstür \(Eg\) fehlt/.test(x)); }
 function ampel(p, shots) {
   const iss = issuesFor(p, shots);
   if (!iss.length) return { lvl: 'ok', text: 'Vollständig' };
@@ -1541,8 +1544,10 @@ function updateCur() {
     lbl.textContent = `${arrowName(a)} ${i + 1}/${S.shot.arrows.length}: ${placing ? 'jetzt das Ende antippen' : `${where} antippen, dann messen`}`;
     lbl.classList.add('step');
   } else if (placing && !placing.id) { lbl.textContent = 'jetzt das Ende antippen'; lbl.classList.add('step'); }
-  else if (S.arrowMode === 'none' && S.shot.room !== 'Rh' && !S.shot.arrows.some(x => x.cm == null)) { lbl.textContent = `${arrowName(a)} ✓ – nächsten Pfeil ziehen oder „✓ Fertig“`; lbl.classList.remove('step'); }
+  else if (S.arrowMode === 'none' && S.shot.room !== 'Rh' && !S.shot.arrows.some(x => x.cm == null)) { lbl.textContent = `${arrowName(a)} ✓ – weiteren Pfeil ziehen oder Fertig`; lbl.classList.remove('step'); }
   else { lbl.textContent = `${arrowName(a)}   (Pfeil ${i + 1} von ${S.shot.arrows.length}) ✓`; lbl.classList.remove('step'); }
+  const allDone = S.arrowMode === 'none' && S.shot.room !== 'Rh' && S.shot.arrows.length > 0 && !S.shot.arrows.some(x => x.cm == null);
+  $('#edDone').classList.toggle('next', allDone); $('#edDone').textContent = allDone ? '✓ Fertig – nächstes Foto' : '✓ Fertig';
   const v = $('#curVal');
   const num = a && (kb.on || a.cm != null);
   v.classList.toggle('hint', !num);
@@ -2013,7 +2018,7 @@ async function makePdfFileFor(p, allShots) {
 async function makeCombinedPdf(projects) {
   const { PDFDocument } = window.PDFLib;
   const merged = await PDFDocument.create();
-  merged.setProducer('VIEWPORT 360 Massblatt'); merged.setTitle('Maßblätter');
+  merged.setProducer('VIEWPORT 360 Massblatt'); merged.setTitle('Massblätter');
   for (const p of projects) {
     const shots = await db.shotsOf(p.id);
     const src = await PDFDocument.load(await pdfBytesFor(p, shots));
@@ -2021,7 +2026,7 @@ async function makeCombinedPdf(projects) {
     pages.forEach(pg => merged.addPage(pg));
   }
   const streets = [...new Set(projects.map(p => streetOnly(p.str) + (houseNo(p.str) ? ' ' + houseNo(p.str) : '')))];
-  const base = streets.length === 1 ? `${streets[0]} – ${projects.length} Wohnungen` : `Maßblätter – ${projects.length} Projekte`;
+  const base = streets.length === 1 ? `${streets[0]} – ${projects.length} Wohnungen` : `Massblätter – ${projects.length} Projekte`;
   return new File([await merged.save()], fileBase({ str: base }) + '.pdf', { type: 'application/pdf' });
 }
 // Dateiname = Projektname (Straße + Hausnummer, Geschoß, WG), z. B. "Kopernikusstrasse 22, 1.OG, WG 12.pdf"
@@ -2031,7 +2036,7 @@ function fileBase(p) {
 }
 function openCount() { return S.shots.reduce((n, s) => n + s.arrows.filter(a => a.cm == null).length, 0); }
 // Projekt-Check vor PDF/Dropbox/Mail: Raumhöhe, Eingangstür, unplausible oder fehlende Maße
-function projectIssues() { return issuesFor(S.project, S.shots); }
+function projectIssues() { return exportIssues(S.project, S.shots); }
 async function preExport(what) {
   if (!S.shots.length) { toast('Noch keine Fotos'); return false; }
   const iss = projectIssues();
@@ -2127,7 +2132,8 @@ $('#btnMail').onclick = async () => {
 // Dropbox: Unterordner je Kunde (+ Jahresordner, Idee 82), ohne Netz in die Warteschlange
 async function customerOf(p) { return p && p.kundeId && ((await db.setting('customers')) || []).find(x => x.id === p.kundeId) || null; }
 function withYear(sub, p) {
-  if (!dropbox.cfg.year) return sub;
+  return sub; // 3.7: Jahresordner entfernt (Manuel: nur …/Massblätter/Kunde)
+  // eslint-disable-next-line no-unreachable
   const d = p && p.datum ? new Date(p.datum) : new Date(); const y = isNaN(d) ? new Date().getFullYear() : d.getFullYear();
   return (sub ? sub + '/' : '') + y;
 }
@@ -2157,6 +2163,7 @@ async function dbxUpload(file, sub, meta = {}) {
       catch (e) { ferr = e.message; break; }
     }
   }
+  trainAuto(meta.projectId); // nicht abwarten
   await dbxLogAdd({ name: file.name, sub, size: file.size, ok: true, path, fotos, err: ferr ? `Fotos: ${ferr}` : '', projectId: meta.projectId || null });
   if (ferr) toast(`PDF hochgeladen, aber Fotos abgebrochen: ${ferr}`, 6000);
   return { path, fotos };
@@ -2249,7 +2256,7 @@ $('#imProjFile').onchange = async e => {
 // ---------------- Dropbox einrichten (⚙) ----------------
 async function dbxUi() {
   const c = dropbox.cfg;
-  $('#dbxKey').value = c.appKey || ''; $('#dbxFolder').value = c.folder || ''; $('#dbxYear').checked = !!c.year;
+  $('#dbxKey').value = c.appKey || ''; $('#dbxFolder').value = c.folder || '';
   const qn = ((await db.setting('dbxQueue')) || []).length;
   $('#dbxState').textContent = (dropbox.connected ? 'Verbunden ✓' : 'Nicht verbunden') + (qn ? ` · ${qn} PDF wartet auf Netz` : '');
   $('#dbxSetup').style.display = dropbox.connected ? 'none' : '';
@@ -2272,7 +2279,6 @@ function checkDbxFolder() {
     catch (e) { st.textContent = (e instanceof DbxError && e.missingScope) ? '? Keine Leserechte – Berechtigung files.metadata.read in der Dropbox-App-Konsole aktivieren' : '? Prüfung nicht möglich: ' + e.message; }
   }, 600);
 }
-$('#dbxYear').onchange = () => { dropbox.setYear($('#dbxYear').checked); dbxUi(); };
 // Ordner aus Liste wählen (Idee 79): durch die Dropbox blättern, neuen Ordner anlegen, übernehmen
 $('#dbxBrowse').onclick = () => dbxBrowser(dropbox.base);
 async function dbxBrowser(start) {
@@ -2297,7 +2303,7 @@ async function dbxBrowser(start) {
   };
   bg.querySelector('[data-up]').onclick = () => show(cur.split('/').slice(0, -1).join('/'));
   bg.querySelector('[data-new]').onclick = async () => {
-    const name = await promptBox('Neuer Ordner in ' + (cur || '/'), 'z. B. Maßblätter'); if (!name) return;
+    const name = await promptBox('Neuer Ordner in ' + (cur || '/'), 'z. B. Massblätter'); if (!name) return;
     try { const m = await dropbox.createFolder((cur || '') + '/' + name.replace(/[\\/:*?"<>|]+/g, ' ').trim()); toast('Ordner angelegt'); show(m.path_display); }
     catch (e) { toast('Anlegen fehlgeschlagen: ' + e.message, 5000); }
   };
@@ -2717,7 +2723,7 @@ $('#sRestoreDbx').onclick = async () => {
 // Gerätewechsel (Idee 140): Sicherung in Dropbox + QR-Code mit den Einstellungen fürs neue Handy
 $('#sMove').onclick = async () => {
   const cfg = dropbox.cfg, g = gcal.cfg;
-  const payload = { v: 1, dbxKey: cfg.appKey || '', folder: cfg.folder || '', year: !!cfg.year, gcalId: g.clientId || '', opt: { ...opt }, lockDays: lockDays(), cals: g.cals || null };
+  const payload = { v: 1, dbxKey: cfg.appKey || '', folder: cfg.folder || '', year: false, gcalId: g.clientId || '', opt: { ...opt }, lockDays: lockDays(), cals: g.cals || null };
   const link = location.origin + location.pathname + '#setup=' + b64u(new TextEncoder().encode(JSON.stringify(payload)));
   const bg = document.createElement('div'); bg.className = 'sheet-bg on';
   bg.innerHTML = `<div class="sheet"><h2>📱 Gerät wechseln</h2>
@@ -2747,7 +2753,7 @@ async function applySetupLink() {
   const ok = await confirmBox('Einstellungen vom alten Handy übernehmen?', 'Übernehmen', 'Nicht jetzt', 'pri', `Dropbox-Schlüssel${p.folder ? ', Ordner ' + p.folder : ''}${p.gcalId ? ', Google-Kalender' : ''}, Optionen. Danach: ⚙ Cloud → Dropbox verbinden → ⚙ System → „Sicherung aus Dropbox holen“.`);
   try { sessionStorage.removeItem('mb_setup'); } catch (e) { } // erst nach der Antwort vergessen (die App lädt beim ersten Start einmal neu)
   if (!ok) return;
-  if (p.dbxKey) dropbox.setAppKey(p.dbxKey); if (p.folder) dropbox.setFolder(p.folder); dropbox.setYear(!!p.year);
+  if (p.dbxKey) dropbox.setAppKey(p.dbxKey); if (p.folder) dropbox.setFolder(p.folder); dropbox.setYear(false);
   if (p.gcalId) gcal.setClientId(p.gcalId); if (p.cals) gcal.setChosenCals(p.cals);
   if (p.opt) { Object.assign(opt, p.opt); saveOpt(); }
   if (p.lockDays) { try { localStorage.setItem('mb_lockDays', String(p.lockDays)); } catch (e) { } }
@@ -2867,7 +2873,7 @@ async function buildReport() {
   let errs = []; try { errs = JSON.parse(localStorage.getItem('mb_errs') || '[]'); } catch (e) { }
   const sw = await navigator.serviceWorker.getRegistration().catch(() => null);
   const lines = [
-    `Maßblatt-App Fehlerbericht – ${new Date().toLocaleString('de-AT')}`,
+    `Massblatt-App Fehlerbericht – ${new Date().toLocaleString('de-AT')}`,
     `Version: ${VERSION} · Service Worker: ${sw && sw.active ? 'aktiv' : 'keiner'}`,
     `Gerät: ${navigator.userAgent}`,
     `Bildschirm: ${screen.width}×${screen.height} @${devicePixelRatio} · Fenster ${innerWidth}×${innerHeight} · ${matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'installiert (standalone)' : 'im Browser'} · ${matchMedia('(prefers-color-scheme: light)').matches ? 'hell' : 'dunkel'}`,
@@ -3127,32 +3133,57 @@ $('#sAi').onchange = async () => { S.arrowMode = $('#sAi').value; S.ai = S.arrow
 // Trainingsdaten: jedes fertig bemaßte Foto (ohne Pfeile im Bild) + die Pfeil-Positionen als JSON nach „<Dropbox-Ordner>/Massblatt Training“.
 // Daraus wird das Erkennungsmodell nachtrainiert. Jedes Foto wird nur einmal gesendet (trainSent).
 const TRAIN_SUB = 'Massblatt Training';
-async function trainPending() {
-  return (await db.all('shots')).filter(s => !s.trainSent && s.photo && (s.arrows || []).some(a => a.cm != null));
+async function trainPending(projectId) {
+  return (await db.all('shots')).filter(s => !s.trainSent && s.photo && (!projectId || s.projectId === projectId) && (s.arrows || []).some(a => a.cm != null));
+}
+// Zähler läuft immer weiter (auch wenn Projekte später gelöscht werden). Erststand = schon gesendete Fotos in der Datenbank.
+async function trainTotal(add = 0) {
+  let n = await db.setting('trainTotal');
+  if (typeof n !== 'number') { n = (await db.all('shots')).filter(s => s.trainSent).length; await db.setting('trainTotal', n); return n; } // die eben gesendeten sind hier schon mitgezählt
+  if (add) { n += add; await db.setting('trainTotal', n); }
+  return n;
+}
+let trainBusy = false;
+async function trainSend(list, onStep) {
+  if (trainBusy) return { ok: 0, err: 'läuft schon' };
+  trainBusy = true; let ok = 0, err = '';
+  try {
+    for (const s of list) {
+      onStep && onStep(ok, list.length);
+      try {
+        const blob = s.orig || s.photo;
+        const bmp = await createImageBitmap(blob); const w = bmp.width, h = bmp.height; bmp.close && bmp.close();
+        const info = { id: s.id, room: s.room, w, h, app: VERSION, time: s.time || null,
+          arrows: (s.arrows || []).map(a => ({ kind: a.kind, el: a.el, x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, cm: a.cm ?? null })) };
+        await dropbox.upload(new File([blob], s.id + '.jpg', { type: 'image/jpeg' }), TRAIN_SUB, { overwrite: true });
+        await dropbox.upload(new File([JSON.stringify(info)], s.id + '.json', { type: 'application/json' }), TRAIN_SUB, { overwrite: true });
+        const cur = (await db.get('shots', s.id)) || s; cur.trainSent = Date.now(); await db.put('shots', cur); // frisch lesen: das Foto kann inzwischen bearbeitet worden sein
+        if (S.shots) { const live = S.shots.find(x => x.id === s.id); if (live) live.trainSent = cur.trainSent; }
+        ok++;
+      } catch (e) { err = e.message; break; }
+    }
+    if (ok) await trainTotal(ok);
+  } finally { trainBusy = false; }
+  return { ok, err };
+}
+// 3.7: nach jedem Dropbox-Upload gehen die fertig gemessenen Fotos dieses Projekts von selbst mit (still, im Hintergrund)
+async function trainAuto(projectId) {
+  if (window.__noTrainAuto || !projectId || !dropbox.connected || !navigator.onLine) return;
+  try { const list = await trainPending(projectId); if (!list.length) return; const r = await trainSend(list); if (r.err) log('Trainingsdaten: ' + r.err); if ($('#setSheet').classList.contains('on')) trainUi(); }
+  catch (e) { log('Trainingsdaten: ' + e.message); }
 }
 async function trainUi() {
-  const n = (await trainPending()).length;
-  $('#sTrainState').textContent = n ? `${n} Foto${n === 1 ? '' : 's'} bereit zum Senden.` : 'Alles gesendet – neue Fotos kommen nach dem Messen dazu.';
+  const n = (await trainPending()).length, tot = await trainTotal();
+  $('#sTrainState').textContent = `${tot} Trainingsfoto${tot === 1 ? '' : 's'} gesendet` + (n ? ` · ${n} warten noch` : ' · alles gesendet');
   $('#sTrain').disabled = !n;
 }
 $('#sTrain').onclick = async () => {
   if (!dropbox.connected) return toast('Zuerst Dropbox verbinden (⚙ Cloud)');
   if (!navigator.onLine) return toast('Kein Netz – später nochmal');
   const list = await trainPending(); if (!list.length) return trainUi();
-  const b = $('#sTrain'); b.disabled = true; let ok = 0, err = '';
-  for (const s of list) {
-    b.textContent = `Sende ${ok + 1}/${list.length} …`;
-    try {
-      const blob = s.orig || s.photo;
-      const bmp = await createImageBitmap(blob); const w = bmp.width, h = bmp.height; bmp.close && bmp.close();
-      const info = { id: s.id, room: s.room, w, h, app: VERSION, time: s.time || null,
-        arrows: (s.arrows || []).map(a => ({ kind: a.kind, el: a.el, x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, cm: a.cm ?? null })) };
-      await dropbox.upload(new File([blob], s.id + '.jpg', { type: 'image/jpeg' }), TRAIN_SUB, { overwrite: true });
-      await dropbox.upload(new File([JSON.stringify(info)], s.id + '.json', { type: 'application/json' }), TRAIN_SUB, { overwrite: true });
-      s.trainSent = Date.now(); await db.put('shots', s); ok++;
-    } catch (e) { err = e.message; break; }
-  }
-  b.textContent = '📤 Trainingsdaten senden';
+  const b = $('#sTrain'); b.disabled = true;
+  const { ok, err } = await trainSend(list, (i, n) => { b.textContent = `Sende ${i + 1}/${n} …`; });
+  b.textContent = '📤 Jetzt senden';
   toast(err ? `${ok} gesendet, dann Fehler: ${err}` : `${ok} Foto${ok === 1 ? '' : 's'} in „${TRAIN_SUB}“ gelegt`, 5000);
   trainUi();
 };
@@ -3183,7 +3214,7 @@ $('#imFile').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   try {
     const data = JSON.parse(await f.text());
-    if (data.app !== 'massblatt') throw new Error('keine Maßblatt-Datei');
+    if (data.app !== 'massblatt') throw new Error('keine Massblatt-Datei');
     const cs = (await db.setting('customers')) || [];
     let nC = 0, nS = 0;
     for (const c of data.customers || []) {
@@ -3269,8 +3300,8 @@ const bio = {
   async available() { try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch (e) { return false; } },
   async register() {
     const c = await navigator.credentials.create({ publicKey: {
-      challenge: crypto.getRandomValues(new Uint8Array(32)), rp: { name: 'Maßblatt', id: location.hostname },
-      user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'massblatt', displayName: 'Maßblatt' },
+      challenge: crypto.getRandomValues(new Uint8Array(32)), rp: { name: 'Massblatt', id: location.hostname },
+      user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'massblatt', displayName: 'Massblatt' },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
       authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'preferred' }, timeout: 60000, attestation: 'none' } });
     localStorage.setItem('mb_bio', JSON.stringify({ id: b64u(c.rawId), h: pinId(pinCfg), at: Date.now() }));
