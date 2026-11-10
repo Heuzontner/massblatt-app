@@ -1,0 +1,2 @@
+dw480.onnx = Ultralytics YOLOv8n, trainiert auf Open Images V7 (yolov8n-oiv7.pt, github.com/ultralytics/assets),
+als ONNX exportiert (480 × 480, opset 12). Lizenz: AGPL-3.0 (Ultralytics). Genutzt werden nur die Klassen Door (164) und Window (587).

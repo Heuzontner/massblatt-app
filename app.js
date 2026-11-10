@@ -4,13 +4,14 @@ import { TEMPLATES, arrowsFromObjects, newArrow, drawArrows, labelBoxes } from '
 import { grayFromImage, magnetArrow } from './magnet.js';
 import { buildPdf } from './pdf.js';
 import { detect, loadModel, modelState } from './detect.js';
+import * as detectMod from './detect.js';
 import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.4.1';
+const VERSION = '3.5.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
+const NEWS = ['Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -1465,10 +1466,10 @@ async function learnFromShot(shot) {
 async function runDetect() {
   const busy = $('#busy'); busy.classList.add('on');
   const first = modelState() !== 'bereit';
-  $('#busyTxt').textContent = first ? 'KI-Modell wird geladen (nur beim ersten Mal, ~150 MB) …' : 'Erkenne Tür/Fenster …';
+  $('#busyTxt').textContent = first ? 'KI-Modell wird geladen (nur beim ersten Mal, 14 MB) …' : 'Erkenne Tür/Fenster …';
   $('#busyBar').style.width = '0';
   try {
-    const c = document.createElement('canvas'); const sc = Math.min(1, 768 / Math.max(S.shot.w, S.shot.h));
+    const c = document.createElement('canvas'); const sc = Math.min(1, 480 / Math.max(S.shot.w, S.shot.h));
     c.width = Math.round(S.shot.w * sc); c.height = Math.round(S.shot.h * sc);
     c.getContext('2d').drawImage(photoImg, 0, 0, c.width, c.height);
     const objs = await detect(c, (f, l, t) => {
@@ -1476,15 +1477,15 @@ async function runDetect() {
       $('#busyTxt').textContent = `KI-Modell wird geladen … ${Math.round(l / 1048576)} / ${Math.round(t / 1048576)} MB`;
       if (f >= 1) $('#busyTxt').textContent = 'Erkenne Tür/Fenster …';
     });
-    if (!objs.length) { toast('Nichts erkannt – Vorlage „Tür“ gesetzt, Pfeile verschiebbar', 2800); applyTemplate('Tür'); }
+    if (!objs.length) { toast('Nichts erkannt – zwei Pfeile gesetzt, bitte selbst anlegen', 2800); applyTemplate('Tür'); }
     else {
       setArrows(arrowsFromObjects(objs), 'KI erkennen');
       const nd = objs.filter(o => o.type === 'door').length, nw = objs.length - nd;
-      toast(`Erkannt: ${nd ? 'Tür' : ''}${nd && nw ? ' + ' : ''}${nw ? nw + ' Fenster' : ''}`);
+      toast(`Erkannt: ${nd ? 'Tür' : ''}${nd && nw ? ' + ' : ''}${nw ? nw + ' Fenster' : ''} (${detectMod.lastMs} ms)`);
     }
   } catch (e) {
     console.error(e);
-    toast(navigator.onLine ? 'KI gerade nicht verfügbar – Vorlage gesetzt' : 'Offline und KI noch nicht geladen – Vorlage gesetzt', 3000);
+    toast(navigator.onLine ? 'KI gerade nicht verfügbar – zwei Pfeile gesetzt' : 'Offline und KI noch nicht geladen – zwei Pfeile gesetzt', 3000);
     if (!S.shot.arrows.length) applyTemplate('Tür');
   } finally { busy.classList.remove('on'); }
 }
@@ -3275,7 +3276,8 @@ $('#sNews').onclick = () => { $('#setClose').click(); showNews(); };
 // ---------------- Start ----------------
 (async () => {
   await pinStart();
-  const ai = await db.setting('ai'); S.ai = ai === true; // KI vorerst aus, bis das Modell zuverlässig läuft
+  const ai = await db.setting('ai'); S.ai = ai !== false && !window.__noAI; // seit 3.5 Standard an (kleines, schnelles Modell); in ⚙ System abschaltbar
+  if (S.ai) setTimeout(() => loadModel().catch(e => log('KI-Modell: ' + e.message)), 2500); // im Hintergrund vorladen, damit das erste Foto nicht wartet
   applyZoom((await db.setting('zoom')) || 1);
   setTimeout(processQueue, 3000);
   const back = gcal.handleRedirect();
