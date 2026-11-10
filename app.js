@@ -9,9 +9,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.5.1';
+const VERSION = '3.5.2';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
+const NEWS = ['Foto verwackelt? Neuer Knopf 📷↻ rechts unten im Foto (über 👁): nimmt das Foto sofort neu auf – gleicher Raum, ohne Umweg übers Projekt', 'Erkennung vorerst AUS (traf zu oft daneben) – es starten wieder zwei Pfeile zum Selbersetzen. Einschalten zum Testen: ⚙ System', 'Neu in ⚙ System: „📤 Trainingsdaten senden“ legt deine gemessenen Fotos + Pfeile in die Dropbox (Ordner „Massblatt Training“) – damit wird die Erkennung auf deine Türen und Fenster trainiert', 'Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -1312,7 +1312,7 @@ $('#video').addEventListener('click', async e => {
   try { await t.applyConstraints({ advanced: [adv] }); } catch (err) { log('pointsOfInterest', err.name); }
 });
 let poiT = 0;
-function leaveCam(viaPop) { renderShots(); if (S.shots.length && !wide()) $('#projDetails').open = false; show('proj', viaPop); } // Fotos sichtbar, Projektdaten eingeklappt
+function leaveCam(viaPop) { S.retake = null; renderShots(); if (S.shots.length && !wide()) $('#projDetails').open = false; show('proj', viaPop); } // Fotos sichtbar, Projektdaten eingeklappt
 $('#camBack').onclick = () => leaveCam();
 $('#camGallery').onclick = () => $('#galIn').click();
 $('#fileIn').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) newShotFromBlob(f); else show('proj'); };
@@ -1346,6 +1346,14 @@ async function newShotFromBlob(blob) {
   const c = document.createElement('canvas'); c.width = Math.round(im.width * sc); c.height = Math.round(im.height * sc);
   c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
   const photo = await canvasToBlob(c, 'image/jpeg', 0.88);
+  // „Foto neu“ im Editor: dasselbe Foto ersetzen (bleibt an seiner Stelle im Projekt), Pfeile und Maße beginnen neu
+  const re = S.retake; S.retake = null;
+  if (re && S.shots.includes(re)) {
+    Object.assign(re, { room: S.room, photo, w: c.width, h: c.height, arrows: [], tpl: null });
+    delete re.orig; delete re.shrunk; delete re.trainSent;
+    await db.put('shots', re); S.project.updated = Date.now(); db.put('projects', S.project);
+    return openEditor(re, true);
+  }
   const shot = { id: uid(), projectId: S.project.id, order: S.shots.length, room: S.room, photo, w: c.width, h: c.height, arrows: [], tpl: null, created: Date.now() };
   if (S.shots.length) learnRoomSeq(S.shots[S.shots.length - 1].room, S.room);
   S.shots.push(shot);
@@ -1685,6 +1693,13 @@ const kb = { on: false, buf: '' };
 function setKb(on) { kb.on = on; kb.buf = ''; $('#keypad').classList.toggle('on', on); $('#kbBtn').classList.toggle('on', on); updateCur(); }
 $('#kbBtn').onclick = () => setKb(!kb.on);
 // Aufhellen: automatische Tonwertkorrektur + Aufhellung dunkler Bereiche; Original bleibt für „zurück“ erhalten
+$('#retakeA').onclick = async () => {
+  const shot = S.shot; if (!shot) return;
+  clearTimeout(finishing);
+  if ((shot.arrows || []).some(a => a.cm != null) && !await confirmBox('Foto neu aufnehmen?', 'Neu aufnehmen', 'Abbrechen', 'pri', 'Die Maße auf diesem Foto werden verworfen.')) return;
+  if (kb.on) setKb(false);
+  S.retake = shot; S.room = shot.room; openCam();
+};
 $('#eyeA').onclick = () => { S.hideArrows = !S.hideArrows; $('#eyeA').classList.toggle('on', S.hideArrows); if (S.hideArrows) toast('Pfeile ausgeblendet – nochmal tippen zeigt sie wieder', 1500); };
 $('#lightA').onclick = async () => {
   clearTimeout(finishing);
@@ -2458,6 +2473,7 @@ $('#btnSettings').onclick = async () => {
   const lg = await db.setting('headerLogo');
   if (lg) { $('#sLogoPrev').src = blobUrl(lg); $('#sLogoPrev').hidden = false; } else $('#sLogoPrev').hidden = true;
   $('#sAi').value = S.ai ? '1' : '0';
+  trainUi();
   dbxUi();
   renderCustManage();
   $('#sAiState').textContent = 'KI-Modell: ' + modelState();
@@ -3080,6 +3096,38 @@ $('#sTitle').oninput = () => db.setting('headerTitle', $('#sTitle').value);
 $('#sLogo').onchange = async e => { let f = e.target.files[0]; if (!f) return; f = await cutoutLogo(f); await db.setting('headerLogo', f); $('#sLogoPrev').src = blobUrl(f); $('#sLogoPrev').hidden = false; };
 $('#sLogoDel').onclick = async () => { await db.setting('headerLogo', null); $('#sLogoPrev').hidden = true; };
 $('#sAi').onchange = async () => { S.ai = $('#sAi').value === '1'; await db.setting('ai', S.ai); };
+// Trainingsdaten: jedes fertig bemaßte Foto (ohne Pfeile im Bild) + die Pfeil-Positionen als JSON nach „<Dropbox-Ordner>/Massblatt Training“.
+// Daraus wird das Erkennungsmodell nachtrainiert. Jedes Foto wird nur einmal gesendet (trainSent).
+const TRAIN_SUB = 'Massblatt Training';
+async function trainPending() {
+  return (await db.all('shots')).filter(s => !s.trainSent && s.photo && (s.arrows || []).some(a => a.cm != null));
+}
+async function trainUi() {
+  const n = (await trainPending()).length;
+  $('#sTrainState').textContent = n ? `${n} Foto${n === 1 ? '' : 's'} bereit zum Senden.` : 'Alles gesendet – neue Fotos kommen nach dem Messen dazu.';
+  $('#sTrain').disabled = !n;
+}
+$('#sTrain').onclick = async () => {
+  if (!dropbox.connected) return toast('Zuerst Dropbox verbinden (⚙ Cloud)');
+  if (!navigator.onLine) return toast('Kein Netz – später nochmal');
+  const list = await trainPending(); if (!list.length) return trainUi();
+  const b = $('#sTrain'); b.disabled = true; let ok = 0, err = '';
+  for (const s of list) {
+    b.textContent = `Sende ${ok + 1}/${list.length} …`;
+    try {
+      const blob = s.orig || s.photo;
+      const bmp = await createImageBitmap(blob); const w = bmp.width, h = bmp.height; bmp.close && bmp.close();
+      const info = { id: s.id, room: s.room, w, h, app: VERSION, time: s.time || null,
+        arrows: (s.arrows || []).map(a => ({ kind: a.kind, el: a.el, x1: a.x1, y1: a.y1, x2: a.x2, y2: a.y2, cm: a.cm ?? null })) };
+      await dropbox.upload(new File([blob], s.id + '.jpg', { type: 'image/jpeg' }), TRAIN_SUB, { overwrite: true });
+      await dropbox.upload(new File([JSON.stringify(info)], s.id + '.json', { type: 'application/json' }), TRAIN_SUB, { overwrite: true });
+      s.trainSent = Date.now(); await db.put('shots', s); ok++;
+    } catch (e) { err = e.message; break; }
+  }
+  b.textContent = '📤 Trainingsdaten senden';
+  toast(err ? `${ok} gesendet, dann Fehler: ${err}` : `${ok} Foto${ok === 1 ? '' : 's'} in „${TRAIN_SUB}“ gelegt`, 5000);
+  trainUi();
+};
 $('#sAiLoad').onclick = async () => {
   const b = $('#sAiLoad'); b.disabled = true;
   try {
@@ -3289,7 +3337,9 @@ $('#sNews').onclick = () => { $('#setClose').click(); showNews(); };
 // ---------------- Start ----------------
 (async () => {
   await pinStart();
-  const ai = await db.setting('ai'); S.ai = ai !== false && !window.__noAI; // seit 3.5 Standard an (kleines, schnelles Modell); in ⚙ System abschaltbar
+  // 3.5.2: KI wieder Standard AUS (trifft Manuels Fotos zu schlecht) – einmalig zurückgesetzt, bis das Modell mit eigenen Fotos nachtrainiert ist
+  if ((await db.setting('aiV')) !== 2) { await db.setting('ai', false); await db.setting('aiV', 2); }
+  const ai = await db.setting('ai'); S.ai = (ai === true || !!window.__forceAI) && !window.__noAI;
   if (S.ai) setTimeout(() => loadModel().catch(e => log('KI-Modell: ' + e.message)), 2500); // im Hintergrund vorladen, damit das erste Foto nicht wartet
   applyZoom((await db.setting('zoom')) || 1);
   setTimeout(processQueue, 3000);
