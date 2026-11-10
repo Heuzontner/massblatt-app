@@ -157,6 +157,17 @@ details.card summary { font-weight:700; cursor:pointer; }
 #cam .tplrow button { flex:none; padding:9px 14px; font-size:15px; border-radius:4px; background:#1a1f24; color:#ddd; border:1px solid #3a4450; white-space:nowrap; }
 #cam .tplrow button.sel { background:var(--yellow); color:var(--yellow-ink); border-color:var(--yellow); font-weight:700; }
 #cam .tplrow.off { display:none; }
+/* Raumliste im Kamerabild (3.4): erst Raum, dann Foto */
+#camRooms { position:absolute; left:0; right:0; top:calc(env(safe-area-inset-top) + 64px); bottom:120px; display:none; flex-direction:column; padding:8px 12px; background:rgba(8,12,16,.72); overflow:auto; z-index:6; }
+#cam.needroom #camRooms { display:flex; }
+#camRooms h2 { color:#fff; margin:4px 0 10px; font-size:22px; text-align:center; }
+#camRoomGrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(104px, 1fr)); gap:10px; }
+#camRoomGrid button { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:76px; padding:8px 4px; background:var(--yellow); color:var(--yellow-ink); border-radius:var(--radius); }
+#camRoomGrid button b { font-family:var(--display); font-size:24px; line-height:1.1; }
+#camRoomGrid button small { font-size:12px; margin-top:2px; }
+#camRoomGrid button.other { background:#1a1f24; color:#fff; border:1px solid #3a4450; }
+#cam #shutter:disabled { opacity:.25; }
+#cam #camGallery:disabled { opacity:.3; }
 /* Setz-Modus (3.3): Markierung des ersten Tipps */
 #placeMark { position:absolute; width:26px; height:26px; margin:-13px 0 0 -13px; border:3px solid var(--yellow); border-radius:50%; box-shadow:0 0 0 2px #000a, 0 0 12px var(--yellow); pointer-events:none; display:none; z-index:6; animation:bl .9s infinite; }
 /* große Anweisung im Editor */
@@ -424,7 +435,7 @@ ul.news li { margin-bottom:6px; }
   </div>
   <div class="hint" id="camHint"></div>
   <!-- Schnellablauf (3.3): Vorlage vor dem Foto wählen, zuletzt je Raum gemerkt -->
-  <div class="tplrow" id="camTpl"></div>
+  <div id="camRooms"><h2>Welcher Raum?</h2><div id="camRoomGrid"></div></div>
   <div class="cambar">
     <button class="ghost" id="camGallery" style="background:#222">Galerie</button>
     <button id="shutter" aria-label="Auslösen"></button>
@@ -439,10 +450,11 @@ ul.news li { margin-bottom:6px; }
 <!-- Editor -->
 <section class="screen" id="ed">
   <header class="top">
-    <button class="ghost" id="edBack" style="font-size:15px;padding:10px 12px">‹ Projekt</button>
+    <button class="ghost" id="edBack" aria-label="Zurück" style="font-size:18px;padding:10px 14px">‹</button>
     <button class="roomchip" id="edTitle" aria-label="Raum ändern">Kz</button>
     <div class="laser" data-laser><i></i><span>Laser</span></div>
-    <button id="arrowsBtn" class="ghost">Pfeile</button>
+    <button id="addArrowBtn" class="ghost">+ Pfeil</button>
+    <button id="arrowsBtn" class="ghost" aria-label="Mehr">⋯</button>
   </header>
   <div class="stage" id="stage"><canvas id="cv"></canvas><canvas id="loupe" width="300" height="300"></canvas><div id="placeMark"></div>
     <button id="trashA" aria-label="Pfeil löschen">🗑</button>
@@ -463,9 +475,7 @@ ul.news li { margin-bottom:6px; }
 
 <!-- Pfeile-Menü -->
 <div class="sheet-bg" id="arrSheet"><div class="sheet">
-  <h2>Pfeile neu setzen</h2>
-  <div class="tiles" id="tplTiles"></div>
-  <h2 style="margin-top:16px">Ausgewählter Pfeil</h2>
+  <h2>Ausgewählter Pfeil</h2>
   <div class="tiles">
     <button data-act="add">+ Pfeil dazu</button>
     <button data-act="flip">Höhe ⇄ Breite</button>

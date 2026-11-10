@@ -8,13 +8,14 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.3.0';
+const VERSION = '3.4.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Schnellablauf: Vorlage (Tür, Fenster, Tür + Fenster …) direkt in der Kamera wählen – die App merkt sich je Raum die letzte Wahl', 'Pfeil setzen mit zwei Tipps: Kante oben antippen, Kante unten antippen – der Pfeil springt hin (Ziehen geht weiterhin)', 'Große Anweisung im Editor: was als Nächstes zu tun ist', 'Hauptknöpfe wieder gelb, Leiste PDF/Mail/Dropbox/Foto über „Projekt löschen“, „Was ist neu“ bleibt bis zum Schließen'];
+const NEWS = ['Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-const DEFAULT_ROOMS = [['Kz', 'Kinderz.'], ['Sz', 'Schlafz.'], ['Wz', 'Wohnz.'], ['Wk', 'Wohnküche'], ['Kü', 'Küche'], ['Bad', ''], ['WC', ''], ['Vr', 'Vorraum'],
-  ['Ar', 'Abstellr.'], ['Lo', 'Loggia'], ['Eg', 'Eingang'], ['Rh', 'Raumhöhe']];
+// Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
+const DEFAULT_ROOMS = [['Eg', 'Eingang'], ['Rh', 'Raumhöhe'], ['Vr', 'Vorraum'], ['Bad/WC', 'Bad mit WC'], ['Bad', 'Bad'], ['WC', 'WC'], ['Ar', 'Abstellraum'],
+  ['Kz1', 'Kinderzimmer 1'], ['Kz2', 'Kinderzimmer 2'], ['Sz', 'Schlafzimmer'], ['Kü', 'Küche'], ['Wz', 'Wohnzimmer'], ['Ez', 'Esszimmer']];
 
 const S = { project: null, shots: [], room: null, shot: null, active: null, stream: null, ai: true, wake: null };
 const laser = new Laser();
@@ -1075,7 +1076,11 @@ async function moveShot(i, d) {
 }
 
 // ---------------- Raumwahl ----------------
-async function rooms() { const r = await db.setting('rooms'); return Array.isArray(r) && r.length ? r : DEFAULT_ROOMS; }
+async function rooms() {
+  // einmalig auf die neue Standardliste umstellen (3.4), danach gilt wieder die eigene Liste aus ⚙
+  if ((await db.setting('roomsV')) !== 2) { await db.setting('rooms', null); await db.setting('roomsV', 2); }
+  const r = await db.setting('rooms'); return Array.isArray(r) && r.length ? r : DEFAULT_ROOMS;
+}
 // Raumreihenfolge lernen (Idee 107): welcher Raum folgt meist auf welchen
 const roomBase = r => (r || '').replace(/\d+$/, '');
 async function learnRoomSeq(prev, next) {
@@ -1133,25 +1138,11 @@ function pickRoom() {
 
 // ---------------- Kamera ----------------
 // Raum schon im Projekt? → fragen: selber Raum oder neuer (Kz → Kz2, Kz3 …)
-async function resolveRoom(r, except = null) {
-  if (!r || r === 'Rh' || r === 'Eg') return r;
-  const base = r.replace(/\d+$/, '');
-  const re = new RegExp('^' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\d*)$');
-  const same = S.shots.filter(s => s !== except && re.test(s.room));
-  if (!same.length) return r;
-  const last = same[same.length - 1].room;
-  const yes = await confirmBox(`Handelt es sich um denselben Raum „${last}“?`, 'Ja, derselbe', 'Nein, neuer Raum', 'pri');
-  if (yes) return last;
-  // neuer Raum gleicher Art: wie in den alten Maßblättern – aus „Kz“ wird Kz1, der neue heißt Kz2 (Kz3 …)
-  const nums = same.map(s => parseInt(s.room.match(re)[1] || '1', 10));
-  const plain = same.filter(s => s.room === base);
-  if (plain.length) { for (const s of plain) { s.room = base + '1'; await db.put('shots', s); } renderShots(); toast(`Bisheriger Raum heißt jetzt ${base}1`, 2500); }
-  return base + (Math.max(...nums) + 1);
-}
+// 3.4: keine Rückfrage „derselbe Raum?“ mehr – Kz1/Kz2 stehen direkt in der Liste, gleiche Namen sind erlaubt (wie bei Bosch)
+async function resolveRoom(r) { return r; }
 $('#btnShoot').onclick = async () => {
   if (isLocked()) return;
-  const r = await resolveRoom(await pickRoom()); if (!r) return;
-  S.room = r; openCam();
+  S.room = null; openCam(); // Raumliste liegt im Kamerabild; ohne Raum kein Foto (Manuel 10.11.)
   offerLaser();
 };
 // Beim ersten Foto je App-Start den Laser gleich anbieten (Auswahlfenster) – der Browser verlangt dafür ein Antippen,
@@ -1166,36 +1157,25 @@ async function offerLaser() {
 const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 // Raum + Hinweis immer gemeinsam setzen (Raumhöhe ↔ Türen/Fenster)
 function setCamRoom(r) {
-  S.room = r;
-  $('#camRoom').textContent = r;
-  $('#camHint').textContent = r === 'Rh' ? 'Wand von Boden bis Decke ins Bild nehmen' : ''; // Tür/Fenster-Hinweis entfernt (Manuel 09.11.)
-  camTplUi();
+  S.room = r || null;
+  $('#camRoom').textContent = r || 'Raum?';
+  $('#camHint').textContent = r === 'Rh' ? 'Wand von Boden bis Decke ins Bild nehmen' : r ? 'Jetzt fotografieren' : '';
+  $('#shutter').disabled = !r; $('#camGallery').disabled = !r;
+  $('#cam').classList.toggle('needroom', !r);
+  if (!r) camRoomsUi();
 }
-// Schnellablauf (3.3): Vorlage vor dem Foto in der Kamera wählen – zuletzt je Raum gemerkt (Einstellung roomTpl),
-// damit es meistens null Tipps sind (Kz → Fenster, Vz → Tür …). „Frei“ = ohne Pfeile, der erste Laserwert legt einen an.
-const CAM_TPLS = ['Tür', 'Fenster', 'Tür + Fenster', '2 Fenster', 'Tür + 2 Fenster', 'Balkontür + Fenster', 'Frei'];
-let roomTplCache = null;
-async function roomTpls() { if (!roomTplCache) roomTplCache = (await db.setting('roomTpl')) || {}; return roomTplCache; }
-async function rememberRoomTpl(room, tpl) {
-  if (!room || room === 'Rh' || !tpl || !CAM_TPLS.includes(tpl)) return;
-  const R = await roomTpls(); if (R[room] === tpl) return;
-  R[room] = tpl; await db.setting('roomTpl', R);
-}
-async function camTplUi() {
-  const row = $('#camTpl'); if (!row) return;
-  const r = S.room;
-  row.classList.toggle('off', r === 'Rh');
-  if (r === 'Rh') return; // Raumhöhe hat ihre feste Vorlage; die gemerkte Wahl des vorigen Raums bleibt unberührt
-  const R = await roomTpls();
-  if (!S.camTplRoom || S.camTplRoom !== r) { S.camTpl = R[r] || 'Tür'; S.camTplRoom = r; }
-  row.innerHTML = '';
-  for (const k of CAM_TPLS) {
-    const b = document.createElement('button'); b.type = 'button'; b.textContent = k; b.dataset.tpl = k;
-    if (k === S.camTpl) b.classList.add('sel');
-    b.onclick = () => { S.camTpl = k; rememberRoomTpl(r, k); camTplUi(); };
-    row.appendChild(b);
+// Raumliste im Kamerabild: große Felder, Kürzel + Name. Erst antippen, dann geht der Auslöser.
+async function camRoomsUi() {
+  const g = $('#camRoomGrid'); g.innerHTML = '';
+  for (const [k, t] of await rooms()) {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.room = k;
+    b.innerHTML = `<b></b><small></small>`; b.querySelector('b').textContent = k; b.querySelector('small').textContent = t || '';
+    b.onclick = () => setCamRoom(k);
+    g.appendChild(b);
   }
-  const sel = row.querySelector('.sel'); if (sel) sel.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  const o = document.createElement('button'); o.type = 'button'; o.className = 'other'; o.innerHTML = '<b>✎</b><small>anderer Raum</small>';
+  o.onclick = async () => { const v = await promptBox('Anderer Raum', 'z. B. Kz3, Loggia', ''); if (v && v.trim()) setCamRoom(v.trim()); };
+  g.appendChild(o);
 }
 async function openCam(viaPop = false) {
   $('#camGrid').classList.toggle('on', !!opt.grid);
@@ -1300,7 +1280,7 @@ async function captureHdr() {
   og.putImageData(od, 0, 0);
   return out;
 }
-$('#camRoom').onclick = async () => { const r = await resolveRoom(await pickRoom()); if (r) setCamRoom(r); };
+$('#camRoom').onclick = () => setCamRoom(null); // Raum oben antippen = Raumliste wieder zeigen
 // Tipp ins Kamerabild: Belichtung/Fokus auf diese Stelle (Android/Chrome, wo die Kamera es kann)
 let poiWarned = false;
 $('#video').addEventListener('click', async e => {
@@ -1343,6 +1323,7 @@ $('#shutter').onclick = async () => {
 };
 
 async function newShotFromBlob(blob) {
+  if (!S.room) { beep(false); toast('Zuerst den Raum antippen'); return; }
   // auf 1600 px (lange Seite) verkleinern, wie im Bosch-Export
   const im = await blobToImg(blob); // <img> berücksichtigt die EXIF-Drehung
   const sc = Math.min(1, 1600 / Math.max(im.width, im.height));
@@ -1379,8 +1360,7 @@ async function openEditor(shot, fresh = false) {
   if (fresh) {
     if (shot.room === 'Rh') applyTemplate('Raumhöhe');
     else if (S.ai) runDetect();
-    else if (S.camTpl === 'Frei') { setArrows([], 'Frei'); toast('Frei: Pfeil mit dem Finger aufziehen oder gleich messen', 2500); }
-    else applyTemplate(S.camTpl && TEMPLATES[S.camTpl] ? S.camTpl : 'Tür'); // Vorlage aus der Kamera-Chipzeile (3.3)
+    else applyTemplate('Tür'); // immer zwei Pfeile: Höhe + Breite (ohne Bezeichnung); weitere über „+ Pfeil“
   }
 }
 
@@ -1408,16 +1388,7 @@ function loop() {
   raf = requestAnimationFrame(draw);
 }
 
-function buildChips() {
-  const el = $('#tplTiles'); el.innerHTML = '';
-  const items = [...(S.ai ? ['KI erkennen'] : []), ...Object.keys(TEMPLATES)]; // KI-Knopf nur, wenn die KI in ⚙ eingeschaltet ist
-  items.forEach(k => {
-    const b = document.createElement('button'); b.textContent = k === 'KI erkennen' ? '✨ KI erkennen' : k;
-    b.classList.toggle('sel', S.shot.tpl === k);
-    b.onclick = () => { closeArr(); k === 'KI erkennen' ? runDetect() : applyTemplate(k); };
-    el.appendChild(b);
-  });
-}
+function buildChips() { }
 const closeArr = () => $('#arrSheet').classList.remove('on');
 // Raum des aktuellen Fotos ändern – über den Raumknopf im Editor-Kopf (Manuel 09.11.) oder „Raum ändern“ im Pfeile-Blatt
 async function changeRoom() {
@@ -1426,7 +1397,8 @@ async function changeRoom() {
   if (r && S.shot) { S.shot.room = r; S.room = r; $('#edTitle').textContent = r; saveShot(); renderShots(); }
 }
 $('#edTitle').onclick = () => changeRoom();
-$('#arrowsBtn').onclick = () => { clearTimeout(finishing); buildChips(); $('#arrSheet').classList.add('on'); };
+$('#arrowsBtn').onclick = () => { clearTimeout(finishing); $('#arrSheet').classList.add('on'); };
+$('#addArrowBtn').onclick = () => $('#arrSheet [data-act="add"]').click();
 $('#arrSheet').onclick = async e => {
   if (e.target.id === 'arrSheet') return closeArr();
   const act = e.target.closest('[data-act]')?.dataset.act; if (!act) return;
@@ -1538,10 +1510,10 @@ function updateCur() {
   const a = activeArrow();
   const i = S.shot.arrows.indexOf(a);
   const lbl = $('#curLbl');
-  if (!a) { lbl.textContent = 'Kein Pfeil – oben „Pfeile“ antippen oder mit dem Finger aufziehen'; lbl.classList.remove('step'); }
+  if (!a) { lbl.textContent = 'Kein Pfeil – oben „+ Pfeil“ antippen'; lbl.classList.remove('step'); }
   else if (a.cm == null) { // Schnellablauf: sagen, was als Nächstes zu tun ist
     const where = a.el === 'Raumhöhe' ? 'Boden + Decke' : a.kind === 'H' ? 'oben + unten' : 'links + rechts';
-    lbl.textContent = `${arrowName(a)} ${i + 1}/${S.shot.arrows.length}: ${placing ? 'jetzt das Ende antippen' : `Kante ${where} antippen (oder ziehen), dann messen`}`;
+    lbl.textContent = `${arrowName(a)} ${i + 1}/${S.shot.arrows.length}: ${placing ? 'jetzt das Ende antippen' : `${where} antippen, dann messen`}`;
     lbl.classList.add('step');
   } else { lbl.textContent = `${arrowName(a)}   (Pfeil ${i + 1} von ${S.shot.arrows.length}) ✓`; lbl.classList.remove('step'); }
   const v = $('#curVal');
@@ -1653,9 +1625,8 @@ async function finishShot(auto) {
   const go = async () => {
     await saveShot();
     learnFromShot(S.shot).catch(() => { });
-    if (S.shot.tpl) rememberRoomTpl(S.shot.room, S.shot.tpl).then(() => { S.camTplRoom = null; }).catch(() => { });
     if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
-    openCam();
+    S.room = null; openCam(); // nächstes Foto: wieder zuerst den Raum wählen
   };
   if (auto) { toast(`${S.shot.room}: alle Maße da ✓ – nächstes Foto`, 1300); finishing = setTimeout(go, 1300); }
   else go();
