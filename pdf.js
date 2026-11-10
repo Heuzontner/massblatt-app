@@ -78,8 +78,12 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
   // ---------- Deckblatt ----------
   const p0 = doc.addPage([PAGE_W, PAGE_H]);
   box(p0, 20, 20, 801, 50);
-  text(p0, project.headerTitle || 'Measuring Master', 34, 38, 14, c(BLUE));
   const headLogo = await embedImg(project.headerLogo);
+  { // Kopfzeile: Titel + Projektname (ohne Klammer); lange Namen kleiner, notfalls gekürzt. Das Einlesen wertet nur „Aufmaß : <Raum>“ aus.
+    const ht = (project.headerTitle || 'Measuring Master') + (project.name ? ' ' + project.name : ''), maxW = headLogo ? 545 : 770;
+    let hs = 14; while (hs > 9 && font.widthOfTextAtSize(ht, hs) > maxW) hs -= 0.5;
+    text(p0, fit(ht, hs, maxW), 34, 38 + (14 - hs) / 2, hs, c(BLUE));
+  }
   if (headLogo) drawContain(p0, headLogo, 600, 28, 205, 34, 'right');
 
   box(p0, 20, 95, 801, 160);

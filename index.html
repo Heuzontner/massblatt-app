@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#191f26">
-<title>Maßblatt</title>
+<title>Floorplan AI Massblatt</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <style>
@@ -48,8 +48,10 @@ label.f { display:block; font-size:13px; color:var(--mute); margin:10px 0 4px; }
 .screen.on { display:flex; }
 header.top { display:flex; align-items:center; gap:8px; padding:calc(env(safe-area-inset-top) + 8px) 12px 8px; background:var(--panel); border-bottom:1px solid var(--line); min-height:56px; }
 header.top h1 { font-size:18px; font-weight:700; margin:0; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-header.top h1.marke { display:flex; align-items:baseline; gap:8px; }
-header.top h1.marke span { font-family:var(--mono); font-weight:400; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); }
+header.top h1.marke { display:grid; grid-template-columns:auto 1fr; column-gap:8px; align-items:baseline; line-height:1.05; }
+header.top h1.marke b:first-child { grid-column:1 / -1; }
+header.top h1.marke b.m2 { font-size:.8em; color:var(--yellow); }
+header.top h1.marke span { font-family:var(--mono); font-weight:400; font-size:10px; letter-spacing:.04em; color:var(--mute); white-space:nowrap; }
 .scroll { flex:1; overflow:auto; padding:12px 12px 120px; }
 .laser { display:flex; align-items:center; gap:6px; padding:8px 10px; border-radius:4px; font-size:12px; font-family:var(--mono); background:var(--panel2); border:1px solid var(--line); }
 .laser i { width:10px; height:10px; border-radius:50%; background:#6b7a88; display:inline-block; }
@@ -354,7 +356,7 @@ ul.news li { margin-bottom:6px; }
 <!-- Projektliste -->
 <section class="screen on" id="home">
   <header class="top">
-    <h1 class="marke"><b>Maßblatt</b><span>FloorplanAI</span></h1>
+    <h1 class="marke"><b>Floorplan AI</b><b class="m2">Massblatt</b><span>by VIEWPORT 360°</span></h1>
     <div class="laser" data-laser><i></i><span>Laser</span></div>
     <button class="ghost" id="btnCal" aria-label="Termine" style="display:none">📅</button>
     <button class="ghost" id="btnSettings" aria-label="Einstellungen">⚙<i class="badge"></i></button>
@@ -648,8 +650,8 @@ ul.news li { margin-bottom:6px; }
     <p class="mute" style="margin:4px 0 6px">Unterstützt: Bosch GLM/PLR (C-Modelle), Leica DISTO, Mileseey/Hersch/Suaoki, Stanley TLM99s. Andere Marken: Lernmodus, dann Fehlerbericht an Claude.</p>
     <button class="ghost" id="sLaserOff">Laser trennen</button>
     <details style="margin-top:10px"><summary class="mute">Bluetooth-Protokoll (für Fehlersuche)</summary><pre class="log" id="sLog"></pre></details>
-    <label class="f">Tür-/Fenster-Erkennung (KI)</label>
-    <select id="sAi"><option value="0">Aus – immer zwei Pfeile zum Selbersetzen</option><option value="1">An (Test) – Pfeile automatisch an Tür und Fenster</option></select>
+    <label class="f">Pfeile im neuen Foto</label>
+    <select id="sAi"><option value="none">Keine Pfeile – selbst ziehen</option><option value="two">Zwei Pfeile vorgeben (Höhe + Breite)</option><option value="ai">KI (Test) – Pfeile automatisch an Tür und Fenster</option></select>
     <p class="mute" id="sAiState"></p>
     <button class="ghost" id="sAiLoad">KI-Modell jetzt laden (14 MB)</button>
     <label class="f">Erkennung verbessern</label>
@@ -687,7 +689,7 @@ ul.news li { margin-bottom:6px; }
     <p class="mute" style="margin:6px 0 0">Noch ohne Funktion – neue Versionen kommen derzeit automatisch. Später wird ein Update erst nach Antippen eingespielt.</p>
     <label class="f">Handy weitergeben</label>
     <button class="danger" id="sWipe" style="width:100%">🗑 Alles löschen (Projekte, Fotos, Kunden, Anmeldungen)</button>
-    <p class="mute" style="margin-top:16px">Maßblatt-App · Version <span id="ver"></span> · Daten bleiben nur auf diesem Handy.</p>
+    <p class="mute" style="margin-top:16px">Floorplan AI Massblatt · by VIEWPORT 360° · Version <span id="ver"></span> · Daten bleiben nur auf diesem Handy.</p>
   </div>
 
   <button class="pri" id="setClose" style="width:100%;margin-top:14px">Schließen</button>
@@ -700,7 +702,8 @@ ul.news li { margin-bottom:6px; }
 <!-- PIN-Sperre -->
 <div id="lock" style="position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px">
   <img src="icons/icon-192.png" style="width:72px;height:72px;border-radius:12px;margin-bottom:16px">
-  <div style="font-size:20px;font-weight:700;margin-bottom:6px">Maßblatt</div>
+  <div style="font-family:var(--display);font-size:22px;font-weight:700;line-height:1.1;text-align:center">Floorplan AI<br><span style="color:var(--yellow)">Massblatt</span></div>
+  <div class="mute" style="font-family:var(--mono);font-size:11px;margin:4px 0 10px">by VIEWPORT 360°</div>
   <div class="mute" id="lockMsg" style="margin-bottom:16px">PIN eingeben</div>
   <div id="lockDots" style="font-size:30px;letter-spacing:10px;min-height:44px"></div>
   <button class="ghost" id="lockBio" style="display:none;width:100%;max-width:320px;margin-bottom:10px">👆 Mit Fingerabdruck / Face-ID entsperren</button>

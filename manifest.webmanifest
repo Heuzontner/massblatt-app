@@ -1,6 +1,6 @@
 {
-  "name": "Maßblatt – VIEWPORT 360°",
-  "short_name": "Maßblatt",
+  "name": "Floorplan AI Massblatt",
+  "short_name": "Massblatt",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

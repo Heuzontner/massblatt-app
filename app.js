@@ -9,9 +9,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.5.2';
+const VERSION = '3.6.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Foto verwackelt? Neuer Knopf 📷↻ rechts unten im Foto (über 👁): nimmt das Foto sofort neu auf – gleicher Raum, ohne Umweg übers Projekt', 'Erkennung vorerst AUS (traf zu oft daneben) – es starten wieder zwei Pfeile zum Selbersetzen. Einschalten zum Testen: ⚙ System', 'Neu in ⚙ System: „📤 Trainingsdaten senden“ legt deine gemessenen Fotos + Pfeile in die Dropbox (Ordner „Massblatt Training“) – damit wird die Erkennung auf deine Türen und Fenster trainiert', 'Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
+const NEWS = ['Die App heißt jetzt „Floorplan AI Massblatt“ – by VIEWPORT 360°', 'Neu in ⚙ System: „Keine Pfeile – selbst ziehen“. Das Foto startet leer, du ziehst jeden Pfeil mit dem Finger von Kante zu Kante und drückst am Ende „✓ Fertig“', 'Pfeil mit zwei Tipps setzen geht jetzt zuverlässig: auch schnell hintereinander und auch dort, wo schon ein Pfeil liegt', '📷↻ Foto neu fragt jetzt immer nach', 'PDF-Deckblatt: in der Kopfzeile steht der Projektname dabei', 'Foto verwackelt? Neuer Knopf 📷↻ rechts unten im Foto (über 👁): nimmt das Foto sofort neu auf – gleicher Raum, ohne Umweg übers Projekt', 'Erkennung vorerst AUS (traf zu oft daneben) – es starten wieder zwei Pfeile zum Selbersetzen. Einschalten zum Testen: ⚙ System', 'Neu in ⚙ System: „📤 Trainingsdaten senden“ legt deine gemessenen Fotos + Pfeile in die Dropbox (Ordner „Massblatt Training“) – damit wird die Erkennung auf deine Türen und Fenster trainiert', 'Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -1384,6 +1384,7 @@ async function openEditor(shot, fresh = false) {
   if (fresh) {
     if (shot.room === 'Rh') applyTemplate('Raumhöhe');
     else if (S.ai) runDetect();
+    else if (S.arrowMode === 'none') { S.active = null; updateCur(); } // leeres Foto: Pfeile selbst ziehen (oder zwei Tipps)
     else applyTemplate('Tür'); // immer zwei Pfeile: Höhe + Breite (ohne Bezeichnung); weitere über „+ Pfeil“
   }
 }
@@ -1534,12 +1535,14 @@ function updateCur() {
   const a = activeArrow();
   const i = S.shot.arrows.indexOf(a);
   const lbl = $('#curLbl');
-  if (!a) { lbl.textContent = 'Kein Pfeil – oben „+ Pfeil“ antippen'; lbl.classList.remove('step'); }
+  if (!a) { lbl.textContent = placing ? 'jetzt das Ende antippen' : 'Mit dem Finger von Kante zu Kante ziehen (oder Anfang + Ende antippen), dann messen'; lbl.classList.add('step'); }
   else if (a.cm == null) { // Schnellablauf: sagen, was als Nächstes zu tun ist
     const where = a.el === 'Raumhöhe' ? 'Boden + Decke' : a.kind === 'H' ? 'oben + unten' : 'links + rechts';
     lbl.textContent = `${arrowName(a)} ${i + 1}/${S.shot.arrows.length}: ${placing ? 'jetzt das Ende antippen' : `${where} antippen, dann messen`}`;
     lbl.classList.add('step');
-  } else { lbl.textContent = `${arrowName(a)}   (Pfeil ${i + 1} von ${S.shot.arrows.length}) ✓`; lbl.classList.remove('step'); }
+  } else if (placing && !placing.id) { lbl.textContent = 'jetzt das Ende antippen'; lbl.classList.add('step'); }
+  else if (S.arrowMode === 'none' && S.shot.room !== 'Rh' && !S.shot.arrows.some(x => x.cm == null)) { lbl.textContent = `${arrowName(a)} ✓ – nächsten Pfeil ziehen oder „✓ Fertig“`; lbl.classList.remove('step'); }
+  else { lbl.textContent = `${arrowName(a)}   (Pfeil ${i + 1} von ${S.shot.arrows.length}) ✓`; lbl.classList.remove('step'); }
   const v = $('#curVal');
   const num = a && (kb.on || a.cm != null);
   v.classList.toggle('hint', !num);
@@ -1573,6 +1576,7 @@ function setValue(cm, mm) {
   if (opt.big) showBig(a);
   if (opt.voice) say(`${opt.mm ? a.mm : cm}` + (next ? `. Nächster: ${arrowName(next)}` : '. Fertig'));
   if (next) { S.active = next.id; updateCur(); }
+  else if (S.arrowMode === 'none' && S.shot.room !== 'Rh') { S.active = a.id; updateCur(); } // selbst ziehen: wie viele Pfeile kommen, weiß nur der Nutzer → „✓ Fertig“
   else { S.active = a.id; updateCur(); finishShot(true); }
 }
 // keine Tür-/Fenster-Bezeichnung (Manuel 09.11.): nur Höhe/Breite wie im Bosch-Maßblatt; Raumhöhe bleibt benannt
@@ -1696,7 +1700,8 @@ $('#kbBtn').onclick = () => setKb(!kb.on);
 $('#retakeA').onclick = async () => {
   const shot = S.shot; if (!shot) return;
   clearTimeout(finishing);
-  if ((shot.arrows || []).some(a => a.cm != null) && !await confirmBox('Foto neu aufnehmen?', 'Neu aufnehmen', 'Abbrechen', 'pri', 'Die Maße auf diesem Foto werden verworfen.')) return;
+  const hasCm = (shot.arrows || []).some(a => a.cm != null);
+  if (!await confirmBox('Foto wirklich neu aufnehmen?', 'Neu aufnehmen', 'Abbrechen', 'pri', hasCm ? 'Die Maße auf diesem Foto werden verworfen.' : 'Das jetzige Foto wird durch das neue ersetzt.')) return;
   if (kb.on) setKb(false);
   S.retake = shot; S.room = shot.room; openCam();
 };
@@ -1761,19 +1766,25 @@ function showPlaceMark(x, y) {
   m.style.left = (r.left - st.left + x * r.width) + 'px'; m.style.top = (r.top - st.top + y * r.height) + 'px'; m.style.display = 'block';
 }
 function placeTap(x, y) {
-  const a = activeArrow(); if (!a) return false;
+  // Ziel: der gewählte offene Pfeil, sonst der nächste offene. Gibt es keinen offenen, entsteht beim zweiten Tipp ein neuer
+  // (nur im Modus „selbst ziehen“ oder wenn das Foto noch gar keinen Pfeil hat – sonst macht ein Fehltipp keinen Pfeil).
+  let a = activeArrow();
+  if (!a || a.cm != null) { const o = S.shot.arrows.find(q => q.cm == null); if (o) { a = o; S.active = o.id; } else a = null; }
+  if (!a && !(S.arrowMode === 'none' || !S.shot.arrows.length)) return false;
+  const tid = a ? a.id : null;
   if (!placing) {
-    placing = { id: a.id, x, y }; showPlaceMark(x, y); updateCur();
+    placing = { id: tid, x, y }; showPlaceMark(x, y); updateCur();
     clearTimeout(placingT); placingT = setTimeout(() => { clearPlacing(); updateCur(); }, 20000);
     try { navigator.vibrate && navigator.vibrate(10); } catch (e) { }
     return true;
   }
   const p = placing; clearPlacing();
-  if (p.id !== a.id) return placeTap(x, y); // inzwischen anderer Pfeil gewählt → neu anfangen
+  if (p.id !== tid) return placeTap(x, y); // inzwischen anderer Pfeil gewählt → neu anfangen
   const r = cv.getBoundingClientRect();
   const dx = (x - p.x) * r.width, dy = (y - p.y) * r.height;
   if (Math.hypot(dx, dy) < 25) { updateCur(); return true; } // zweimal dieselbe Stelle: nichts
   const cl = v => Math.min(1, Math.max(0, v));
+  if (!a) { a = newArrow(); S.shot.arrows.push(a); S.active = a.id; }
   if (a.el !== 'Maß' && a.el) { // Vorlagen-Pfeil: Richtung bleibt (Höhe senkrecht, Breite waagrecht)
     if (a.kind === 'H') { const mx = cl((p.x + x) / 2); a.x1 = a.x2 = mx; a.y1 = cl(p.y); a.y2 = cl(y); }
     else { const my = cl((p.y + y) / 2); a.y1 = a.y2 = my; a.x1 = cl(p.x); a.x2 = cl(x); }
@@ -1784,6 +1795,12 @@ function placeTap(x, y) {
   saveShot(); updateCur();
   return true;
 }
+// Ein Tipp wird erst nach dem Doppeltipp-Fenster (330 ms) gesetzt. Kommt vorher ein zweiter Tipp an ANDERER Stelle,
+// wird der erste sofort gesetzt – sonst ging er verloren, wenn man Anfang und Ende schnell hintereinander antippt (3.6).
+let pendTap = null;
+function flushTap() { clearTimeout(tapT); const p = pendTap; pendTap = null; if (p) placeTap(p.x, p.y); }
+function queueTap(x, y) { flushTap(); pendTap = { x, y }; tapT = setTimeout(flushTap, 330); }
+function dropTap() { clearTimeout(tapT); pendTap = null; }
 const stage = $('#stage');
 const inStage = e => { const s2 = stage.getBoundingClientRect(); return { x: e.clientX - s2.left - s2.width / 2, y: e.clientY - s2.top - s2.height / 2 }; };
 
@@ -1828,10 +1845,9 @@ stage.addEventListener('pointerdown', e => {
     S.shot.arrows.push(a);
     best = { a, k: 'p2', isNew: true, prev: S.active };
   }
-  const wasActive = S.active === best.a.id;
-  if (!best.isNew && placing && placing.id !== best.a.id) clearPlacing(); // anderer Pfeil angetippt → Setz-Modus verwerfen
+  const wasActive = S.active === best.a.id, prevActive = S.active, prevPick = S.manualPick;
   S.active = best.a.id; S.manualPick = !best.isNew; kb.buf = ''; updateCur();
-  drag = { ...best, x, y, o: { ...best.a }, sx: e.clientX, sy: e.clientY, moved: false, wasActive };
+  drag = { ...best, x, y, o: { ...best.a }, sx: e.clientX, sy: e.clientY, moved: false, wasActive, prevActive, prevPick };
 });
 stage.addEventListener('pointermove', e => {
   if (!ptrs.has(e.pointerId)) return;
@@ -1853,7 +1869,10 @@ stage.addEventListener('pointermove', e => {
   const r = cv.getBoundingClientRect();
   const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
   const dx = x - drag.x, dy = y - drag.y, a = drag.a, o = drag.o, cl = v => Math.min(1, Math.max(0, v));
-  if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 4) drag.moved = true;
+  if (!drag.moved) {
+    if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) <= (drag.isNew ? 4 : 10)) return;
+    drag.moved = true; if (!drag.isNew) { dropTap(); clearPlacing(); updateCur(); } // echtes Ziehen an einem Pfeil → Setz-Modus verfällt
+  }
   if (drag.k === 'p1') { a.x1 = cl(o.x1 + dx); a.y1 = cl(o.y1 + dy); }
   else if (drag.k === 'p2') { a.x2 = cl(o.x2 + dx); a.y2 = cl(o.y2 + dy); }
   else { a.x1 = cl(o.x1 + dx); a.y1 = cl(o.y1 + dy); a.x2 = cl(o.x2 + dx); a.y2 = cl(o.y2 + dy); }
@@ -1895,16 +1914,16 @@ const endDrag = e => {
       S.shot.arrows = S.shot.arrows.filter(x => x !== a); S.active = d.prev || firstOpen();
       const now = Date.now();
       if (e && now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 30) {
-        clearTimeout(tapT); clearPlacing(); // Doppeltipp: kein Setzen, sondern Zoom
+        dropTap(); clearPlacing(); // Doppeltipp: kein Setzen, sondern Zoom
         if (view.s > 1) resetView();
         else { const m = inStage(e); view.s = 2.5; view.tx = -m.x * 1.5; view.ty = -m.y * 1.5; clampView(); applyView(); }
         lastTap = { t: 0, x: 0, y: 0 };
       } else {
         lastTap = { t: now, x: e ? e.clientX : 0, y: e ? e.clientY : 0 };
-        clearTimeout(tapT); tapT = setTimeout(() => placeTap(d.x, d.y), 330); // erst nach dem Doppeltipp-Fenster setzen
+        queueTap(d.x, d.y); // erst nach dem Doppeltipp-Fenster setzen (ein zweiter Tipp woanders setzt den ersten sofort)
       }
     } else {
-      clearPlacing();
+      dropTap(); clearPlacing();
       a.kind = Math.abs(dy) > Math.abs(dx) ? 'H' : 'B';
       snapArrow(a, 'p2'); magnet(a, 'both');
       // Pfeile von unten nach oben bzw. links nach rechts speichern
@@ -1913,6 +1932,12 @@ const endDrag = e => {
     }
     updateCur();
   } else if (d.k !== 'all' && d.moved) { snapArrow(a, d.k); magnet(a, d.k); }
+  else if (!d.moved && !(d.k === 'all' && d.wasActive && e && labelBoxes.get(a.id) && hitLabel(labelBoxes.get(a.id), e)) && (placing || pendTap || (d.wasActive && a.cm == null))) {
+    // Tipp AUF einen Pfeil, ohne zu ziehen: läuft gerade das Setzen (erster Punkt da) oder ist es der gewählte offene Pfeil,
+    // zählt der Tipp als Punkt – sonst konnte man Kanten nicht antippen, auf denen schon ein Pfeil lag (3.6).
+    if (placing || pendTap) { S.active = d.prevActive; S.manualPick = d.prevPick; }
+    queueTap(d.x, d.y); updateCur();
+  }
   else if (d.k === 'all' && !d.moved && d.wasActive) { // schon gewählter Pfeil nochmal angetippt: war es das Etikett? → Lage wechseln (Mitte → Anfang → Ende)
     const lb = labelBoxes.get(a.id);
     if (lb && e && hitLabel(lb, e)) { a.lab = ((a.lab || 0) + 1) % 3; toast(['Etikett in der Mitte', 'Etikett am Anfang', 'Etikett am Ende'][a.lab], 1200); }
@@ -2472,7 +2497,7 @@ $('#btnSettings').onclick = async () => {
   $('#sTitle').value = (await db.setting('headerTitle')) || '';
   const lg = await db.setting('headerLogo');
   if (lg) { $('#sLogoPrev').src = blobUrl(lg); $('#sLogoPrev').hidden = false; } else $('#sLogoPrev').hidden = true;
-  $('#sAi').value = S.ai ? '1' : '0';
+  $('#sAi').value = S.arrowMode || 'two';
   trainUi();
   dbxUi();
   renderCustManage();
@@ -3095,7 +3120,7 @@ $('#setClose').onclick = () => $('#setSheet').classList.remove('on');
 $('#sTitle').oninput = () => db.setting('headerTitle', $('#sTitle').value);
 $('#sLogo').onchange = async e => { let f = e.target.files[0]; if (!f) return; f = await cutoutLogo(f); await db.setting('headerLogo', f); $('#sLogoPrev').src = blobUrl(f); $('#sLogoPrev').hidden = false; };
 $('#sLogoDel').onclick = async () => { await db.setting('headerLogo', null); $('#sLogoPrev').hidden = true; };
-$('#sAi').onchange = async () => { S.ai = $('#sAi').value === '1'; await db.setting('ai', S.ai); };
+$('#sAi').onchange = async () => { S.arrowMode = $('#sAi').value; S.ai = S.arrowMode === 'ai' && !window.__noAI; await db.setting('arrowMode', S.arrowMode); await db.setting('ai', S.arrowMode === 'ai'); };
 // Trainingsdaten: jedes fertig bemaßte Foto (ohne Pfeile im Bild) + die Pfeil-Positionen als JSON nach „<Dropbox-Ordner>/Massblatt Training“.
 // Daraus wird das Erkennungsmodell nachtrainiert. Jedes Foto wird nur einmal gesendet (trainSent).
 const TRAIN_SUB = 'Massblatt Training';
@@ -3339,7 +3364,9 @@ $('#sNews').onclick = () => { $('#setClose').click(); showNews(); };
   await pinStart();
   // 3.5.2: KI wieder Standard AUS (trifft Manuels Fotos zu schlecht) – einmalig zurückgesetzt, bis das Modell mit eigenen Fotos nachtrainiert ist
   if ((await db.setting('aiV')) !== 2) { await db.setting('ai', false); await db.setting('aiV', 2); }
-  const ai = await db.setting('ai'); S.ai = (ai === true || !!window.__forceAI) && !window.__noAI;
+  const ai = await db.setting('ai');
+  S.arrowMode = window.__forceAI ? 'ai' : (await db.setting('arrowMode')) || (ai === true ? 'ai' : 'two'); // 'none' = leer, selbst ziehen · 'two' = Höhe + Breite vorgeben · 'ai' = Erkennung
+  S.ai = S.arrowMode === 'ai' && !window.__noAI;
   if (S.ai) setTimeout(() => loadModel().catch(e => log('KI-Modell: ' + e.message)), 2500); // im Hintergrund vorladen, damit das erste Foto nicht wartet
   applyZoom((await db.setting('zoom')) || 1);
   setTimeout(processQueue, 3000);
