@@ -9,9 +9,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.5.0';
+const VERSION = '3.5.1';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
+const NEWS = ['Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -234,10 +234,23 @@ $('#trashChip').onclick = () => { showTrash = !showTrash; showArch = false; rend
 function setSelMode(on) { selMode = on; selIds.clear(); $('.plist').classList.toggle('sel', on); $('#selChip').classList.toggle('sel', on); updateSelBar(); renderHome(); }
 $('#selChip').onclick = () => setSelMode(!selMode);
 $('#selCancel').onclick = () => setSelMode(false);
+// Mehrfachauswahl löschen (Manuel 10.11.): eine Rückfrage, alle in den Papierkorb (30 Tage), mit Rückgängig
+$('#selDel').onclick = async () => {
+  const n = selIds.size; if (!n) return;
+  if (!await confirmBox(`${n} Projekt${n === 1 ? '' : 'e'} löschen?`, 'Löschen', 'Abbrechen', 'danger', 'Sie liegen 30 Tage im Papierkorb und lassen sich dort wiederherstellen.')) return;
+  const ids = [...selIds], t = Date.now(), done = [];
+  for (const id of ids) { const p = await db.get('projects', id); if (p && !p.deleted) { p.deleted = t; await db.put('projects', p); done.push(id); } }
+  setSelMode(false);
+  undoToast(`${done.length} Projekt${done.length === 1 ? '' : 'e'} im Papierkorb`, async () => {
+    for (const id of done) { const p = await db.get('projects', id); if (p) { delete p.deleted; await db.put('projects', p); } }
+    renderHome();
+  });
+};
 function updateSelBar() {
   const n = selIds.size;
   $('#selPdf').textContent = `1 PDF aus ${n} Projekt${n === 1 ? '' : 'en'}`; $('#selPdf').disabled = !n;
   // je Projekt ein eigenes PDF in den Ordner seines Kunden (Manuel 09.11.: „muss die Kunden trennen und richtig ablegen“)
+  $('#selDel').disabled = !n;
   $('#selDbx').textContent = `☁ ${n} PDF${n === 1 ? '' : 's'} in Dropbox`; $('#selDbx').disabled = !n; $('#selDbx').style.display = dropbox.connected ? '' : 'none';
 }
 $('#selDbx').onclick = async () => {
@@ -1477,15 +1490,15 @@ async function runDetect() {
       $('#busyTxt').textContent = `KI-Modell wird geladen … ${Math.round(l / 1048576)} / ${Math.round(t / 1048576)} MB`;
       if (f >= 1) $('#busyTxt').textContent = 'Erkenne Tür/Fenster …';
     });
-    if (!objs.length) { toast('Nichts erkannt – zwei Pfeile gesetzt, bitte selbst anlegen', 2800); applyTemplate('Tür'); }
+    if (!objs.length) { toast(`Nichts erkannt (${detectMod.lastMs} ms ${detectMod.backend}) – zwei Pfeile gesetzt`, 3500); applyTemplate('Tür'); }
     else {
       setArrows(arrowsFromObjects(objs), 'KI erkennen');
       const nd = objs.filter(o => o.type === 'door').length, nw = objs.length - nd;
-      toast(`Erkannt: ${nd ? 'Tür' : ''}${nd && nw ? ' + ' : ''}${nw ? nw + ' Fenster' : ''} (${detectMod.lastMs} ms)`);
+      toast(`Erkannt: ${nd ? 'Tür' : ''}${nd && nw ? ' + ' : ''}${nw ? nw + ' Fenster' : ''} (${detectMod.lastMs} ms ${detectMod.backend})`, 3500);
     }
   } catch (e) {
     console.error(e);
-    toast(navigator.onLine ? 'KI gerade nicht verfügbar – zwei Pfeile gesetzt' : 'Offline und KI noch nicht geladen – zwei Pfeile gesetzt', 3000);
+    log('KI-Fehler: ' + (e && e.message)); toast('KI-Fehler: ' + String(e && e.message).slice(0, 90) + ' – zwei Pfeile gesetzt', 6000);
     if (!S.shot.arrows.length) applyTemplate('Tür');
   } finally { busy.classList.remove('on'); }
 }

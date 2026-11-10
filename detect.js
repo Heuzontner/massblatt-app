@@ -5,7 +5,7 @@ const SIZE = 480, DOOR = 164, WINDOW = 587, NC = 601;
 const MODEL_URL = new URL('./model/dw480.onnx', import.meta.url).href;
 const CACHE = 'mbmodel-1';
 let sessP = null, ortMod = null;
-export let lastMs = 0;
+export let lastMs = 0, backend = '';
 
 export function modelState() {
   try { return localStorage.getItem('mb_model_ready') === '2' ? 'bereit' : 'nicht geladen'; } catch (e) { return 'nicht geladen'; }
@@ -25,15 +25,38 @@ async function modelBytes(onProgress) {
 export function loadModel(onProgress) {
   if (sessP) return sessP;
   sessP = (async () => {
-    ortMod = await import('./vendor/ort.wasm.min.mjs');
-    ortMod.env.wasm.wasmPaths = { mjs: new URL('./vendor/ort-wasm-simd-threaded.mjs', import.meta.url).href, wasm: new URL('./vendor/ort-wasm-simd-threaded.wasm', import.meta.url).href };
-    ortMod.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
-    ortMod.env.wasm.proxy = false;
-    const s = await ortMod.InferenceSession.create(await modelBytes(onProgress), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
-    // einmal leer rechnen: der erste Lauf ist sonst deutlich langsamer
-    await s.run({ [s.inputNames[0]]: new ortMod.Tensor('float32', new Float32Array(3 * SIZE * SIZE), [1, 3, SIZE, SIZE]) });
-    try { localStorage.setItem('mb_model_ready', '2'); } catch (e) { }
-    return s;
+    const bytes = await modelBytes(onProgress);
+    const timed = async (s, m) => { const t = performance.now(); const o = await s.run({ [s.inputNames[0]]: new m.Tensor('float32', new Float32Array(3 * SIZE * SIZE), [1, 3, SIZE, SIZE]) }); return [performance.now() - t, o[s.outputNames[0]].data]; };
+    const ready = (s, m, name) => { ortMod = m; backend = name; try { localStorage.setItem('mb_model_ready', '2'); localStorage.setItem('mb_ki_be', name); } catch (e) { } return s; };
+    const mkCpu = async () => {
+      const m = await import('./vendor/ort.wasm.min.mjs');
+      m.env.wasm.wasmPaths = { mjs: new URL('./vendor/ort-wasm-simd-threaded.mjs', import.meta.url).href, wasm: new URL('./vendor/ort-wasm-simd-threaded.wasm', import.meta.url).href };
+      m.env.wasm.numThreads = self.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1; m.env.wasm.proxy = false;
+      const s = await m.InferenceSession.create(bytes.slice(0), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+      await timed(s, m); // einmal leer rechnen: der erste Lauf ist sonst deutlich langsamer
+      return [s, m];
+    };
+    // Grafikchip (WebGPU) ist am Tablet meist um ein Vielfaches schneller als ein Prozessorkern – aber nicht überall
+    // (Software-GPU ist viel langsamer). Darum einmal messen, den schnelleren Weg nehmen und fürs nächste Mal merken.
+    let known = ''; try { known = localStorage.getItem('mb_ki_be') || ''; } catch (e) { }
+    if (navigator.gpu && !self.__noGPU && known !== 'CPU') {
+      try {
+        const ad = await navigator.gpu.requestAdapter(); if (!ad || ad.isFallbackAdapter) throw new Error('kein echter Grafikchip');
+        const m = await import('./vendor/ort.webgpu.min.mjs');
+        m.env.wasm.wasmPaths = new URL('./vendor/', import.meta.url).href; m.env.wasm.numThreads = 1; m.env.wasm.proxy = false;
+        const s = await m.InferenceSession.create(bytes.slice(0), { executionProviders: ['webgpu'], graphOptimizationLevel: 'all' });
+        const first = await Promise.race([timed(s, m), new Promise(r => setTimeout(() => r(null), 8000))]);
+        if (!first) throw new Error('WebGPU zu langsam');
+        const [ms, d] = await timed(s, m);
+        if (!d || !d.length || !Number.isFinite(d[0])) throw new Error('WebGPU liefert kein Ergebnis');
+        if (known === 'GPU' || ms < 150) return ready(s, m, 'GPU');
+        const [cs, cm] = await mkCpu(); const [cms] = await timed(cs, cm);
+        if (ms <= cms) { try { cs.release(); } catch (e) { } return ready(s, m, 'GPU'); }
+        try { s.release(); } catch (e) { } return ready(cs, cm, 'CPU');
+      } catch (e) { console.warn('WebGPU nicht nutzbar, weiter mit WASM:', e && e.message); }
+    }
+    const [s, m] = await mkCpu();
+    return ready(s, m, 'CPU');
   })();
   sessP.catch(() => { sessP = null; });
   return sessP;
@@ -50,8 +73,8 @@ export function pick(cand) {
   objs.sort((a, b) => b.score - a.score);
   const keep = [];
   for (const o of objs) if (!keep.some(k => iou(k.box, o.box) > 0.45)) keep.push(o); // gleiche Stelle nur einmal (auch Tür/Fenster-Doppel)
-  const doors = keep.filter(o => o.type === 'door' && o.score > 0.2 && (o.box.y1 - o.box.y0) > 0.35).slice(0, 1);
-  let wins = keep.filter(o => o.type === 'window' && o.score > 0.2 && !(doors[0] && iou(doors[0].box, o.box) > 0.5));
+  const doors = keep.filter(o => o.type === 'door' && o.score > 0.1 && (o.box.y1 - o.box.y0) > 0.35).slice(0, 1);
+  let wins = keep.filter(o => o.type === 'window' && o.score > 0.1 && !(doors[0] && iou(doors[0].box, o.box) > 0.5));
   // „Fenster draußen“: liegt ein Fenster (fast) ganz in einem größeren Fenster, ist es das Nachbarhaus oder eine Sprosse → weg.
   // Ebenso sehr kleine Fenster neben einem deutlich größeren (weniger als ein Achtel der Fläche).
   const big = wins.reduce((m, o) => Math.max(m, area(o.box)), 0);
@@ -75,7 +98,7 @@ export async function detect(canvas, onProgress) {
   for (const [cls, type] of [[DOOR, 'door'], [WINDOW, 'window']]) {
     const row = (4 + cls) * N;
     for (let i = 0; i < N; i++) {
-      const sc = d[row + i]; if (sc < 0.15) continue;
+      const sc = d[row + i]; if (sc < 0.08) continue;
       const cx = d[i], cy = d[N + i], bw = d[2 * N + i], bh = d[3 * N + i];
       cand.push({ type, score: sc, box: { x0: clamp((cx - bw / 2 - ox) / w), y0: clamp((cy - bh / 2 - oy) / h), x1: clamp((cx + bw / 2 - ox) / w), y1: clamp((cy + bh / 2 - oy) / h) } });
     }
