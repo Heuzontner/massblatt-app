@@ -9,9 +9,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.6.1';
+const VERSION = '3.6.2';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Neues App-Symbol: FPM (Floorplan AI Massblatt) mit gelbem Maßpfeil. Am Startbildschirm erscheint es nach dem Neu-Installieren der App', 'Die App heißt jetzt „Floorplan AI Massblatt“ – by VIEWPORT 360°', 'Neu in ⚙ System: „Keine Pfeile – selbst ziehen“. Das Foto startet leer, du ziehst jeden Pfeil mit dem Finger von Kante zu Kante und drückst am Ende „✓ Fertig“', 'Pfeil mit zwei Tipps setzen geht jetzt zuverlässig: auch schnell hintereinander und auch dort, wo schon ein Pfeil liegt', '📷↻ Foto neu fragt jetzt immer nach', 'PDF-Deckblatt: in der Kopfzeile steht der Projektname dabei', 'Foto verwackelt? Neuer Knopf 📷↻ rechts unten im Foto (über 👁): nimmt das Foto sofort neu auf – gleicher Raum, ohne Umweg übers Projekt', 'Erkennung vorerst AUS (traf zu oft daneben) – es starten wieder zwei Pfeile zum Selbersetzen. Einschalten zum Testen: ⚙ System', 'Neu in ⚙ System: „📤 Trainingsdaten senden“ legt deine gemessenen Fotos + Pfeile in die Dropbox (Ordner „Massblatt Training“) – damit wird die Erkennung auf deine Türen und Fenster trainiert', 'Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
+const NEWS = ['Dropbox: PDFs liegen jetzt in „Massblätter/Kunde“ (z. B. VR Austausch / Massblätter / WAG), ohne Jahresordner', 'Neues App-Symbol: FPM (Floorplan AI Massblatt) mit gelbem Maßpfeil. Am Startbildschirm erscheint es nach dem Neu-Installieren der App', 'Die App heißt jetzt „Floorplan AI Massblatt“ – by VIEWPORT 360°', 'Neu in ⚙ System: „Keine Pfeile – selbst ziehen“. Das Foto startet leer, du ziehst jeden Pfeil mit dem Finger von Kante zu Kante und drückst am Ende „✓ Fertig“', 'Pfeil mit zwei Tipps setzen geht jetzt zuverlässig: auch schnell hintereinander und auch dort, wo schon ein Pfeil liegt', '📷↻ Foto neu fragt jetzt immer nach', 'PDF-Deckblatt: in der Kopfzeile steht der Projektname dabei', 'Foto verwackelt? Neuer Knopf 📷↻ rechts unten im Foto (über 👁): nimmt das Foto sofort neu auf – gleicher Raum, ohne Umweg übers Projekt', 'Erkennung vorerst AUS (traf zu oft daneben) – es starten wieder zwei Pfeile zum Selbersetzen. Einschalten zum Testen: ⚙ System', 'Neu in ⚙ System: „📤 Trainingsdaten senden“ legt deine gemessenen Fotos + Pfeile in die Dropbox (Ordner „Massblatt Training“) – damit wird die Erkennung auf deine Türen und Fenster trainiert', 'Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -2131,7 +2131,10 @@ function withYear(sub, p) {
   const d = p && p.datum ? new Date(p.datum) : new Date(); const y = isNaN(d) ? new Date().getFullYear() : d.getFullYear();
   return (sub ? sub + '/' : '') + y;
 }
-async function custFolderFor(p) { const c = await customerOf(p); return withYear(c ? (c.dbx || c.name || '') : (p.firma || ''), p); }
+// Maßblatt-PDFs liegen in „<Dropbox-Ordner>/Massblätter/<Kunde>“ (Manuel 10.11.: VR Austausch / Massblätter / WAG bzw. EBS).
+// Heißt der eingestellte Dropbox-Ordner selbst schon so, kommt kein zweiter dazu.
+function pdfSub(sub) { return /(^|\/)ma(ß|ss)bl(ä|ae)tter$/i.test(dropbox.base) ? sub : 'Massblätter' + (sub ? '/' + sub : ''); }
+async function custFolderFor(p) { const c = await customerOf(p); return pdfSub(withYear(c ? (c.dbx || c.name || '') : (p.firma || ''), p)); }
 async function custFolder() { return custFolderFor(S.project); }
 // Fotos mit hochladen (Idee 83): nur wenn beim Kunden eingeschaltet – Originale (ohne Pfeile), nummeriert nach Raum
 async function photosFor(p, shots) {
@@ -2254,7 +2257,7 @@ async function dbxUi() {
   $('#dbxBrowse').disabled = !dropbox.connected;
   const log = (await db.setting('dbxLog')) || []; const bad = log.filter(e => !e.ok).length;
   $('#dbxLogBtn').textContent = `Verlauf (${log.length}${bad ? `, ${bad} fehlgeschlagen` : ''})`; $('#dbxLogBtn').style.display = log.length ? '' : 'none';
-  $('#dbxYearHint').textContent = `z. B. ${dropbox.pathFor(withYear('WAG', null))}/Kopernikusstrasse 22, EG.pdf`;
+  $('#dbxYearHint').textContent = `Ablage: ${dropbox.pathFor(pdfSub(withYear('WAG', null)))}/Kopernikusstrasse 22, EG.pdf`;
   prepDbxLink();
   checkDbxFolder();
 }
@@ -3362,6 +3365,8 @@ $('#sNews').onclick = () => { $('#setClose').click(); showNews(); };
 // ---------------- Start ----------------
 (async () => {
   await pinStart();
+  // 3.6.2: Jahresordner einmalig aus (Manuel: nur …/Massblätter/WAG, kein 2026) – in ⚙ Cloud wieder einschaltbar
+  try { if (!localStorage.getItem('mb_yearOff')) { dropbox.setYear(false); localStorage.setItem('mb_yearOff', '1'); } } catch (e) { }
   // 3.5.2: KI wieder Standard AUS (trifft Manuels Fotos zu schlecht) – einmalig zurückgesetzt, bis das Modell mit eigenen Fotos nachtrainiert ist
   if ((await db.setting('aiV')) !== 2) { await db.setting('ai', false); await db.setting('aiV', 2); }
   const ai = await db.setting('ai');
