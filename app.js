@@ -9,9 +9,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.7.0';
+const VERSION = '3.8.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Trainingsfotos gehen jetzt bei jedem Dropbox-Upload von selbst mit; in ⚙ System steht, wie viele schon gesendet sind', 'Laser direkt in der Kamera verbinden: Feld „Laser verbinden“ oben im Kamerabild', '„Keine Pfeile“: nach dem Messen großer Knopf „✓ Fertig – nächstes Foto“', 'Rückfrage vor PDF/Dropbox nur noch, wenn Raumhöhe oder Eingangstür fehlt', 'Jahresordner-Option entfernt; überall „Massblatt“', 'Dropbox: PDFs liegen jetzt in „Massblätter/Kunde“ (z. B. VR Austausch / Massblätter / WAG), ohne Jahresordner', 'Neues App-Symbol: FPM (Floorplan AI Massblatt) mit gelbem Maßpfeil. Am Startbildschirm erscheint es nach dem Neu-Installieren der App', 'Die App heißt jetzt „Floorplan AI Massblatt“ – by VIEWPORT 360°', 'Neu in ⚙ System: „Keine Pfeile – selbst ziehen“. Das Foto startet leer, du ziehst jeden Pfeil mit dem Finger von Kante zu Kante und drückst am Ende „✓ Fertig“', 'Pfeil mit zwei Tipps setzen geht jetzt zuverlässig: auch schnell hintereinander und auch dort, wo schon ein Pfeil liegt', '📷↻ Foto neu fragt jetzt immer nach', 'PDF-Deckblatt: in der Kopfzeile steht der Projektname dabei', 'Foto verwackelt? Neuer Knopf 📷↻ rechts unten im Foto (über 👁): nimmt das Foto sofort neu auf – gleicher Raum, ohne Umweg übers Projekt', 'Erkennung vorerst AUS (traf zu oft daneben) – es starten wieder zwei Pfeile zum Selbersetzen. Einschalten zum Testen: ⚙ System', 'Neu in ⚙ System: „📤 Trainingsdaten senden“ legt deine gemessenen Fotos + Pfeile in die Dropbox (Ordner „Massblatt Training“) – damit wird die Erkennung auf deine Türen und Fenster trainiert', 'Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
+const NEWS = ['Einstellungen neu: sieben große Kacheln statt Reiter, Seltenes unter „Erweitert“', 'Mehrere Fotos im selben Raum heißen jetzt Kz1-1, Kz1-2 … (im PDF sichtbar, für das Einlesen in BricsCAD bleibt es „Kz1“)', 'Messen Bauteil für Bauteil: erst Höhe und Breite der Tür, dann das Fenster', 'Zurück-Knopf oben links reagiert zuverlässiger (wurde teils von anderen Feldern überdeckt)', 'Trainingsfotos gehen jetzt bei jedem Dropbox-Upload von selbst mit; in ⚙ System steht, wie viele schon gesendet sind', 'Laser direkt in der Kamera verbinden: Feld „Laser verbinden“ oben im Kamerabild', '„Keine Pfeile“: nach dem Messen großer Knopf „✓ Fertig – nächstes Foto“', 'Rückfrage vor PDF/Dropbox nur noch, wenn Raumhöhe oder Eingangstür fehlt', 'Jahresordner-Option entfernt; überall „Massblatt“', 'Dropbox: PDFs liegen jetzt in „Massblätter/Kunde“ (z. B. VR Austausch / Massblätter / WAG), ohne Jahresordner', 'Neues App-Symbol: FPM (Floorplan AI Massblatt) mit gelbem Maßpfeil. Am Startbildschirm erscheint es nach dem Neu-Installieren der App', 'Die App heißt jetzt „Floorplan AI Massblatt“ – by VIEWPORT 360°', 'Neu in ⚙ System: „Keine Pfeile – selbst ziehen“. Das Foto startet leer, du ziehst jeden Pfeil mit dem Finger von Kante zu Kante und drückst am Ende „✓ Fertig“', 'Pfeil mit zwei Tipps setzen geht jetzt zuverlässig: auch schnell hintereinander und auch dort, wo schon ein Pfeil liegt', '📷↻ Foto neu fragt jetzt immer nach', 'PDF-Deckblatt: in der Kopfzeile steht der Projektname dabei', 'Foto verwackelt? Neuer Knopf 📷↻ rechts unten im Foto (über 👁): nimmt das Foto sofort neu auf – gleicher Raum, ohne Umweg übers Projekt', 'Erkennung vorerst AUS (traf zu oft daneben) – es starten wieder zwei Pfeile zum Selbersetzen. Einschalten zum Testen: ⚙ System', 'Neu in ⚙ System: „📤 Trainingsdaten senden“ legt deine gemessenen Fotos + Pfeile in die Dropbox (Ordner „Massblatt Training“) – damit wird die Erkennung auf deine Türen und Fenster trainiert', 'Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -1031,7 +1031,7 @@ function renderShots() {
     const open = s.arrows.filter(a => a.cm == null).length;
     c.innerHTML = `<img><div class="t"><div class="room"></div><div class="vals"></div>${open ? `<div class="warn">${open} Pfeil${open > 1 ? 'e' : ''} ohne Maß</div>` : ''}</div><button class="del" aria-label="Foto löschen">🗑</button>`;
     c.querySelector('img').src = blobUrl(s.photo);
-    c.querySelector('.room').textContent = `${i + 1}. ${s.room}`;
+    c.querySelector('.room').textContent = `${i + 1}. ${shotName(s)}`;
     c.querySelector('.vals').textContent = vals ? vals + (opt.mm ? ' mm' : ' cm') : '–';
     c.onclick = () => { if (!isLocked()) openEditor(s); };
     c.querySelector('.del').onclick = e => { e.stopPropagation(); if (!isLocked()) deleteShot(s); };
@@ -1071,7 +1071,7 @@ function swipeToDelete(el, onDelete) {
   el.addEventListener('click', e => { if (el.dataset.swiped) { e.stopPropagation(); e.preventDefault(); } }, true);
 }
 async function deleteShot(shot) {
-  if (!await confirmBox(`Foto ${S.shots.indexOf(shot) + 1} (${shot.room}) mit allen Maßen löschen?`)) return false;
+  if (!await confirmBox(`Foto ${S.shots.indexOf(shot) + 1} (${shotName(shot)}) mit allen Maßen löschen?`)) return false;
   const idx = S.shots.indexOf(shot), pid = S.project.id;
   await db.del('shots', shot.id);
   S.shots = S.shots.filter(x => x.id !== shot.id);
@@ -1182,6 +1182,13 @@ function setCamRoom(r) {
   if (!r) camRoomsUi();
 }
 // Raumliste im Kamerabild: große Felder, Kürzel + Name. Erst antippen, dann geht der Auslöser.
+// Mehrere Fotos im selben Raum: Anzeige „Kz1-1“, „Kz1-2“ … (Manuel 11.11.). Ein einzelnes Foto bleibt „Kz1“.
+// Gespeichert wird weiter nur der Raum – das PDF schreibt als TEXT nur „Kz1“ (RBEM liest den Zusatz nicht), der Zusatz wird dort gezeichnet.
+function roomSuffix(shot, shots = S.shots || []) {
+  const same = shots.filter(x => x.room === shot.room);
+  return same.length > 1 ? '-' + (same.indexOf(shot) + 1) : '';
+}
+const shotName = (shot, shots) => shot.room + roomSuffix(shot, shots);
 async function camRoomsUi() {
   const g = $('#camRoomGrid'); g.innerHTML = '';
   for (const [k, t] of await rooms()) {
@@ -1373,7 +1380,7 @@ const grayOf = () => grayImg || (grayImg = grayFromImage(photoImg, 1000));
 async function openEditor(shot, fresh = false) {
   S.shot = shot;
   if (kb.on) setKb(false);
-  $('#edTitle').textContent = shot.room;
+  $('#edTitle').textContent = shotName(shot);
   photoImg = await blobToImg(shot.photo); grayImg = null; S.hideArrows = false; $('#eyeA').classList.remove('on');
   $('#lightA').classList.toggle('on', !!shot.orig);
   show('ed');
@@ -1422,7 +1429,7 @@ const closeArr = () => $('#arrSheet').classList.remove('on');
 async function changeRoom() {
   clearTimeout(finishing);
   const r = await resolveRoom(await pickRoom(), S.shot);
-  if (r && S.shot) { S.shot.room = r; S.room = r; $('#edTitle').textContent = r; saveShot(); renderShots(); }
+  if (r && S.shot) { S.shot.room = r; S.room = r; saveShot(); renderShots(); $('#edTitle').textContent = shotName(S.shot); }
 }
 $('#edTitle').onclick = () => changeRoom();
 $('#arrowsBtn').onclick = () => { clearTimeout(finishing); $('#arrSheet').classList.add('on'); };
@@ -1515,7 +1522,30 @@ async function runDetect() {
   } finally { busy.classList.remove('on'); }
 }
 
-function firstOpen() { const a = S.shot.arrows.find(a => a.cm == null); return a ? a.id : (S.shot.arrows[0] || {}).id || null; }
+// Mess-Reihenfolge „Bauteil für Bauteil“ (Manuel 11.11.: erst die Tür fertig, dann das Fenster): jede Höhe bekommt die
+// Breite, die ihr am nächsten liegt; Bauteile von links nach rechts; je Bauteil Höhe → Breite. Die gespeicherte
+// Reihenfolge der Pfeile (und damit das PDF) bleibt unverändert.
+function measureOrder(arrows = S.shot.arrows) {
+  const mid = a => [(a.x1 + a.x2) / 2, (a.y1 + a.y2) / 2];
+  const H = arrows.filter(a => a.kind === 'H' && a.el !== 'Raumhöhe'), B = arrows.filter(a => a.kind !== 'H'), rest = arrows.filter(a => a.kind === 'H' && a.el === 'Raumhöhe');
+  const dist = (h, b) => { // Abstand der Breiten-Mitte zur Höhen-Strecke (Bildkoordinaten, Hochformat-Verzerrung egal)
+    const [bx, by] = mid(b), y0 = Math.min(h.y1, h.y2), y1 = Math.max(h.y1, h.y2), hx = (h.x1 + h.x2) / 2;
+    const dy = by < y0 ? y0 - by : by > y1 ? by - y1 : 0; return Math.hypot(bx - hx, dy);
+  };
+  const pairs = []; H.forEach(h => B.forEach(b => pairs.push([dist(h, b), h, b]))); pairs.sort((p, q) => p[0] - q[0]);
+  const mate = new Map(), used = new Set();
+  for (const [, h, b] of pairs) if (!mate.has(h) && !used.has(b)) { mate.set(h, b); used.add(b); }
+  const groups = H.map(h => ({ x: mate.has(h) ? Math.min(mid(h)[0], mid(mate.get(h))[0]) : mid(h)[0], list: mate.has(h) ? [h, mate.get(h)] : [h] }));
+  B.filter(b => !used.has(b)).forEach(b => groups.push({ x: mid(b)[0], list: [b] }));
+  // zuerst das Bauteil mit der längsten Höhe (die Tür), dann die übrigen von links nach rechts
+  const len = g => g.list[0].kind === 'H' ? Math.abs(g.list[0].y1 - g.list[0].y2) : 0;
+  groups.sort((p, q) => p.x - q.x);
+  const top = groups.reduce((m, g) => !m || len(g) > len(m) ? g : m, null);
+  if (top && groups.length > 1 && groups.every(g => g === top || len(top) > len(g) + 0.05)) { groups.splice(groups.indexOf(top), 1); groups.unshift(top); }
+  return [...groups.flatMap(g => g.list), ...rest];
+}
+const nextOpen = () => measureOrder().find(a => a.cm == null) || null;
+function firstOpen() { const a = nextOpen(); return a ? a.id : (S.shot.arrows[0] || {}).id || null; }
 function activeArrow() { return S.shot.arrows.find(a => a.id === S.active); }
 // Vorab-Schätzung (Idee 105): aus schon gemessenen Pfeilen desselben Fotos den Maßstab ableiten (grob, Perspektive bleibt unberücksichtigt)
 function estimateArrows() {
@@ -1536,7 +1566,7 @@ function estimateArrows() {
 function updateCur() {
   estimateArrows();
   const a = activeArrow();
-  const i = S.shot.arrows.indexOf(a);
+  const i = a ? Math.max(0, measureOrder().indexOf(a)) : -1; // Zählung in Mess-Reihenfolge
   const lbl = $('#curLbl');
   if (!a) { lbl.textContent = placing ? 'jetzt das Ende antippen' : 'Mit dem Finger von Kante zu Kante ziehen (oder Anfang + Ende antippen), dann messen'; lbl.classList.add('step'); }
   else if (a.cm == null) { // Schnellablauf: sagen, was als Nächstes zu tun ist
@@ -1563,7 +1593,7 @@ function setValue(cm, mm) {
   // Hat der Nutzer einen Pfeil selbst angetippt, bekommt genau dieser den Wert (auch zum Neu-Messen).
   // Sonst der nächste offene Pfeil.
   if (!a || (a.cm != null && !S.manualPick)) {
-    const o = S.shot.arrows.find(x => x.cm == null);
+    const o = nextOpen();
     if (o) a = o;
     else if (S.shot.arrows.length) { // alles gemessen: ein weiterer Wert überschreibt nichts unbemerkt
       beep(false); toast('Alle Pfeile haben ein Maß – zum Neu-Messen Pfeil antippen', 2500); return false;
@@ -1577,7 +1607,7 @@ function setValue(cm, mm) {
   saveShot();
   beep(true);
   if (est && Math.abs(cm - est) > Math.max(15, est * 0.2)) toast(`Weicht von der Schätzung (~${est}) ab – richtig gezielt?`, 3500);
-  const next = S.shot.arrows.find(x => x.cm == null);
+  const next = nextOpen();
   if (opt.big) showBig(a);
   if (opt.voice) say(`${opt.mm ? a.mm : cm}` + (next ? `. Nächster: ${arrowName(next)}` : '. Fertig'));
   if (next) { S.active = next.id; updateCur(); }
@@ -1661,7 +1691,7 @@ async function finishShot(auto) {
     if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
     S.room = null; openCam(); // nächstes Foto: wieder zuerst den Raum wählen
   };
-  if (auto) { toast(`${S.shot.room}: alle Maße da ✓ – nächstes Foto`, 1300); finishing = setTimeout(go, 1300); }
+  if (auto) { toast(`${shotName(S.shot)}: alle Maße da ✓ – nächstes Foto`, 1300); finishing = setTimeout(go, 1300); }
   else go();
 }
 
@@ -1774,7 +1804,7 @@ function placeTap(x, y) {
   // Ziel: der gewählte offene Pfeil, sonst der nächste offene. Gibt es keinen offenen, entsteht beim zweiten Tipp ein neuer
   // (nur im Modus „selbst ziehen“ oder wenn das Foto noch gar keinen Pfeil hat – sonst macht ein Fehltipp keinen Pfeil).
   let a = activeArrow();
-  if (!a || a.cm != null) { const o = S.shot.arrows.find(q => q.cm == null); if (o) { a = o; S.active = o.id; } else a = null; }
+  if (!a || a.cm != null) { const o = nextOpen(); if (o) { a = o; S.active = o.id; } else a = null; }
   if (!a && !(S.arrowMode === 'none' || !S.shot.arrows.length)) return false;
   const tid = a ? a.id : null;
   if (!placing) {
@@ -2145,7 +2175,7 @@ async function custFolder() { return custFolderFor(S.project); }
 // Fotos mit hochladen (Idee 83): nur wenn beim Kunden eingeschaltet – Originale (ohne Pfeile), nummeriert nach Raum
 async function photosFor(p, shots) {
   const c = await customerOf(p); if (!c || !c.fotos) return [];
-  return shots.map((s, i) => ({ name: `${String(i + 1).padStart(2, '0')} ${s.room}.jpg`.replace(/[\\/:*?"<>|]+/g, ' '), blob: s.orig || s.photo }));
+  return shots.map((s, i) => ({ name: `${String(i + 1).padStart(2, '0')} ${shotName(s, shots)}.jpg`.replace(/[\\/:*?"<>|]+/g, ' '), blob: s.orig || s.photo }));
 }
 // Dropbox-Verlauf (Idee 80)
 async function dbxLogAdd(e) { const l = ((await db.setting('dbxLog')) || []).slice(-99); l.push({ t: Date.now(), ...e }); await db.setting('dbxLog', l); }
@@ -2485,16 +2515,71 @@ async function sharePdf(file, opts = {}) {
 }
 
 // ---------------- Einstellungen ----------------
-$$('#setTabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
+// 3.8: Einstellungen als Kacheln. Die Blöcke (Überschrift + Inhalt) aus den alten Reitern werden beim Start
+// in sieben einfache Seiten umsortiert; Seltenes liegt je Seite zugeklappt unter „Erweitert“. Es fällt nichts weg.
+const SET_CATS = [
+  ['laser', '📡', 'Laser', 'verbinden, Geräte'],
+  ['foto', '📷', 'Foto & Pfeile', 'Pfeile, Kamera, Räume'],
+  ['dropbox', '☁', 'Dropbox', 'Anmeldung, Ordner, Training'],
+  ['kunden', '👥', 'Kunden', 'Kunden, Straßen, Kalender'],
+  ['pdf', '📄', 'PDF', 'Kopfzeile, Qualität'],
+  ['sicherung', '💾', 'Sicherung', 'sichern, einspielen, aufräumen'],
+  ['mehr', '⋯', 'Mehr', 'Anzeige, Sperre, Version'],
+];
+// [Anfang der Überschrift, Seite, Erweitert?] – Reihenfolge hier = Reihenfolge auf der Seite
+const SET_MAP = [
+  ['Laser', 'laser'],
+  ['Pfeile im neuen Foto', 'foto'], ['Pfeile im Foto', 'foto'], ['Kamera', 'foto'], ['Raum-Knöpfe', 'foto'], ['Maße in der App', 'foto'], ['Pfeil-Vorlagen', 'foto', 1], ['Messen (zum Testen)', 'foto', 1],
+  ['Dropbox (PDF', 'dropbox'], ['Dropbox-Ordner', 'dropbox'], ['Erkennung verbessern', 'dropbox'],
+  ['Google Kalender', 'kunden'], ['Navigations-Knopf', 'kunden'], ['Straßen offline', 'kunden', 1], ['Kunden & Straßen auf anderes', 'kunden', 1],
+  ['Sicherung', 'sicherung'], ['Projekt aus Datei', 'sicherung'], ['Aufräumen', 'sicherung'], ['Speicher', 'sicherung', 1],
+  ['Schriftgröße', 'mehr'], ['Entsperren', 'mehr'], ['Updates', 'mehr'], ['Fehlerbericht', 'mehr', 1], ['Funktionstest', 'mehr', 1], ['Handy weitergeben', 'mehr', 1],
+];
+const OLD_TAB = { allg: 'mehr', kunden: 'kunden', pdf: 'pdf', cloud: 'dropbox', system: 'mehr' };
+function buildSettings() {
+  const sheet = $('#setSheet .sheet'), tabs = $('#setTabs'); if (!tabs || sheet.querySelector('.spane')) return;
+  const verP = $('#ver') && $('#ver').closest('p'); if (verP) $('#setClose').after(verP); // Versionszeile immer sichtbar, ganz unten
+  const blocks = [];
+  $$('#setSheet .tab').forEach(tab => {
+    let cur = null;
+    [...tab.childNodes].forEach(ch => {
+      if (ch.nodeType === 1 && ch.matches('label.f')) { cur = document.createElement('section'); cur.className = 'sblock'; cur.dataset.t = ch.textContent.trim(); cur.dataset.old = tab.dataset.tab; blocks.push(cur); }
+      if (!cur) { if (ch.nodeType !== 1) return; cur = document.createElement('section'); cur.className = 'sblock'; cur.dataset.t = ''; cur.dataset.old = tab.dataset.tab; blocks.push(cur); }
+      cur.appendChild(ch);
+    });
+    tab.remove();
+  });
+  const panes = {};
+  const home = document.createElement('div'); home.id = 'setHome';
+  const head = document.createElement('div'); head.id = 'setHead'; head.innerHTML = '<button class="ghost" id="setBack">‹ Einstellungen</button><b id="setTitle"></b>';
+  for (const [id, ic, name, sub] of SET_CATS) {
+    const t = document.createElement('button'); t.type = 'button'; t.className = 'stile'; t.dataset.cat = id; t.innerHTML = `<i>${ic}</i><b>${name}</b><small>${sub}</small>`; t.onclick = () => showTab(id); home.appendChild(t);
+    const p = document.createElement('div'); p.className = 'spane'; p.dataset.cat = id; panes[id] = p;
+    const adv = document.createElement('details'); adv.className = 'sadv'; adv.innerHTML = '<summary>Erweitert</summary>'; p._adv = adv;
+  }
+  const place = (bl, cat, isAdv) => (isAdv ? panes[cat]._adv : panes[cat]).appendChild(bl);
+  const rest = new Set(blocks);
+  for (const [key, cat, isAdv] of SET_MAP) for (const bl of blocks) if (rest.has(bl) && bl.dataset.t.startsWith(key)) { place(bl, cat, isAdv); rest.delete(bl); }
+  for (const bl of blocks) if (rest.has(bl)) place(bl, bl.dataset.old === 'pdf' ? 'pdf' : OLD_TAB[bl.dataset.old] || 'mehr', 0); // alles Übrige bleibt, wo es sinngemäß war
+  tabs.replaceWith(home); home.after(head);
+  let at = head; for (const [id] of SET_CATS) { const p = panes[id]; if (p._adv.children.length > 1) p.appendChild(p._adv); at.after(p); at = p; }
+  $('#setBack').onclick = () => showTab(null);
+}
+function setAllPanes() { buildSettings(); $('#setSheet').classList.add('all'); $$('#setSheet details.sadv').forEach(d => d.open = true); runSelfTest(); showStorage(); laserListUi(); }
 function showTab(t) {
-  $$('#setTabs button').forEach(b => b.classList.toggle('sel', b.dataset.tab === t));
-  $$('#setSheet .tab').forEach(e => e.classList.toggle('on', e.dataset.tab === t));
-  try { localStorage.setItem('mb_tab', t); } catch (e) { }
-  if (t === 'system') { runSelfTest(); showStorage(); }
+  buildSettings();
+  if (t && OLD_TAB[t] && !SET_CATS.some(c => c[0] === t)) t = OLD_TAB[t];
+  const sh = $('#setSheet'); sh.classList.remove('all');
+  sh.classList.toggle('inpane', !!t);
+  $$('#setSheet .spane').forEach(e => e.classList.toggle('on', e.dataset.cat === t));
+  const c = SET_CATS.find(c => c[0] === t); $('#setTitle').textContent = c ? c[2] : '';
+  $('#setSheet .sheet').scrollTop = 0;
+  if (t === 'mehr' || t === 'sicherung') { runSelfTest(); showStorage(); }
+  if (t === 'laser') { laserListUi(); laserAutoHint(); }
 }
 $('#btnSettings').onclick = async () => {
-  let t = 'allg'; try { t = localStorage.getItem('mb_tab') || 'allg'; } catch (e) { }
-  showTab(t);
+  showTab(null); // immer mit den Kacheln beginnen
+  if (window.__setAllPanes) setAllPanes(); // nur Tests: alle Seiten auf einmal offen
   $('#sGlove').checked = !!opt.glove; $('#sLearn').checked = opt.learn !== false; $('#sLeft').checked = !!opt.left;
   $('#sMagnet').checked = opt.magnet !== false; $('#sDash').checked = !!opt.dash; fillCamList();
   $('#sShrink').checked = !!opt.shrink; $('#sRemind').checked = opt.remind !== false; $('#sLockDays').value = String(lockDays()); bioUi(); backupUi(); offlineUiList();
@@ -2677,7 +2762,7 @@ async function backupBar() {
   bar.style.display = due ? 'flex' : 'none';
   if (due) bar.querySelector('span').textContent = last ? `Zuletzt gesichert vor ${Math.floor((Date.now() - last) / 864e5)} Tagen` : 'Noch keine Gesamt-Sicherung';
 }
-$('#bkNow').onclick = async () => { await $('#btnSettings').onclick(); showTab('system'); setTimeout(() => $('#sBackup').scrollIntoView({ block: 'center' }), 100); };
+$('#bkNow').onclick = async () => { await $('#btnSettings').onclick(); showTab('sicherung'); setTimeout(() => $('#sBackup').scrollIntoView({ block: 'center' }), 100); };
 $('#bkLater').onclick = () => { try { localStorage.setItem('mb_bkSnooze', String(Date.now() + 3 * 864e5)); } catch (e) { } $('#bkBar').style.display = 'none'; };
 
 // Automatische Sicherung in Dropbox (Idee 136): wöchentlich, Ordner _Sicherung, die letzten 4 bleiben
@@ -3410,7 +3495,7 @@ $('#sNews').onclick = () => { $('#setClose').click(); showNews(); };
   if (back === true) { toast('Bei Google angemeldet ✓'); setTimeout(() => $('#btnCal').click(), 400); }
   else if (back === 'error') toast('Google-Anmeldung abgebrochen', 3000);
   gcalUi();
-  setTimeout(async () => { const res = await selfTest(); const bad = res.filter(x => x.lvl === 'fail'); if (bad.length) toast('Funktionstest: ' + bad.map(x => x.k).join(', ') + ' – Details in ⚙ System', 5000); }, 2500);
+  setTimeout(async () => { const res = await selfTest(); const bad = res.filter(x => x.lvl === 'fail'); if (bad.length) toast('Funktionstest: ' + bad.map(x => x.k).join(', ') + ' – Details in ⚙ Mehr → Erweitert', 5000); }, 2500);
   laserUi();
   await purgeTrash();
   renderHome();
@@ -3427,5 +3512,5 @@ $('#sNews').onclick = () => { $('#setClose').click(); showNews(); };
     let reloaded = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloaded) return; reloaded = true; if (newsOpen) reloadAfterNews = true; else location.reload(); }); // nicht mitten im Lesen neu laden
   }
-  window.__mb = { S, laser, view, nav, onMeasure, magnet, labelBoxes, grayOf: () => grayOf(), applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
+  window.__mb = { setAll: setAllPanes, measureOrder, shotName, S, laser, view, nav, onMeasure, magnet, labelBoxes, grayOf: () => grayOf(), applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
 })();

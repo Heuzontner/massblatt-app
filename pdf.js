@@ -36,6 +36,15 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
   const text = (page, s, x, yTop, size, color = black) => {
     page.drawText(String(s), { x, y: PAGE_H - yTop - size * 0.8, size, font, color });
   };
+  // Schrift als Vektor-Umrisse zeichnen (steht nicht im Text des PDFs)
+  const outline = (page, s, x, yTop, size, color = black) => {
+    const fk = font.embedder.font, sc = size / fk.unitsPerEm, run = fk.layout(String(s)); let cx = x;
+    run.glyphs.forEach((g, i) => {
+      const d = g.path.scale(sc, -sc).toSVG();
+      if (d) page.drawSvgPath(d, { x: cx, y: PAGE_H - yTop - size * 0.8, color, borderWidth: 0 });
+      cx += (run.positions[i] ? run.positions[i].xAdvance : g.advanceWidth) * sc;
+    });
+  };
   const fit = (s, size, maxW) => {
     s = String(s || '');
     if (font.widthOfTextAtSize(s, size) <= maxW) return s;
@@ -151,7 +160,12 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
     const pg = doc.addPage([PAGE_W, PAGE_H]);
     box(pg, 20, 18, 801, 40);
     text(pg, 'Aufmaß :', 32, 32, 11, c(BLUE));
-    text(pg, s.room, 32 + font.widthOfTextAtSize('Aufmaß :', 11) + 6, 32, 11);
+    const rx = 32 + font.widthOfTextAtSize('Aufmaß :', 11) + 6;
+    text(pg, s.room, rx, 32, 11);
+    { // mehrere Fotos im selben Raum: Zusatz „-2“ als GEZEICHNETE Umrisse hinter dem Namen (kein Text → RBEM/Einlesen sieht nur „Kz1“)
+      const same = shots.filter(x => x.room === s.room);
+      if (same.length > 1) outline(pg, '-' + (same.indexOf(s) + 1), rx + font.widthOfTextAtSize(String(s.room), 11) + 0.6, 32, 11);
+    }
     if (s.jpg) {
       const im = await doc.embedJpg(s.jpg);
       const maxW = 373, maxH = 494;
