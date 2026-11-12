@@ -98,9 +98,10 @@ export function drawArrows(ctx, W, H, arrows, activeId, blink = 1, forExport = f
     if (label) {
       let la = ang; if (la > Math.PI / 2) la -= Math.PI; if (la < -Math.PI / 2) la += Math.PI;
       // Maße 1,5× größer als ursprünglich, damit sie im Bild/PDF gut lesbar sind
-      ctx.font = `bold ${Math.round(45 * s)}px "Noto Sans", Arial, sans-serif`;
+      const ls = s * (opts.lbl || 1); // Etikett-Größe (Einstellung)
+      ctx.font = `bold ${Math.round(45 * ls)}px "Noto Sans", Arial, sans-serif`;
       const tw = ctx.measureText(label).width;
-      const bw = tw + 27 * s, bh = 60 * s;
+      const bw = tw + 27 * ls, bh = 60 * ls;
       // Lage: vom Nutzer gewählt (a.lab) oder automatisch so, dass sich Etiketten nicht überdecken
       // Kandidaten: entlang des Pfeils verschieben, zuletzt seitlich daneben (wenn zwei Pfeile fast aufeinander liegen)
       const cands = a.lab != null && LAB_T[a.lab] != null ? [[LAB_T[a.lab], 0]] : [[0.5, 0], [0.36, 0], [0.64, 0], [0.24, 0], [0.76, 0], [0.5, 1], [0.5, -1], [0.3, 1], [0.7, -1]];
@@ -112,9 +113,9 @@ export function drawArrows(ctx, W, H, arrows, activeId, blink = 1, forExport = f
       labelBoxes.set(a.id, { x: b.x / W, y: b.y / H, w: b.w / W, h: b.h / H });
       ctx.save(); ctx.translate(b.cx, b.cy); ctx.rotate(la);
       ctx.fillStyle = a.cm != null ? '#000' : (a.est ? 'rgba(0,0,0,0.5)' : active ? '#d32f2f' : 'rgba(0,0,0,0.55)');
-      roundRect(ctx, -bw / 2, -bh / 2, bw, bh, 9 * s); ctx.fill();
+      roundRect(ctx, -bw / 2, -bh / 2, bw, bh, 9 * ls); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(label, 0, 1 * s);
+      ctx.fillText(label, 0, 1 * ls);
       ctx.restore();
     } else labelBoxes.delete(a.id);
     if (!forExport) {

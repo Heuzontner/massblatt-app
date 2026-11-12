@@ -93,6 +93,20 @@ export function parseAddress(text, stopWords = []) {
   let t = (text || '').replace(/\s+/g, ' ').replace(/ß/g, 'ss').trim();
   if (!t) return null;
   t = t.replace(/,?\s*(Österreich|Oesterreich|Austria|AT)\s*$/i, '').trim();
+  t = t.replace(/^[*•·\-–\s]+/, ''); // Markierungen am Anfang („*Hertzstr. …“) haben keine Bedeutung
+  { // Manuels Kalender-Schreibweise: „Hornikweg 6/EG/1, Name“ · „Kopernikusstr. 21/5/24“ · „Kopernikusstrasse 22 Top: G 08 - T 049“
+    const xs = stopWords.map(x => String(x).toLowerCase());
+    let u = t; for (let w = u.split(' '); w.length > 1 && (xs.includes(w[0].toLowerCase().replace(/[:,]$/, '')) || CAPS.test(w[0])); w = u.split(' ')) u = w.slice(1).join(' ');
+    const m = u.match(/^([A-Za-zÄÖÜäöü][A-Za-zÄÖÜäöü.\- ]*?)\s+(\d+[a-zA-Z]?)\s*\/\s*(EG|DG|KG|UG|\d{1,2})\s*\/\s*(\d{1,4}[a-zA-Z]?)(?=$|[\s,;])/i)
+      || u.match(/^([A-Za-zÄÖÜäöü][A-Za-zÄÖÜäöü.\- ]*?)\s+(\d+[a-zA-Z]?)\s+Top:?\s*G\s*(EG|DG|KG|UG|\d{1,2})\s*[-–]\s*T\s*(\d{1,4}[a-zA-Z]?)(?=$|[\s,;])/i);
+    if (m) {
+      const street = m[1].trim().replace(/(\S)str\.?$/i, '$1strasse').replace(/(^|\s)Str\.?$/i, '$1Strasse').replace(/\s+/g, ' ');
+      const g0 = m[3].toUpperCase(), fl = /^\d+$/.test(g0) ? (+g0 === 0 ? 'EG' : `${+g0}.OG`) : g0;
+      const wg = m[4].replace(/^0+(?=\d)/, '');
+      const pm0 = t.match(/(?:^|[\s,])(?:A-)?(\d{4})\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöü.\-]+)/);
+      return { str: `${street} ${m[2]}, ${fl}, WG ${wg}`, plz: pm0 ? pm0[1] : '', ort: pm0 ? pm0[2] : '' };
+    }
+  }
   let str = '', plz = '', ort = '', before = t, after = '';
   // PLZ + Ort irgendwo im Text ("4020 Linz", "A-4400 Steyr", "4490 St. Florian", "4531 Kematen an der Krems")
   const pm = t.match(/(?:^|[\s,])(?:A-)?(\d{4})\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöü.\-]*(?:\s(?:am|an|im|in|bei|ob|der|a\.d\.|i\.M\.)(?:\sder)?\s[A-ZÄÖÜ][A-Za-zÄÖÜäöü.\-]*|\s[A-ZÄÖÜ][A-Za-zÄÖÜäöü.\-]*){0,2})/);

@@ -1,4 +1,5 @@
 import { db, uid } from './db.js';
+import { lang, setLang, initLang } from './i18n.js';
 import { Laser, PROFILES } from './ble.js';
 import { TEMPLATES, arrowsFromObjects, newArrow, drawArrows, labelBoxes } from './arrows.js';
 import { grayFromImage, magnetArrow } from './magnet.js';
@@ -9,9 +10,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.8.0';
+const VERSION = '3.9.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Einstellungen neu: sieben große Kacheln statt Reiter, Seltenes unter „Erweitert“', 'Mehrere Fotos im selben Raum heißen jetzt Kz1-1, Kz1-2 … (im PDF sichtbar, für das Einlesen in BricsCAD bleibt es „Kz1“)', 'Messen Bauteil für Bauteil: erst Höhe und Breite der Tür, dann das Fenster', 'Zurück-Knopf oben links reagiert zuverlässiger (wurde teils von anderen Feldern überdeckt)', 'Trainingsfotos gehen jetzt bei jedem Dropbox-Upload von selbst mit; in ⚙ System steht, wie viele schon gesendet sind', 'Laser direkt in der Kamera verbinden: Feld „Laser verbinden“ oben im Kamerabild', '„Keine Pfeile“: nach dem Messen großer Knopf „✓ Fertig – nächstes Foto“', 'Rückfrage vor PDF/Dropbox nur noch, wenn Raumhöhe oder Eingangstür fehlt', 'Jahresordner-Option entfernt; überall „Massblatt“', 'Dropbox: PDFs liegen jetzt in „Massblätter/Kunde“ (z. B. VR Austausch / Massblätter / WAG), ohne Jahresordner', 'Neues App-Symbol: FPM (Floorplan AI Massblatt) mit gelbem Maßpfeil. Am Startbildschirm erscheint es nach dem Neu-Installieren der App', 'Die App heißt jetzt „Floorplan AI Massblatt“ – by VIEWPORT 360°', 'Neu in ⚙ System: „Keine Pfeile – selbst ziehen“. Das Foto startet leer, du ziehst jeden Pfeil mit dem Finger von Kante zu Kante und drückst am Ende „✓ Fertig“', 'Pfeil mit zwei Tipps setzen geht jetzt zuverlässig: auch schnell hintereinander und auch dort, wo schon ein Pfeil liegt', '📷↻ Foto neu fragt jetzt immer nach', 'PDF-Deckblatt: in der Kopfzeile steht der Projektname dabei', 'Foto verwackelt? Neuer Knopf 📷↻ rechts unten im Foto (über 👁): nimmt das Foto sofort neu auf – gleicher Raum, ohne Umweg übers Projekt', 'Erkennung vorerst AUS (traf zu oft daneben) – es starten wieder zwei Pfeile zum Selbersetzen. Einschalten zum Testen: ⚙ System', 'Neu in ⚙ System: „📤 Trainingsdaten senden“ legt deine gemessenen Fotos + Pfeile in die Dropbox (Ordner „Massblatt Training“) – damit wird die Erkennung auf deine Türen und Fenster trainiert', 'Auswählen → 🗑: mehrere Projekte auf einmal löschen (Papierkorb, mit Rückgängig)', 'Erkennung: rechnet jetzt auf dem Grafikchip, wenn das Gerät es kann (sonst wie bisher), findet mehr Türen/Fenster, und zeigt nach jedem Foto die Zeit an – auch wenn nichts erkannt wurde', 'Neue Tür-/Fenster-Erkennung: kleines, schnelles Modell (14 MB statt 150 MB), erkennt nur Türen und Fenster des Raums – nicht das Nachbarhaus durchs Fenster. Ist jetzt eingeschaltet; abschalten in ⚙ System', 'Raumauswahl: erledigte Räume sind grün mit ✓, Felder im FloorplanAI-Stil', 'Neuer Ablauf: 📷 Foto → Raum im Kamerabild antippen → erst dann geht der Auslöser. Nach jedem Foto kommt die Raumliste wieder – so wird kein Raum vergessen', 'Raumliste in fester Reihenfolge: Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kz1, Kz2, Sz, Kü, Wz, Ez', 'Nur noch Pfeile, keine Tür/Fenster-Vorlagen: jedes Foto startet mit Höhe + Breite, weitere über „+ Pfeil“', 'Pfeil setzen: zwei Tipps (Anfang, Ende), dann messen'];
+const NEWS = ['Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -61,8 +62,19 @@ function show(id, viaPop = false) {
     else { st.push(id); if (!viaPop) navPush(); }
   }
   $$('.screen').forEach(s => s.classList.toggle('on', s.id === id)); if (id !== 'cam') stopCam();
+  keepAwake(id === 'proj' || id === 'cam' || id === 'ed');
   offlineUi();
 }
+// Bildschirm wach halten (3.9): im Projekt, in der Kamera und im Foto. Der Browser gibt die Sperre frei, sobald die App
+// in den Hintergrund geht – beim Zurückkommen wird sie neu angefordert.
+let awake = null, awakeWant = false;
+function keepAwake(on) {
+  awakeWant = !!on;
+  if (!on) { if (awake) { awake.release().catch(() => { }); awake = null; } return; }
+  if (awake || !navigator.wakeLock || document.visibilityState !== 'visible') return;
+  navigator.wakeLock.request('screen').then(w => { awake = w; w.addEventListener('release', () => { if (awake === w) awake = null; }); if (!awakeWant) { w.release().catch(() => { }); awake = null; } }).catch(() => { });
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && awakeWant) keepAwake(true); });
 const isLayerEl = el => !!(el && el.nodeType === 1 && (el.classList.contains('sheet-bg') || el.id === 'pvw' || el.id === 'keypad'));
 const layerOpen = new WeakSet();
 new MutationObserver(recs => {
@@ -1189,6 +1201,25 @@ function roomSuffix(shot, shots = S.shots || []) {
   return same.length > 1 ? '-' + (same.indexOf(shot) + 1) : '';
 }
 const shotName = (shot, shots) => shot.room + roomSuffix(shot, shots);
+// Raum anlegen: Name + Kürzel; wird in der Raumliste gespeichert (Manuel 11.11.)
+function roomBox(k0 = '', t0 = '', title = 'Raum hinzufügen') {
+  return new Promise(res => {
+    const bg = document.createElement('div'); bg.className = 'sheet-bg on';
+    bg.innerHTML = `<div class="sheet"><h2></h2><label class="f">Raumname</label><input data-name placeholder="z. B. Arbeitszimmer"><label class="f">Kürzel (steht im Massblatt)</label><input data-in placeholder="z. B. Az" maxlength="12"><div style="display:flex;gap:8px;margin-top:14px"><button class="ghost" data-close style="flex:1">Abbrechen</button><button class="pri" data-ok style="flex:1">Speichern</button></div></div>`;
+    bg.querySelector('h2').textContent = title; const n = bg.querySelector('[data-name]'), k = bg.querySelector('[data-in]'); n.value = t0; k.value = k0;
+    const done = v => { bg.remove(); res(v); };
+    const ok = () => { const kk = k.value.trim(), tt = n.value.trim(); if (!kk) { k.focus(); toast('Bitte ein Kürzel eingeben'); return; } done({ k: kk, t: tt }); };
+    bg.querySelector('[data-ok]').onclick = ok; bg.querySelector('[data-close]').onclick = () => done(null);
+    k.onkeydown = e => { if (e.key === 'Enter') ok(); }; n.onkeydown = e => { if (e.key === 'Enter') k.focus(); };
+    bg.onclick = e => { if (e.target === bg) done(null); };
+    document.body.appendChild(bg); setTimeout(() => (t0 || k0 ? k : n).focus(), 50);
+  });
+}
+async function addRoom(k, t) {
+  const list = (await rooms()).map(x => [...x]); const i = list.findIndex(x => x[0] === k);
+  if (i >= 0) { if (t) list[i][1] = t; } else list.push([k, t || '']);
+  await db.setting('rooms', list);
+}
 async function camRoomsUi() {
   const g = $('#camRoomGrid'); g.innerHTML = '';
   for (const [k, t] of await rooms()) {
@@ -1199,9 +1230,11 @@ async function camRoomsUi() {
     b.onclick = () => setCamRoom(k);
     g.appendChild(b);
   }
-  const o = document.createElement('button'); o.type = 'button'; o.className = 'other'; o.innerHTML = '<b>✎</b><small>anderer Raum</small>';
-  o.onclick = async () => { const v = await promptBox('Anderer Raum', 'z. B. Kz3, Loggia', ''); if (v && v.trim()) setCamRoom(v.trim()); };
+  const o = document.createElement('button'); o.type = 'button'; o.className = 'other'; o.innerHTML = '<b>＋</b><small>Raum hinzufügen</small>';
+  o.onclick = async () => { const r = await roomBox(); if (r) { await addRoom(r.k, r.t); await camRoomsUi(); setCamRoom(r.k); } };
   g.appendChild(o);
+  // Wohnung abschließen (3 s halten) – erst sinnvoll, wenn es Fotos gibt
+  const f = $('#camFlat'); if (f) f.style.display = (S.shots || []).length ? '' : 'none';
 }
 async function openCam(viaPop = false) {
   $('#camGrid').classList.toggle('on', !!opt.grid);
@@ -1240,9 +1273,29 @@ async function camCaps() {
   // manche Geräte melden Fähigkeiten erst nach kurzer Zeit
   if (!caps.torch && !caps.exposureCompensation) { await new Promise(r => setTimeout(r, 500)); try { caps = t.getCapabilities ? t.getCapabilities() : {}; } catch (e) { } }
   if (camOpt.torch && caps.torch) await setTorch(true);
+  camZoom = 1; $('#video').style.transform = '';
   camUi();
 }
+// Zoom 0,5× / 1× / 2×: echter Kamera-Zoom, wo das Gerät ihn meldet; sonst wird 2× aus dem Bild geschnitten. 0,5× nur mit Weitwinkel-Zoom des Geräts.
+let camZoom = 1;
+function zoomLevels() { const z = caps.zoom; const l = [1, 2]; if (z && z.min && z.min <= 0.6) l.unshift(0.5); return l; }
+async function setZoom(z) {
+  camZoom = z; const c = caps.zoom, v = $('#video');
+  if (c && c.max) { try { await camTrack().applyConstraints({ advanced: [{ zoom: Math.min(c.max, Math.max(c.min || 1, z)) }] }); v.style.transform = ''; zoomUi(); return; } catch (e) { log('zoom', e.name); } }
+  v.style.transform = z > 1 ? `scale(${z})` : ''; zoomUi(); // ohne Geräte-Zoom: Ausschnitt
+}
+const digitalZoom = () => (caps.zoom && caps.zoom.max) ? 1 : (camZoom > 1 ? camZoom : 1);
+function zoomUi() {
+  const box = $('#zoomBtns'); if (!box) return; box.innerHTML = '';
+  for (const z of zoomLevels()) { const b = document.createElement('button'); b.type = 'button'; b.dataset.z = z; b.textContent = String(z).replace('.', ',') + '×'; b.classList.toggle('on', z === camZoom); b.onclick = () => setZoom(z); box.appendChild(b); }
+}
+async function cropZoom(blob, z) { // mittleren Ausschnitt 1/z herausschneiden (nur ohne Geräte-Zoom)
+  const bmp = await createImageBitmap(blob), w = Math.round(bmp.width / z), h = Math.round(bmp.height / z);
+  const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(bmp, (bmp.width - w) / 2, (bmp.height - h) / 2, w, h, 0, 0, w, h); bmp.close && bmp.close();
+  return canvasToBlob(c, 'image/jpeg', 0.92);
+}
 function camUi() {
+  zoomUi();
   const tb = $('#torchBtn'), hb = $('#hdrBtn');
   tb.classList.toggle('on', !!(camOpt.torch && caps.torch)); tb.classList.toggle('off', !caps.torch);
   hb.classList.toggle('on', !!(camOpt.hdr && caps.exposureCompensation)); hb.classList.toggle('off', !caps.exposureCompensation);
@@ -1343,6 +1396,7 @@ $('#shutter').onclick = async () => {
       try { if (window.ImageCapture) blob = await new ImageCapture(camTrack()).takePhoto(); } catch (e) { blob = null; }
     }
     if (!blob) blob = await canvasToBlob(grabFrame(), 'image/jpeg', 0.92); // mit Blitz: Videobild, damit das Licht anbleibt
+    if (digitalZoom() > 1) { try { blob = await cropZoom(blob, digitalZoom()); } catch (e) { log('zoom-ausschnitt', e.name); } }
     beep(true);
     await newShotFromBlob(blob);
   } finally { shooting = false; }
@@ -1370,6 +1424,7 @@ async function newShotFromBlob(blob) {
   await db.put('shots', shot);
   S.project.updated = Date.now(); db.put('projects', S.project);
   await openEditor(shot, true);
+  storageWarn();
 }
 
 // ---------------- Editor ----------------
@@ -1417,7 +1472,7 @@ function loop() {
     last = t;
     blinkT = (Math.sin(t / 180) + 1) / 2;
     ctx.drawImage(photoImg, 0, 0, cv.width, cv.height);
-    if (!S.hideArrows) drawArrows(ctx, cv.width, cv.height, S.shot.arrows, S.active, blinkT, false, fmtVal, { dash: opt.dash });
+    if (!S.hideArrows) drawArrows(ctx, cv.width, cv.height, S.shot.arrows, S.active, blinkT, false, fmtVal, { dash: opt.dash, lbl: LBL[opt.lbl] || 1 });
     raf = requestAnimationFrame(draw);
   };
   raf = requestAnimationFrame(draw);
@@ -1620,6 +1675,7 @@ const arrowName = a => a.el === 'Raumhöhe' ? 'Raumhöhe' : a.kind === 'H' ? 'H�
 const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true, left: false, magnet: true, dash: false, cam: '', shrink: false, remind: true, est: true, grid: false, laserAuto: true, autoBackup: false, bgLock: 0 };
 try { Object.assign(opt, JSON.parse(localStorage.getItem('mb_opt') || '{}')); } catch (e) { }
 const applyOptClasses = () => { document.body.classList.toggle('bigmode', !!opt.big); document.body.classList.toggle('glove', !!opt.glove); document.body.classList.toggle('lefty', !!opt.left); };
+const LBL = { s: 0.78, m: 1, l: 1.3 }; // Etikett-Größe der Maßzahlen im Foto und im PDF
 const saveOpt = () => { try { localStorage.setItem('mb_opt', JSON.stringify(opt)); } catch (e) { } applyOptClasses(); };
 applyOptClasses();
 // breite Ansicht (Tablet / Querformat): Projektdaten und Fotoliste nebeneinander
@@ -1695,7 +1751,57 @@ async function finishShot(auto) {
   else go();
 }
 
-$('#edDone').onclick = () => finishShot(false);
+// Knopf, der gehalten werden muss (füllt sich); kurzer Tipp = onTap. Schutz gegen versehentliches Auslösen.
+function holdButton(el, ms, onHold, onTap) {
+  let t = null, t0 = 0, fired = false, lastTap = 0;
+  const stop = () => { clearTimeout(t); t = null; el.classList.remove('holding'); el.style.removeProperty('--hold'); };
+  el.addEventListener('pointerdown', e => {
+    if (el.disabled || (e.button && e.button !== 0)) return;
+    fired = false; t0 = Date.now(); el.style.setProperty('--hold', ms + 'ms'); el.classList.add('holding');
+    try { el.setPointerCapture(e.pointerId); } catch (err) { }
+    t = setTimeout(() => { fired = true; stop(); try { navigator.vibrate && navigator.vibrate([30, 40, 60]); } catch (err) { } onHold(); }, ms);
+  });
+  const up = e => { if (!t) return; const dt = Date.now() - t0; stop(); if (e.type === 'pointerup' && !fired) { if (dt < Math.min(900, ms * 0.4)) lastTap = 0; else { lastTap = Date.now(); toast(`Zum Abschließen ${Math.round(ms / 1000)} Sekunden gedrückt halten`, 2200); } } };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  el.addEventListener('contextmenu', e => e.preventDefault());
+  el.onclick = () => { if (fired) { fired = false; return; } if (Date.now() - lastTap < 700) return; onTap && onTap(); }; // Tastatur / click() ohne Zeiger (auch Tests)
+}
+const HOLD_MS = () => window.__holdMs || 3000;
+// Wohnung fertig: PDF → Dropbox (ohne Netz in die Warteschlange) → Projekt sperren → neues leeres Projekt
+let flatBusy = false;
+async function flatDone() {
+  if (flatBusy || !S.project) return; flatBusy = true;
+  try {
+    clearTimeout(finishing);
+    if ($('#ed').classList.contains('on') && S.shot) { await saveShot(); learnFromShot(S.shot).catch(() => { }); }
+    if (!S.shots.length) { toast('Noch keine Fotos'); return; }
+    if (!dropbox.connected) { await confirmBox('Dropbox ist nicht verbunden', 'OK', '', 'pri', 'Zum Abschließen muss die Dropbox verbunden sein: ⚙ → Dropbox.'); return; }
+    const open = S.shots.reduce((n, x) => n + (x.arrows || []).filter(a => a.cm == null).length, 0);
+    if (open && !await confirmBox(`${open} Pfeil${open === 1 ? '' : 'e'} ohne Maß`, 'Trotzdem abschließen', 'Zurück', 'ghost', 'Pfeile ohne Maß erscheinen nicht im PDF.')) return;
+    if (!await preExport('Abschließen')) return;
+    const p = S.project, sub = await custFolder(), photos = await photosFor(p, S.shots);
+    const busy = document.createElement('div'); busy.className = 'sheet-bg on'; busy.id = 'flatBusy'; busy.innerHTML = '<div class="sheet" style="text-align:center"><h2>Wohnung wird abgeschlossen …</h2><p class="mute" data-st>PDF wird erstellt</p></div>'; document.body.appendChild(busy);
+    const st = t => { busy.querySelector('[data-st]').textContent = t; };
+    let file, msg;
+    try {
+      file = await makePdfFile();
+      if (!navigator.onLine) throw new TypeError('offline');
+      st('Lade in die Dropbox …');
+      const r = await dbxUpload(file, sub, { projectId: p.id, photos });
+      await lockProject('in Dropbox', { path: r.path, size: file.size, fotos: r.fotos }); msg = 'Abgeschlossen ✓ ' + r.path; beep(true);
+    } catch (e) {
+      if (file && (e instanceof TypeError || !navigator.onLine)) { await queueAdd(file, sub, { projectId: p.id, photos }); await lockProject('in Dropbox (wartet auf Netz)', { size: file.size }); msg = 'Abgeschlossen – wird hochgeladen, sobald wieder Netz da ist'; }
+      else { busy.remove(); toast('Dropbox-Fehler: ' + e.message + ' – Wohnung ist NICHT abgeschlossen', 7000); beep(false); return; }
+    }
+    busy.remove();
+    if ($('#cam').classList.contains('on') || $('#ed').classList.contains('on')) { try { stopCam(); } catch (e) { } }
+    if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
+    await $('#btnNewProj').onclick();
+    toast(msg, 4500);
+  } finally { flatBusy = false; }
+}
+holdButton($('#edDone'), HOLD_MS(), flatDone, () => finishShot(false));
+holdButton($('#camFlat'), HOLD_MS(), flatDone, () => toast('Wohnung fertig? Dann 3 Sekunden gedrückt halten', 2500));
 // zurück zum Projekt: sofort wechseln, Speichern läuft im Hintergrund
 function leaveEditor(target = 'proj', viaPop = false) {
   clearTimeout(finishing); if (kb.on) setKb(false);
@@ -2027,7 +2133,7 @@ async function pdfBytesFor(p, allShots) {
     const c = document.createElement('canvas'); c.width = Math.round(s.w * sc); c.height = Math.round(s.h * sc);
     const g = c.getContext('2d'); g.drawImage(im, 0, 0, c.width, c.height);
     const measured = s.arrows.filter(a => a.cm != null);
-    drawArrows(g, c.width, c.height, measured, null, 1, true);
+    drawArrows(g, c.width, c.height, measured, null, 1, true, null, { lbl: LBL[opt.lbl] || 1 });
     const jb = await canvasToBlob(c, 'image/jpeg', jq);
     shots.push({ room: s.room, jpg: new Uint8Array(await jb.arrayBuffer()), values: measured.map(a => ({ cm: a.cm, time: new Date(a.time) })), note: notes ? (s.note || '') : '' });
   }
@@ -2037,7 +2143,7 @@ async function pdfBytesFor(p, allShots) {
     overviewRows: allShots.map(s => ({ room: s.room, items: s.arrows.filter(a => a.cm != null).map(a => ({ el: a.el, kind: a.kind, cm: a.cm })) })),
     headerLogo: headLogo ? await fileToImgBytes(headLogo) : null,
     kundenLogo: p.kundenLogo ? await fileToImgBytes(p.kundenLogo) : null };
-  return buildPdf(window.PDFLib, window.fontkit, fontBytes, proj, shots);
+  return buildPdf(window.PDFLib, window.fontkit, fontBytes, proj, shots, { roomOrder: (await rooms()).map(r => r[0]) });
 }
 async function makePdfFileFor(p, allShots) {
   const bytes = await pdfBytesFor(p, allShots);
@@ -2533,7 +2639,7 @@ const SET_MAP = [
   ['Dropbox (PDF', 'dropbox'], ['Dropbox-Ordner', 'dropbox'], ['Erkennung verbessern', 'dropbox'],
   ['Google Kalender', 'kunden'], ['Navigations-Knopf', 'kunden'], ['Straßen offline', 'kunden', 1], ['Kunden & Straßen auf anderes', 'kunden', 1],
   ['Sicherung', 'sicherung'], ['Projekt aus Datei', 'sicherung'], ['Aufräumen', 'sicherung'], ['Speicher', 'sicherung', 1],
-  ['Schriftgröße', 'mehr'], ['Entsperren', 'mehr'], ['Updates', 'mehr'], ['Fehlerbericht', 'mehr', 1], ['Funktionstest', 'mehr', 1], ['Handy weitergeben', 'mehr', 1],
+  ['Einführung', 'mehr'], ['Sprache', 'mehr'], ['Schriftgröße', 'mehr'], ['Entsperren', 'mehr'], ['Updates', 'mehr'], ['Fehlerbericht', 'mehr', 1], ['Funktionstest', 'mehr', 1], ['Handy weitergeben', 'mehr', 1],
 ];
 const OLD_TAB = { allg: 'mehr', kunden: 'kunden', pdf: 'pdf', cloud: 'dropbox', system: 'mehr' };
 function buildSettings() {
@@ -2553,7 +2659,7 @@ function buildSettings() {
   const home = document.createElement('div'); home.id = 'setHome';
   const head = document.createElement('div'); head.id = 'setHead'; head.innerHTML = '<button class="ghost" id="setBack">‹ Einstellungen</button><b id="setTitle"></b>';
   for (const [id, ic, name, sub] of SET_CATS) {
-    const t = document.createElement('button'); t.type = 'button'; t.className = 'stile'; t.dataset.cat = id; t.innerHTML = `<i>${ic}</i><b>${name}</b><small>${sub}</small>`; t.onclick = () => showTab(id); home.appendChild(t);
+    const t = document.createElement('button'); t.type = 'button'; t.className = 'stile'; t.dataset.cat = id; t.innerHTML = `<i>${ic}</i><b>${name}</b><small>${sub}</small>`; t.onclick = () => openCat(id); home.appendChild(t);
     const p = document.createElement('div'); p.className = 'spane'; p.dataset.cat = id; panes[id] = p;
     const adv = document.createElement('details'); adv.className = 'sadv'; adv.innerHTML = '<summary>Erweitert</summary>'; p._adv = adv;
   }
@@ -2566,6 +2672,26 @@ function buildSettings() {
   $('#setBack').onclick = () => showTab(null);
 }
 function setAllPanes() { buildSettings(); $('#setSheet').classList.add('all'); $$('#setSheet details.sadv').forEach(d => d.open = true); runSelfTest(); showStorage(); laserListUi(); }
+// Einstellungs-PIN (3.9): eigene PIN nur für dieses Gerät, schützt alle Seiten außer „Laser“ (den muss jeder verbinden können)
+const SETPIN = 'mb_setpin'; let setUnlocked = false;
+const setPinCfg = () => { try { return JSON.parse(localStorage.getItem(SETPIN) || 'null'); } catch (e) { return null; } };
+async function setPinHash(pin, salt) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + ':' + pin)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); }
+async function setPinAsk(title = 'Einstellungs-PIN') {
+  const c = setPinCfg(); if (!c) return true;
+  const v = await promptBox(title, 'PIN', ''); if (v == null) return false;
+  if (await setPinHash(String(v).trim(), c.salt) === c.hash) return true;
+  toast('Falsche PIN'); beep(false); return false;
+}
+function setPinUi() { const c = setPinCfg(); $('#sSetPin').textContent = c ? '🔓 Schutz der Einstellungen aufheben' : '🔒 Einstellungen mit PIN schützen'; $('#sSetPinState').textContent = c ? 'Aktiv: Alle Seiten außer „Laser“ brauchen die Einstellungs-PIN.' : 'Aus: Jeder mit Zugang zur App kann die Einstellungen ändern.'; }
+$('#sSetPin').onclick = async () => {
+  if (setPinCfg()) { if (await setPinAsk('PIN eingeben, um den Schutz aufzuheben')) { localStorage.removeItem(SETPIN); toast('Schutz aufgehoben'); setPinUi(); } return; }
+  const a = await promptBox('Neue Einstellungs-PIN (mind. 4 Ziffern)', 'PIN', ''); if (a == null) return;
+  if (!/^\d{4,10}$/.test(a.trim())) return toast('Bitte 4 bis 10 Ziffern');
+  const b = await promptBox('PIN wiederholen', 'PIN', ''); if (b == null) return;
+  if (a.trim() !== b.trim()) return toast('Die beiden Eingaben sind verschieden');
+  const salt = uid(); localStorage.setItem(SETPIN, JSON.stringify({ salt, hash: await setPinHash(a.trim(), salt) })); setUnlocked = true; toast('Einstellungen sind jetzt geschützt'); setPinUi();
+};
+async function openCat(t) { if (t && t !== 'laser' && setPinCfg() && !setUnlocked) { if (!await setPinAsk()) return; setUnlocked = true; } showTab(t); }
 function showTab(t) {
   buildSettings();
   if (t && OLD_TAB[t] && !SET_CATS.some(c => c[0] === t)) t = OLD_TAB[t];
@@ -2578,10 +2704,10 @@ function showTab(t) {
   if (t === 'laser') { laserListUi(); laserAutoHint(); }
 }
 $('#btnSettings').onclick = async () => {
-  showTab(null); // immer mit den Kacheln beginnen
+  setUnlocked = false; showTab(null); setPinUi(); // immer mit den Kacheln beginnen; Einstellungs-PIN gilt je Öffnen
   if (window.__setAllPanes) setAllPanes(); // nur Tests: alle Seiten auf einmal offen
-  $('#sGlove').checked = !!opt.glove; $('#sLearn').checked = opt.learn !== false; $('#sLeft').checked = !!opt.left;
-  $('#sMagnet').checked = opt.magnet !== false; $('#sDash').checked = !!opt.dash; fillCamList();
+  $('#sLand').checked = !!opt.land; $('#sGlove').checked = !!opt.glove; $('#sLearn').checked = opt.learn !== false; $('#sLeft').checked = !!opt.left;
+  $('#sMagnet').checked = opt.magnet !== false; $('#sDash').checked = !!opt.dash; $('#sLbl').value = opt.lbl || 'm'; fillCamList();
   $('#sShrink').checked = !!opt.shrink; $('#sRemind').checked = opt.remind !== false; $('#sLockDays').value = String(lockDays()); bioUi(); backupUi(); offlineUiList();
   $('#sGrid').checked = !!opt.grid; $('#sEst').checked = opt.est !== false; $('#sLaserAuto').checked = opt.laserAuto !== false; laserAutoHint(); $('#sAutoBackup').checked = !!opt.autoBackup; $('#sBgLock').value = String(opt.bgLock || 0);
   $('#sPdfQ').value = (await db.setting('pdfQuality')) || 'normal'; $('#sNotesPdf').checked = !!(await db.setting('pdfNotes')); laserListUi();
@@ -2603,7 +2729,7 @@ $('#btnSettings').onclick = async () => {
   $('#sNav').value = opt.nav || ''; $('#sUnit').value = opt.mm ? 'mm' : 'cm';
   const kl = laser.known; $('#sLasers').textContent = kl.length ? 'Gemerkt: ' + kl.map(k => `${k.name} (${new Date(k.last).toLocaleDateString('de-AT')})`).join(', ') : 'Noch kein Laser verbunden.';
   $('#sOverview').value = (await db.setting('pdfOverview')) === false ? '0' : '1';
-  $('#sRooms').value = (await rooms()).map(([k, t]) => t ? `${k} = ${t}` : k).join('\n');
+  $('#sRooms').value = (await rooms()).map(([k, t]) => t ? `${k} = ${t}` : k).join('\n'); roomListUi();
   $('#sZoom').value = String((await db.setting('zoom')) || 1);
   showStorage();
   $('#setSheet').classList.add('on');
@@ -2877,6 +3003,7 @@ $('#sCleanup').onclick = async () => {
   log('Sammel-Archiv', cand.length); renderHome(); toast(`${cand.length} Projekt${cand.length > 1 ? 'e' : ''} archiviert – über „📦 Archiv“ weiterhin erreichbar`, 3500);
 };
 $('#sDash').onchange = () => { opt.dash = $('#sDash').checked; saveOpt(); };
+$('#sLbl').onchange = () => { opt.lbl = $('#sLbl').value; saveOpt(); };
 $('#sCam').onchange = () => { opt.cam = $('#sCam').value; saveOpt(); };
 // Kameraliste (Namen gibt es erst, wenn die Kamera einmal erlaubt wurde)
 async function fillCamList() {
@@ -2897,12 +3024,13 @@ async function learnState() {
 $('#sBig').onchange = () => { opt.big = $('#sBig').checked; saveOpt(); if (opt.big) showBig({ el: 'Tür', kind: 'H', cm: 199, mm: 1990 }); };
 $('#sVoice').onchange = () => { opt.voice = $('#sVoice').checked; saveOpt(); if (opt.voice) say('Sprachansage ist an. Höhe, 199'); };
 const DEMO = [
-  ['📁', 'Projekt anlegen', 'Unten „+ Neues Projekt“. Straße + Hausnummer (+ Geschoß, WG), PLZ und Ort eintragen – bekannte Straßen füllen PLZ/Ort selbst aus. Kunde antippen.'],
-  ['📷', 'Raum wählen & fotografieren', '„📷 Foto“ → Raum antippen (Kz, Sz, Wz …), Tür bzw. Fenster fotografieren. Im Editor: Raumname oben antippen = Raum ändern.'],
-  ['↕️', 'Pfeile setzen', 'Mit dem Finger über das Foto ziehen: senkrecht = Höhe, waagrecht = Breite. Enden verschieben (Lupe hilft), 🗑 löscht den ausgewählten Pfeil. Vorlagen unter „Pfeile“.'],
-  ['📏', 'Messen', 'Oben „Laser“ verbinden (Android + Chrome) und am Laser messen – der Wert springt in den blinkenden Pfeil, dann zum nächsten. Ohne Laser: ⌨ antippen und eintippen.'],
-  ['✅', 'Prüfen & weiter', 'Nach dem letzten Pfeil prüft die App die Maße und öffnet die Kamera fürs nächste Foto. „‹ Projekt“ führt zurück zur Fotoliste.'],
-  ['📄', 'PDF & Dropbox', 'In der Fotoliste „PDF“ (Vorschau, Teilen, Speichern) oder das Dropbox-Symbol – das PDF heißt wie das Projekt.'],
+  ['📁', 'Projekt anlegen', 'Unten „+ Neues Projekt“. Straße + Hausnummer, Geschoß und WG eintragen – PLZ und Ort kommen bei bekannten Straßen von selbst. Kunde antippen. Mit Google Kalender: „📅 Termine“ legt das Projekt aus dem Termin an.'],
+  ['🚪', 'Raum wählen', '„📷 Foto“ öffnet die Kamera mit der Raumliste. Erst den Raum antippen (Eg, Rh, Vr …), dann ist der Auslöser frei. Erledigte Räume sind grün. Fehlt ein Raum: „＋ Raum hinzufügen“.'],
+  ['📷', 'Fotografieren', 'Tür oder Fenster ganz ins Bild nehmen und auslösen. Oben verbindest du den Laser, mit 1× / 2× zoomst du. Verwackelt? Im Foto rechts unten 📷↻ nimmt es neu auf.'],
+  ['↕️', 'Pfeile setzen', 'Mit dem Finger von Kante zu Kante ziehen oder Anfang und Ende antippen. Senkrecht = Höhe, waagrecht = Breite. Enden lassen sich verschieben, 🗑 löscht den gewählten Pfeil.'],
+  ['📏', 'Messen', 'Am Laser messen – der Wert springt in den blinkenden Pfeil. Erst die Tür (Höhe, Breite), dann das Fenster. Ohne Laser: ⌨ antippen und eintippen.'],
+  ['✅', 'Nächstes Foto', 'Nach dem letzten Maß geht es von selbst zurück zur Raumliste, oder du tippst „✓ Fertig“. Zwei Fotos im selben Raum heißen Kz1-1 und Kz1-2.'],
+  ['🏁', 'Wohnung abschließen', '„✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden gedrückt halten: Das PDF geht in die Dropbox, das Projekt wird gesperrt und ein neues beginnt. Ohne Netz wird später hochgeladen.'],
 ];
 let demoI = 0;
 function demoShow() {
@@ -2913,6 +3041,38 @@ function demoShow() {
   $('#demoPrev').disabled = demoI === 0; $('#demoNext').textContent = demoI === DEMO.length - 1 ? 'Fertig ✓' : 'Weiter ›';
 }
 $('#sDemo').onclick = () => { $('#setSheet').classList.remove('on'); demoI = 0; demoShow(); $('#demo').classList.add('on'); };
+// Übungsprojekt (3.9): eine blaue Zeile sagt in jedem Bildschirm, was als Nächstes zu tun ist
+const COACH = 'Übungswohnung 1, EG, WG 1';
+function coachStep() {
+  const c = $('#coach'); if (!S.coach) { c.classList.remove('on'); return; }
+  const on = id => $('#' + id).classList.contains('on'); let t = '', n = '';
+  if (document.querySelector('.sheet-bg.on')) { c.classList.remove('on'); return; }
+  if (on('proj') && S.project && S.project.id === S.coach) { const k = S.shots.length; t = k ? `${k} Foto${k === 1 ? '' : 's'} gemacht. Weiter mit „📷 Foto“ – oder beenden mit „‹“ oben links.` : 'Tippe unten auf „📷 Foto“.'; n = 'Schritt 1'; }
+  else if (on('cam')) { if ($('#cam').classList.contains('needroom')) { t = 'Tippe den Raum an, den du fotografierst.'; n = 'Schritt 2'; } else { t = 'Tür oder Fenster ganz ins Bild nehmen und auslösen (großer Knopf unten).'; n = 'Schritt 3'; } }
+  else if (on('ed') && S.shot) { const open = S.shot.arrows.filter(a => a.cm == null).length; if (!S.shot.arrows.length) { t = 'Ziehe mit dem Finger von Kante zu Kante – so entsteht ein Pfeil.'; n = 'Schritt 4'; } else if (open) { t = 'Pfeil an die Kanten setzen, dann am Laser messen oder ⌨ antippen und den Wert eintippen.'; n = 'Schritt 4'; } else { t = '„✓ Fertig“ antippen = nächstes Foto. 3 Sekunden halten = Wohnung abschließen.'; n = 'Schritt 5'; } }
+  else { c.classList.remove('on'); if (on('home')) coachEnd(); return; }
+  const key = n + t; if (c.dataset.k !== key) { c.dataset.k = key; c.innerHTML = '<small></small><span></span>'; c.querySelector('small').textContent = 'Übung · ' + n; c.querySelector('span').textContent = t; }
+  c.classList.add('on');
+}
+let coachT = 0;
+async function coachEnd() {
+  const id = S.coach; if (!id) return; S.coach = null; clearInterval(coachT); $('#coach').classList.remove('on');
+  const p = await db.get('projects', id); if (!p || p.deleted) return;
+  if (await confirmBox('Übung beendet – Übungsprojekt löschen?', 'Löschen', 'Behalten')) { p.deleted = Date.now(); await db.put('projects', p); renderHome(); }
+}
+$('#sCoach').onclick = async () => {
+  $('#setSheet').classList.remove('on');
+  const p = { id: uid(), name: COACH, str: COACH, plz: '', ortName: '', kundeId: null, firma: '', kontakt: '', strasse: '', ort: '', land: '', telefon: '', datum: todayISO(), created: Date.now(), updated: Date.now(), uebung: true };
+  await db.put('projects', p); await openProject(p.id, false);
+  S.coach = p.id; clearInterval(coachT); coachT = setInterval(coachStep, 500); coachStep();
+};
+// Querformat (3.9): nur wenn in den Einstellungen gewählt; sonst bleibt die App hochkant
+function landUi() {
+  document.body.classList.toggle('land', !!opt.land);
+  try { const o = screen.orientation; if (o) { if (opt.land) o.unlock && o.unlock(); else if (o.lock) o.lock('portrait').catch(() => { }); } } catch (e) { }
+}
+$('#sLand').onchange = () => { opt.land = $('#sLand').checked; saveOpt(); landUi(); if ($('#ed').classList.contains('on')) fitCanvas(); };
+$('#sLang').value = lang(); $('#sLang').onchange = () => setLang($('#sLang').value);
 $('#demoPrev').onclick = () => { if (demoI > 0) { demoI--; demoShow(); } };
 $('#demoNext').onclick = () => { if (demoI < DEMO.length - 1) { demoI++; demoShow(); } else $('#demo').classList.remove('on'); };
 // Update-Knopf: vorbereitet, Funktion wird erst zum Schluss freigegeben (Manuel 05.11.)
@@ -3041,7 +3201,11 @@ async function projectFromEvent(ev, addr, all, cs) {
   const d = new Date(ev.start);
   const last = [...all].sort((a, b) => (b.updated || 0) - (a.updated || 0))[0] || {};
   const txt = (ev.summary + ' ' + ev.description + ' ' + ev.location).toLowerCase();
-  const byName = cs.find(c => c.name && txt.includes(c.name.toLowerCase()));
+  // Kunde: steht er am Anfang des Termins („WAG Hertzstr. 20/3/16“), gilt er; sonst als ganzes Wort irgendwo im Termin
+  const first = String(ev.summary || '').replace(/^[*•·\-–\s]+/, '').split(/[\s:,]/)[0].toLowerCase();
+  const keys = c => [c.name, c.dbx].filter(Boolean).map(x => String(x).toLowerCase());
+  const esc = x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const byName = cs.find(c => first && keys(c).includes(first)) || cs.find(c => keys(c).some(k => new RegExp('(^|[^a-zäöüß])' + esc(k) + '($|[^a-zäöüß])').test(txt)));
   const cust = byName || (last.kundeId && cs.find(c => c.id === last.kundeId)) || null;
   const p = { id: uid(), name: '', str: addr ? addr.str : '', plz: addr ? addr.plz : '', ortName: addr ? addr.ort : '', kundeId: cust ? cust.id : null,
     datum: todayISO(isNaN(d) ? new Date() : d), created: Date.now(), updated: Date.now(), gcalId: ev.id, notizTermin: ev.summary };
@@ -3198,10 +3362,38 @@ $('#sRooms').oninput = () => {
   const list = $('#sRooms').value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const [k, ...t] = l.split('='); return [k.trim(), t.join('=').trim()]; }).filter(x => x[0]);
   db.setting('rooms', list);
 };
-$('#sRoomsReset').onclick = async () => { await db.setting('rooms', null); $('#sRooms').value = DEFAULT_ROOMS.map(([k, t]) => t ? `${k} = ${t}` : k).join('\n'); };
+async function roomListUi() {
+  const box = $('#sRoomList'); if (!box) return; const list = (await rooms()).map(x => [...x]); box.innerHTML = '';
+  const save = async l => { await db.setting('rooms', l); $('#sRooms').value = l.map(([k, t]) => t ? `${k} = ${t}` : k).join('\n'); roomListUi(); };
+  list.forEach(([k, t], i) => {
+    const r = document.createElement('div'); r.className = 'rrow';
+    r.innerHTML = `<b></b><span></span><button class="ghost" data-rup aria-label="nach oben">↑</button><button class="ghost" data-rdn aria-label="nach unten">↓</button><button class="ghost" data-red aria-label="ändern">✎</button><button class="ghost" data-rdel aria-label="löschen">✕</button>`;
+    r.querySelector('b').textContent = k; r.querySelector('span').textContent = t || '';
+    r.querySelector('[data-rup]').disabled = i === 0; r.querySelector('[data-rdn]').disabled = i === list.length - 1;
+    r.querySelector('[data-rup]').onclick = () => { [list[i - 1], list[i]] = [list[i], list[i - 1]]; save(list); };
+    r.querySelector('[data-rdn]').onclick = () => { [list[i + 1], list[i]] = [list[i], list[i + 1]]; save(list); };
+    r.querySelector('[data-red]').onclick = async () => { const v = await roomBox(k, t, 'Raum ändern'); if (v) { list[i] = [v.k, v.t]; save(list); } };
+    r.querySelector('[data-rdel]').onclick = async () => { if (await confirmBox(`Raum „${k}“ aus der Liste nehmen?`, 'Entfernen', 'Abbrechen', 'danger', 'Schon gemachte Fotos behalten ihren Raum.')) { list.splice(i, 1); save(list); } };
+    box.appendChild(r);
+  });
+}
+$('#sRoomAdd').onclick = async () => { const v = await roomBox(); if (v) { await addRoom(v.k, v.t); $('#sRooms').value = (await rooms()).map(([k, t]) => t ? `${k} = ${t}` : k).join('\n'); roomListUi(); } };
+$('#sRoomsReset').onclick = async () => { await db.setting('rooms', null); $('#sRooms').value = DEFAULT_ROOMS.map(([k, t]) => t ? `${k} = ${t}` : k).join('\n'); roomListUi(); };
 // Schriftgröße: nur Listen/Formulare vergrößern (nicht Foto-Bildschirm/Kamera, dort zählen Fingerpositionen)
 function applyZoom(z) { document.documentElement.style.setProperty('--z', z); }
 $('#sZoom').onchange = async () => { const z = parseFloat($('#sZoom').value); await db.setting('zoom', z); applyZoom(z); };
+// Speicher-Warnung (3.9): höchstens einmal am Tag, wenn weniger als 300 MB frei sind oder über 85 % belegt
+async function storageWarn() {
+  try {
+    if (!navigator.storage || !navigator.storage.estimate) return;
+    const e = window.__storEst || await navigator.storage.estimate(); if (!e.quota) return;
+    const free = e.quota - (e.usage || 0), pct = (e.usage || 0) / e.quota;
+    if (free > 300e6 && pct < 0.85) return;
+    const day = todayISO(); if (localStorage.getItem('mb_storWarn') === day) return; localStorage.setItem('mb_storWarn', day);
+    const go = await confirmBox('Speicher wird knapp', 'Zu „Sicherung“', 'Später', 'pri', `Noch etwa ${Math.max(0, Math.round(free / 1e6))} MB frei.\nTipp: fertige Projekte sichern und alte ins Archiv räumen oder Fotos verkleinern (⚙ → Sicherung).`);
+    if (go) { await $('#btnSettings').onclick(); showTab('sicherung'); }
+  } catch (e) { }
+}
 async function showStorage() {
   const fmt = b => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.round(b / 1024) + ' KB';
   let photos = 0, n = 0;
@@ -3501,6 +3693,7 @@ $('#sNews').onclick = () => { $('#setClose').click(); showNews(); };
   renderHome();
   offlineUi();
   whatsNew();
+  landUi(); initLang(); setTimeout(storageWarn, 5000);
   backupBar();
   todayBox();
   applySetupLink();
@@ -3512,5 +3705,5 @@ $('#sNews').onclick = () => { $('#setClose').click(); showNews(); };
     let reloaded = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloaded) return; reloaded = true; if (newsOpen) reloadAfterNews = true; else location.reload(); }); // nicht mitten im Lesen neu laden
   }
-  window.__mb = { setAll: setAllPanes, measureOrder, shotName, S, laser, view, nav, onMeasure, magnet, labelBoxes, grayOf: () => grayOf(), applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
+  window.__mb = { setAll: setAllPanes, storageWarn, coachStep, measureOrder, shotName, S, laser, view, nav, onMeasure, magnet, labelBoxes, grayOf: () => grayOf(), applyTemplate, setArrows, arrowsFromObjects, hdrTest: async () => { caps.exposureCompensation = { min: -2, max: 2 }; const t0 = performance.now(); const c = await captureHdr(); return [c.width, c.height, Math.round(performance.now() - t0), c.toDataURL('image/jpeg', 0.7)]; } }; // für Tests
 })();

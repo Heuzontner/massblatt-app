@@ -19,6 +19,11 @@ export function fmtDateTime(d) {
 }
 
 export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts = {}) {
+  // 3.9: Räume immer in der festen Reihenfolge der Raumliste (Eg, Rh, Vr …), unbekannte danach; innerhalb eines Raums wie aufgenommen
+  if (opts.roomOrder && opts.roomOrder.length) {
+    const pos = r => { const i = opts.roomOrder.indexOf(r); return i < 0 ? 1e6 : i; };
+    shots = shots.map((s, i) => [s, i]).sort((a, b) => pos(a[0].room) - pos(b[0].room) || a[1] - b[1]).map(x => x[0]);
+  }
   const { PDFDocument, rgb } = PDFLib;
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
