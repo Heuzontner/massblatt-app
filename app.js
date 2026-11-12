@@ -10,9 +10,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.9.0';
+const VERSION = '3.9.1';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
+const NEWS = ['Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -1145,7 +1145,15 @@ function pickRoom() {
       b.onclick = () => { sh.classList.remove('on'); res(k); }; g.appendChild(b);
     });
     $('#roomCustom').value = '';
-    $('#roomOk').onclick = () => { const v = $('#roomCustom').value.trim(); if (!v) return; sh.classList.remove('on'); res(v); };
+    // 3.9.1: ein hier eingetippter Raum wird wie in der Kamera mit Name + Kürzel in die Raumliste übernommen (Manuel 12.11.)
+    $('#roomOk').onclick = async () => {
+      const v = $('#roomCustom').value.trim(); if (!v) return;
+      const hit = list.find(([k, t]) => k.toLowerCase() === v.toLowerCase() || (t && t.toLowerCase() === v.toLowerCase()));
+      if (hit) { sh.classList.remove('on'); res(hit[0]); return; }
+      const short = v.length <= 5 && !/\s/.test(v);
+      const r = await roomBox(short ? v : '', short ? '' : v, 'Neuen Raum speichern'); if (!r) return;
+      await addRoom(r.k, r.t); sh.classList.remove('on'); res(r.k);
+    };
     const mic = $('#roomMic'); mic.style.display = getSR() ? '' : 'none'; mic.classList.remove('on'); mic.textContent = '🎤';
     mic.onclick = () => {
       if (mic._rec) { try { mic._rec.stop(); } catch (e) { } return; }
