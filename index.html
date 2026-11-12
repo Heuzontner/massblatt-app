@@ -409,6 +409,10 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
   body.land #camRooms { right:110px; bottom:0; }
   body.land #coach { right:auto; width:46vw; bottom:12px; }
 }
+/* 3.10 */
+#edMore { display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.1; font-size:17px; padding:0 10px; }
+#edMore small { font-size:10px; font-weight:400; opacity:.75; }
+#edDone.soft::before { width:100%; transition:width var(--soft, 3000ms) linear; background:rgba(31,138,76,.45); }
 </style>
 </head>
 <body>
@@ -543,6 +547,7 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
     <div class="edbar">
       <div class="cur"><small id="curLbl">–</small><b id="curVal">–</b></div>
       <button id="kbBtn" aria-label="Tastatur">⌨</button>
+      <button id="edMore" aria-label="Noch ein Foto in diesem Raum">＋📷<small>Foto hier</small></button>
       <button class="pri" id="edDone">✓ Fertig</button>
     </div>
   </div>

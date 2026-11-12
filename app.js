@@ -10,9 +10,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.9.1';
+const VERSION = '3.10.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
+const NEWS = ['Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -1401,7 +1401,9 @@ $('#shutter').onclick = async () => {
       $('#capBusy').classList.remove('on');
     } else if (!(camOpt.torch && caps.torch)) {
       // ohne Blitz: volle Auflösung über ImageCapture (wo verfügbar)
-      try { if (window.ImageCapture) blob = await new ImageCapture(camTrack()).takePhoto(); } catch (e) { blob = null; }
+      // 3.10: Das Bild kommt SOFORT aus dem Sucher. takePhoto() stellt am Android erst scharf und löst ~1 s nach dem Tipp aus –
+      // wer da schon weitergeht, verwackelt (Manuel 12.11.). Gespeichert wird ohnehin mit 1600 px; nur bei sehr kleinem Sucherbild der alte Weg.
+      if (Math.max(v.videoWidth, v.videoHeight) < 1200) { try { if (window.ImageCapture) blob = await new ImageCapture(camTrack()).takePhoto(); } catch (e) { blob = null; } }
     }
     if (!blob) blob = await canvasToBlob(grabFrame(), 'image/jpeg', 0.92); // mit Blitz: Videobild, damit das Licht anbleibt
     if (digitalZoom() > 1) { try { blob = await cropZoom(blob, digitalZoom()); } catch (e) { log('zoom-ausschnitt', e.name); } }
@@ -1650,7 +1652,7 @@ async function saveShot() { await db.put('shots', S.shot); }
 
 // Anzeige in cm oder mm (nur App; gespeichert wird cm wie bei Bosch, mm zusätzlich wenn vom Laser bekannt)
 const fmtVal = a => opt.mm ? `${a.mm != null ? a.mm : a.cm * 10} mm` : `${a.cm} cm`;
-function setValue(cm, mm) {
+function setValue(cm, mm, fromLaser = false) {
   if (S.hideArrows) { S.hideArrows = false; $('#eyeA').classList.remove('on'); }
   let a = activeArrow();
   // Hat der Nutzer einen Pfeil selbst angetippt, bekommt genau dieser den Wert (auch zum Neu-Messen).
@@ -1665,6 +1667,15 @@ function setValue(cm, mm) {
   S.manualPick = false;
   if (placing && placing.id === a.id) clearPlacing(); // halb gesetzter Pfeil bekommt den Wert – Setz-Modus verfällt
   if (!a) { a = newArrow(); S.shot.arrows.push(a); } // noch gar kein Pfeil → neuen anlegen
+  // 3.10: unplausibler Laserwert wird nicht übernommen – nochmal messen; derselbe Wert ein zweites Mal gilt (Manuel 12.11.)
+  if (fromLaser) {
+    const bad = checkArrow({ ...a, cm }, S.shot.room), r = S.rej;
+    if (bad && !(r && r.id === a.id && Math.abs(r.cm - cm) <= Math.max(2, cm * 0.03))) {
+      S.rej = { id: a.id, cm }; beep(false); try { navigator.vibrate && navigator.vibrate([120, 80, 120]); } catch (e) { }
+      toast(`${bad} – bitte nochmal messen (derselbe Wert wird dann übernommen)`, 4500); S.active = a.id; updateCur(); return false;
+    }
+  }
+  S.rej = null;
   const est = a.est; delete a.est;
   a.cm = cm; a.mm = mm != null ? mm : cm * 10; a.time = new Date().toISOString();
   saveShot();
@@ -1674,7 +1685,7 @@ function setValue(cm, mm) {
   if (opt.big) showBig(a);
   if (opt.voice) say(`${opt.mm ? a.mm : cm}` + (next ? `. Nächster: ${arrowName(next)}` : '. Fertig'));
   if (next) { S.active = next.id; updateCur(); }
-  else if (S.arrowMode === 'none' && S.shot.room !== 'Rh') { S.active = a.id; updateCur(); } // selbst ziehen: wie viele Pfeile kommen, weiß nur der Nutzer → „✓ Fertig“
+  else if (S.arrowMode === 'none' && S.shot.room !== 'Rh') { S.active = a.id; updateCur(); softNext(); } // selbst ziehen: wie viele Pfeile kommen, weiß nur der Nutzer → kurze Bedenkzeit, dann weiter
   else { S.active = a.id; updateCur(); finishShot(true); }
 }
 // keine Tür-/Fenster-Bezeichnung (Manuel 09.11.): nur Höhe/Breite wie im Bosch-Maßblatt; Raumhöhe bleibt benannt
@@ -1713,7 +1724,7 @@ function say(t) {
 }
 
 function onMeasure(cm, mm) {
-  if ($('#ed').classList.contains('on') && S.shot) { if (S.project && S.project.locked) { toast('Projekt gesperrt – zuerst entsperren'); return; } setValue(cm, mm); return; }
+  if ($('#ed').classList.contains('on') && S.shot) { if (S.project && S.project.locked) { toast('Projekt gesperrt – zuerst entsperren'); return; } setValue(cm, mm, true); return; }
   toast(`${cm} cm gemessen – erst ein Foto machen`, 2000); beep(false);
 }
 
@@ -1734,9 +1745,19 @@ function shotIssues(shot) {
   if (open.length) out.push({ a: open[0], m: `${open.length} Pfeil${open.length > 1 ? 'e' : ''} ohne Maß` });
   return out;
 }
-let finishing = 0, checkDlg = null;
-async function finishShot(auto) {
-  clearTimeout(finishing);
+let finishing = 0, checkDlg = null, softT = 0;
+// „Keine Pfeile“ (3.10): alles gemessen → nach 3 s von selbst zum nächsten Raum; wer das Foto berührt (noch ein Pfeil), bleibt
+const SOFT_MS = () => window.__softMs || 3000;
+function softStop() { if (softT) { clearTimeout(softT); softT = 0; $('#edDone').classList.remove('soft'); return true; } return false; }
+function softNext() {
+  softStop(); if (S.shot.arrows.length < 2) return; // ein einzelner Pfeil ist selten schon alles
+  $('#edDone').style.setProperty('--soft', SOFT_MS() + 'ms'); void $('#edDone').offsetWidth; $('#edDone').classList.add('soft');
+  toast('Alle Maße da ✓ – gleich weiter. Noch ein Pfeil? Einfach ins Foto tippen.', Math.min(2800, SOFT_MS()));
+  softT = setTimeout(() => { softT = 0; $('#edDone').classList.remove('soft'); if ($('#ed').classList.contains('on') && S.shot && !nextOpen()) finishShot(false); }, SOFT_MS());
+}
+$('#ed').addEventListener('pointerdown', e => { if (!e.target.closest('#edDone')) softStop(); }, true);
+async function finishShot(auto, keepRoom = false) {
+  clearTimeout(finishing); softStop();
   // eine noch offene „Bitte prüfen“-Rückfrage schließen (z. B. wenn inzwischen neu gemessen wurde) – es gibt immer nur eine
   if (checkDlg) { checkDlg.remove(); checkDlg = null; }
   const iss = shotIssues(S.shot);
@@ -1753,7 +1774,8 @@ async function finishShot(auto) {
     await saveShot();
     learnFromShot(S.shot).catch(() => { });
     if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
-    S.room = null; openCam(); // nächstes Foto: wieder zuerst den Raum wählen
+    prewarmShot(S.shot);
+    S.room = keepRoom ? S.shot.room : null; openCam(); // nächstes Foto: wieder zuerst den Raum wählen (außer „＋ Foto hier“)
   };
   if (auto) { toast(`${shotName(S.shot)}: alle Maße da ✓ – nächstes Foto`, 1300); finishing = setTimeout(go, 1300); }
   else go();
@@ -1804,15 +1826,16 @@ async function flatDone() {
     busy.remove();
     if ($('#cam').classList.contains('on') || $('#ed').classList.contains('on')) { try { stopCam(); } catch (e) { } }
     if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
-    await $('#btnNewProj').onclick();
-    toast(msg, 4500);
+    const nx = await nextAppointment(p).catch(() => null);
+    if (nx) toast(msg + ' · Nächster Termin: ' + nx, 5500); else { await $('#btnNewProj').onclick(); toast(msg, 4500); }
   } finally { flatBusy = false; }
 }
 holdButton($('#edDone'), HOLD_MS(), flatDone, () => finishShot(false));
+$('#edMore').onclick = () => { if (S.project && S.project.locked) return; finishShot(false, true); }; // noch ein Foto im selben Raum
 holdButton($('#camFlat'), HOLD_MS(), flatDone, () => toast('Wohnung fertig? Dann 3 Sekunden gedrückt halten', 2500));
 // zurück zum Projekt: sofort wechseln, Speichern läuft im Hintergrund
 function leaveEditor(target = 'proj', viaPop = false) {
-  clearTimeout(finishing); if (kb.on) setKb(false);
+  clearTimeout(finishing); softStop(); if (kb.on) setKb(false);
   if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
   if (target === 'cam') openCam(viaPop); else show(target, viaPop);
   renderShots();
@@ -2136,14 +2159,8 @@ async function pdfBytesFor(p, allShots) {
   const maxPx = q === 'klein' ? 1000 : q === 'druck' ? 2400 : 1600, jq = q === 'klein' ? 0.72 : q === 'druck' ? 0.92 : 0.85;
   const notes = !!(await db.setting('pdfNotes'));
   for (const s of allShots) {
-    const im = await blobToImg(s.photo);
-    const sc = Math.min(1, maxPx / Math.max(s.w, s.h));
-    const c = document.createElement('canvas'); c.width = Math.round(s.w * sc); c.height = Math.round(s.h * sc);
-    const g = c.getContext('2d'); g.drawImage(im, 0, 0, c.width, c.height);
     const measured = s.arrows.filter(a => a.cm != null);
-    drawArrows(g, c.width, c.height, measured, null, 1, true, null, { lbl: LBL[opt.lbl] || 1 });
-    const jb = await canvasToBlob(c, 'image/jpeg', jq);
-    shots.push({ room: s.room, jpg: new Uint8Array(await jb.arrayBuffer()), values: measured.map(a => ({ cm: a.cm, time: new Date(a.time) })), note: notes ? (s.note || '') : '' });
+    shots.push({ room: s.room, jpg: await shotJpg(s, maxPx, jq), values: measured.map(a => ({ cm: a.cm, time: new Date(a.time) })), note: notes ? (s.note || '') : '' });
   }
   const headLogo = await db.setting('headerLogo');
   const proj = { ...p, headerTitle: (await db.setting('headerTitle')) || 'Measuring Master',
@@ -2152,6 +2169,31 @@ async function pdfBytesFor(p, allShots) {
     headerLogo: headLogo ? await fileToImgBytes(headLogo) : null,
     kundenLogo: p.kundenLogo ? await fileToImgBytes(p.kundenLogo) : null };
   return buildPdf(window.PDFLib, window.fontkit, fontBytes, proj, shots, { roomOrder: (await rooms()).map(r => r[0]) });
+}
+// 3.10: fertiges PDF-Bild je Foto (mit Pfeilen) wird schon nach „Fertig“ im Hintergrund gerechnet und gemerkt.
+// Schlüssel = alles, was das Bild bestimmt; ändert sich etwas (Pfeil, Maß, neues Foto), wird neu gerechnet – gelöschte Fotos kommen gar nicht mehr vor.
+const jpgCache = new Map();
+const jpgKey = (s, maxPx, jq) => JSON.stringify([s.photo && s.photo.size, s.w, s.h, maxPx, jq, JSON.stringify(opt), s.arrows.filter(a => a.cm != null).map(a => [a.x1, a.y1, a.x2, a.y2, a.kind, a.el, a.cm, a.mm, a.lab])]);
+async function shotJpg(s, maxPx, jq) {
+  const key = jpgKey(s, maxPx, jq), hit = jpgCache.get(s.id);
+  if (hit && hit.key === key) return hit.jpg;
+  const job = (async () => {
+    const im = await blobToImg(s.photo);
+    const sc = Math.min(1, maxPx / Math.max(s.w, s.h));
+    const c = document.createElement('canvas'); c.width = Math.round(s.w * sc); c.height = Math.round(s.h * sc);
+    const g = c.getContext('2d'); g.drawImage(im, 0, 0, c.width, c.height);
+    drawArrows(g, c.width, c.height, s.arrows.filter(a => a.cm != null), null, 1, true, null, { lbl: LBL[opt.lbl] || 1 });
+    return new Uint8Array(await (await canvasToBlob(c, 'image/jpeg', jq)).arrayBuffer());
+  })();
+  jpgCache.set(s.id, { key, jpg: job }); if (jpgCache.size > 80) jpgCache.delete(jpgCache.keys().next().value);
+  job.catch(() => { if ((jpgCache.get(s.id) || {}).jpg === job) jpgCache.delete(s.id); });
+  return job;
+}
+function prewarmShot(s) {
+  if (!s || !s.photo) return;
+  setTimeout(async () => {
+    try { const q = (await db.setting('pdfQuality')) || 'normal'; await shotJpg(s, q === 'klein' ? 1000 : q === 'druck' ? 2400 : 1600, q === 'klein' ? 0.72 : q === 'druck' ? 0.92 : 0.85); if (!fontBytesCache) fontBytesCache = new Uint8Array(await (await fetch('vendor/NotoSans.woff')).arrayBuffer()); } catch (e) { }
+  }, 1200);
 }
 async function makePdfFileFor(p, allShots) {
   const bytes = await pdfBytesFor(p, allShots);
@@ -3232,6 +3274,29 @@ async function createFromEvent(ev, addr) {
   await openProject(p.id, true);
   if (addr && addr.str) { const el = $('#pStr'); el.value = addr.str + (addr.str.includes(',') ? '' : ', '); S.project.str = el.value; updateNamePrev(); db.put('projects', S.project); el.setSelectionRange(el.value.length, el.value.length); rememberStreetSoon(); }
   toast(addr ? 'Aus Termin übernommen – Geschoß/WG ergänzen' : 'Projekt angelegt – Adresse bitte eintragen', 3000);
+}
+// Nach „Wohnung fertig“ (3.10): den nächsten Termin von heute gleich als Projekt öffnen (Manuel 12.11.)
+async function nextAppointment(done) {
+  if (!gcal.configured || !gcal.everConnected) return null;
+  let evs = null; const cache = (await db.setting('gcalCache')) || null;
+  if (gcal.connected && navigator.onLine) {
+    try { evs = await Promise.race([gcal.events(1), new Promise((_, rej) => setTimeout(() => rej(new Error('zu langsam')), 3000))]);
+      evs = evs.map(e => ({ id: e.id, summary: e.summary, location: e.location, description: e.description, start: e.start, allDay: e.allDay, cal: e.cal }));
+      await db.setting('gcalCache', { t: Date.now(), day: todayISO(), evs }); } catch (e) { evs = null; }
+  }
+  if (!evs && cache && cache.day === todayISO()) evs = cache.evs;
+  if (!evs || !evs.length) return null;
+  evs = evs.filter(e => !e.allDay).sort((a, b) => new Date(a.start) - new Date(b.start));
+  const cur = done && done.gcalId ? evs.findIndex(e => e.id === done.gcalId) : -1;
+  const all = await liveProjects(), cs = (await db.setting('customers')) || [];
+  const stop = cs.flatMap(c => (c.name || '').split(/\s+/)).filter(Boolean);
+  for (const ev of evs.slice(cur + 1)) {
+    const have = all.find(p => p.gcalId === ev.id);
+    if (have) { if (have.locked || have.archived || (have.exports || []).length || (await db.shotsOf(have.id)).length) continue; await openProject(have.id, true); return have.name || ev.summary; }
+    const addr = await eventAddress(ev, stop); if (!addr || !addr.str || !/\d/.test(addr.str)) continue;
+    const p = await projectFromEvent(ev, addr, all, cs); await openProject(p.id, true); return p.name || ev.summary;
+  }
+  return null;
 }
 // Tag vorbereiten (Idee 55): alle heutigen Termine mit Adresse auf einmal als Projekte anlegen
 async function prepareDay(evs) {
