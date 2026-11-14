@@ -1,8 +1,8 @@
 // Offline: App-Dateien im Cache. Große, unveränderliche Bibliotheken liegen in einem eigenen Cache,
 // damit ein Update nur die kleinen App-Dateien neu laden muss (schnelle Updates).
-const V = 'mb-3.10.1';
+const V = 'mb-3.11.0';
 const LIB = 'mblib-1';
-const FILES = ['./', 'index.html', 'app.js', 'db.js', 'ble.js', 'arrows.js', 'pdf.js', 'detect.js', 'pin.js', 'dropbox.js', 'gcal.js', 'magnet.js', 'i18n.js', 'manifest.webmanifest',
+const FILES = ['./', 'index.html', 'app.js', 'db.js', 'ble.js', 'arrows.js', 'pdf.js', 'detect.js', 'pin.js', 'dropbox.js', 'gcal.js', 'magnet.js', 'i18n.js', 'plan.js', 'plan-geo.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png'];
 const FONTS = ['space-grotesk-latin-600', 'space-grotesk-latin-700', 'ibm-plex-sans-latin-400', 'ibm-plex-sans-latin-500', 'ibm-plex-sans-latin-600', 'jetbrains-mono-latin-400', 'jetbrains-mono-latin-500'].map(f => `vendor/fonts/${f}-normal.woff2`);
 const LIBFILES = ['vendor/pdf-lib.min.js', 'vendor/fontkit.umd.min.js', 'vendor/NotoSans.woff', 'vendor/pdf.min.mjs', 'vendor/pdf.worker.min.mjs', 'vendor/qrcode.js', ...FONTS];

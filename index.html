@@ -413,6 +413,25 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
 #edMore { display:flex; flex-direction:column; align-items:center; justify-content:center; line-height:1.1; font-size:17px; padding:0 10px; }
 #edMore small { font-size:10px; font-weight:400; opacity:.75; }
 #edDone.soft::before { width:100%; transition:width var(--soft, 3000ms) linear; background:rgba(31,138,76,.45); }
+/* 3.11 Grundriss (eigener Reiter) */
+.hometabs { display:flex; gap:0; padding:8px 12px 0; background:var(--panel); border-bottom:1px solid var(--line); }
+.hometabs button { flex:1; padding:11px 8px; background:transparent; border:0; border-bottom:3px solid transparent; border-radius:0; font-family:var(--display); font-weight:600; font-size:16px; color:var(--mute); }
+.hometabs button.on { color:var(--text); border-bottom-color:var(--yellow); }
+#home.gr > .plist:not(#grHome), #home.gr > .bottombar:not(#grBar) { display:none; }
+#home:not(.gr) > #grHome, #home:not(.gr) > #grBar { display:none; }
+.grroom { display:flex; align-items:center; gap:10px; } .grroom .t { flex:1; min-width:0; } .grroom .t b { display:block; } .grroom .t small { color:var(--mute); }
+.grroom.done { border-color:var(--green); }
+.grpick { display:block; width:100%; text-align:left; margin-bottom:6px; padding:10px 12px; } .grpick b { display:block; } .grpick small { color:var(--mute); }
+.grgrid { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; } .grgrid button { padding:10px 4px; line-height:1.15; } .grgrid b { display:block; font-family:var(--display); font-size:18px; } .grgrid small { color:var(--mute); font-size:11px; } .grgrid button.used { opacity:.55; }
+.grstage { flex:1; min-height:0; position:relative; background:var(--bg); background-image:linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size:24px 24px; }
+.grstage canvas { position:absolute; inset:0; }
+.grpanel { background:var(--panel); border-top:1px solid var(--line); padding:10px 12px calc(env(safe-area-inset-bottom) + 10px); }
+.grinfo b { display:block; font-size:17px; } .grinfo small { display:block; color:var(--mute); font-size:13px; min-height:34px; }
+.grwalls { display:flex; gap:6px; overflow-x:auto; padding:6px 0 8px; min-height:50px; }
+.grwalls button { flex:none; padding:6px 10px; font-family:var(--mono); font-size:15px; border:1px solid var(--line); background:var(--panel2); border-radius:4px; display:flex; align-items:center; gap:5px; }
+.grwalls button i { font-style:normal; font-size:11px; color:var(--mute); } .grwalls button small { color:var(--acc); font-size:14px; } .grwalls button.auto small { text-decoration:underline dotted; }
+.grbar { display:flex; gap:8px; } .grbar button { flex:1; height:58px; font-size:17px; } .grbar button.ghost { flex:0 1 auto; min-width:58px; padding:0 12px; } .grbar button.pri { flex:2; }
+@media (orientation:landscape) { body.land #planRoom.on { flex-direction:row; flex-wrap:wrap; } body.land #planRoom header.top { width:100%; } body.land #planRoom .grstage { flex:1; height:calc(100% - 66px); } body.land #planRoom .grpanel { width:340px; border-top:0; border-left:1px solid var(--line); } }
 </style>
 </head>
 <body>
@@ -425,6 +444,9 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
     <button class="ghost" id="btnCal" aria-label="Termine" style="display:none">📅</button>
     <button class="ghost" id="btnSettings" aria-label="Einstellungen">⚙<i class="badge"></i></button>
   </header>
+  <div class="hometabs" id="homeTabs"><button data-tab="mb" class="on">Massblatt</button><button data-tab="gr">Grundriss</button></div>
+  <div class="scroll plist" id="grHome"><div id="grList"></div></div>
+  <div class="bottombar" id="grBar"><button class="pri" id="grNew">+ Neuer Grundriss</button></div>
   <div class="scroll plist">
     <input id="projSearch" type="search" placeholder="🔍 Suchen (Straße, Kunde)" style="margin-bottom:8px">
     <div class="chips2" id="sortChips"><span class="mute">Sortieren:</span>
@@ -436,6 +458,44 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
   </div>
   <div class="bottombar"><button class="pri" id="btnNewProj">+ Neues Projekt</button>
     <div id="selBar"><button class="ghost" id="selCancel" aria-label="Abbrechen">✕</button><button class="pri" id="selPdf" style="flex:2">1 PDF aus 0 Projekten</button><button class="pri" id="selDbx" style="flex:2">☁ 0 PDFs in Dropbox</button><button class="danger" id="selDel" aria-label="Auswahl löschen" style="flex:0 0 52px;padding:12px 0">🗑</button></div></div>
+</section>
+
+<!-- Grundriss (eigener Reiter, plan.js) -->
+<section class="screen" id="plan">
+  <header class="top">
+    <button class="ghost" id="grBack">‹</button>
+    <h1 id="grTitle">Grundriss</h1>
+    <div class="laser" data-laser><i></i><span>Laser</span></div>
+  </header>
+  <div class="scroll">
+    <details class="card" id="grDetails" open>
+      <summary>Adresse</summary>
+      <button class="ghost" id="grTake" style="width:100%;margin-top:8px">⇩ Aus Massblatt übernehmen</button>
+      <label class="f">Straße + Hausnummer (+ Geschoß, WG)</label><input id="grStr" autocomplete="off">
+      <div class="row2"><div><label class="f">PLZ</label><input id="grPlz" inputmode="numeric" autocomplete="off"></div><div><label class="f">Ort</label><input id="grOrt" autocomplete="off"></div></div>
+      <label class="f">Kunde</label><input id="grKunde" autocomplete="off">
+      <button class="danger" id="grDel" style="width:100%;margin-top:14px">Grundriss löschen</button>
+    </details>
+    <div id="grRooms"></div>
+    <p class="mute" id="grTotal" style="margin:6px 2px;font-family:var(--mono);font-size:14px"></p>
+  </div>
+  <div class="bottombar"><button class="pri" id="grAddRoom">+ Raum</button></div>
+</section>
+<section class="screen" id="planRoom">
+  <header class="top">
+    <button class="ghost" id="grRoomBack">‹</button>
+    <button class="ghost" id="grRoomTitle" style="flex:1;text-align:left;font-family:var(--display);font-weight:700;font-size:18px">Raum</button>
+    <div class="laser" data-laser><i></i><span>Laser</span></div>
+    <button class="ghost" id="grRoomDel" aria-label="Raum löschen">🗑</button>
+  </header>
+  <div class="grstage"><canvas id="grCv"></canvas></div>
+  <div class="grpanel">
+    <div class="grinfo"><b id="grInfo"></b><small id="grSub"></small></div>
+    <div class="grwalls" id="grWalls"></div>
+    <div class="grbar" id="grMeasBar"><button class="ghost" id="grKey" aria-label="Eintippen">⌨</button><button class="ghost" id="grUndo">↶ zurück</button><button class="pri" id="grClose">✓ Raum fertig</button></div>
+    <div class="grbar" id="grTurnBar"><button class="pri" id="grL">↰ links</button><button class="pri" id="grR">↱ rechts</button><button class="ghost" id="grAng">∠</button><button class="ghost" id="grUndo2">↶</button></div>
+    <div class="grbar" id="grDoneBar"><button class="ghost" id="grReopen">Wieder öffnen</button><button class="ghost" id="grDiag"></button><button class="ghost" id="grKey2" style="display:none">⌨</button><button class="pri" id="grRoomOk">✓ Weiter</button></div>
+  </div>
 </section>
 
 <!-- Projekt -->
@@ -801,5 +861,6 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
 <script src="vendor/pdf-lib.min.js"></script>
 <script src="vendor/fontkit.umd.min.js"></script>
 <script type="module" src="app.js"></script>
+<script type="module" src="plan.js"></script>
 </body>
 </html>

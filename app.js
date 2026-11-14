@@ -10,9 +10,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.10.1';
+const VERSION = '3.11.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
+const NEWS = ['Neuer Reiter „Grundriss“: Raum für Raum mit dem Laser ablaufen, die App zeichnet mit und rechnet die Fläche (getrennt vom Massblatt)', 'Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -105,6 +105,7 @@ function closeLayer(el) {
 function goBack(viaPop) {
   const st = nav.stack, cur = st[st.length - 1];
   if (cur === 'home') return false;
+  if (window.__plan && window.__plan.back(cur, viaPop)) return true; // Bildschirme des Grundriss-Reiters (plan.js)
   const prev = st[st.length - 2] || 'home';
   if (cur === 'ed') leaveEditor(prev, viaPop);
   else if (cur === 'cam') leaveCam(viaPop);
@@ -1759,6 +1760,7 @@ function say(t) {
 }
 
 function onMeasure(cm, mm) {
+  if (window.__plan && window.__plan.measure(cm, mm)) return; // Reiter „Grundriss“ offen → Wert gehört dorthin (plan.js)
   if ($('#ed').classList.contains('on') && S.shot) { if (S.project && S.project.locked) { toast('Projekt gesperrt – zuerst entsperren'); return; } setValue(cm, mm, true); return; }
   toast(`${cm} cm gemessen – erst ein Foto machen`, 2000); beep(false);
 }
@@ -1780,6 +1782,8 @@ function shotIssues(shot) {
   if (open.length) out.push({ a: open[0], m: `${open.length} Pfeil${open.length > 1 ? 'e' : ''} ohne Maß` });
   return out;
 }
+// Brücke für den getrennten Grundriss-Teil (plan.js): nur allgemeine Helfer, keine Massblatt-Daten außer der Projektliste zum Übernehmen der Adresse
+window.__app = { show, toast, confirmBox, promptBox, beep, keepAwake, liveProjects, rooms, goBack };
 let finishing = 0, checkDlg = null, softT = 0;
 // „Keine Pfeile“ (3.10): alles gemessen → nach 3 s von selbst zum nächsten Raum; wer das Foto berührt (noch ein Pfeil), bleibt
 const SOFT_MS = () => window.__softMs || 3000;
