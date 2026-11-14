@@ -10,9 +10,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.10.0';
+const VERSION = '3.10.1';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
+const NEWS = ['Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -568,14 +568,27 @@ async function offlineMatches(k, limit = 6) {
   return [...pre, ...inn].slice(0, limit).map(x => ({ street: x.street, ort: x.ort, src: 'offline' }));
 }
 const OVERPASS = 'https://overpass-api.de/api/interpreter';
+// 3.10.1: ist der Hauptserver ausgelastet, der Reihe nach die Ausweich-Server probieren (alle öffentlich und kostenlos)
+const OVERPASS_ALT = ['https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+async function overpassFetch(q) {
+  let last = null;
+  for (const url of [OVERPASS, ...OVERPASS_ALT]) {
+    try {
+      const r = await fetch(url, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      if (r.ok) return r;
+      last = new Error(r.status === 429 || r.status === 504 ? 'OpenStreetMap-Server ausgelastet – bitte in ein paar Minuten nochmal' : 'OpenStreetMap: ' + r.status);
+      if (!(r.status === 429 || r.status >= 500)) throw last;
+    } catch (e) { if (e === last && !/ausgelastet/.test(e.message)) throw e; last = last || new Error('OpenStreetMap-Server nicht erreichbar – bitte später nochmal'); }
+  }
+  throw last;
+}
 async function loadOfflinePlace(ort) {
   // Adressen (addr:street + addr:postcode) innerhalb der Gemeindegrenze, als CSV (klein); Suchraum = Österreich
   const q = `[out:csv("addr:street","addr:postcode","addr:city";false;"|")][timeout:120][bbox:46.3,9.5,49.1,17.2];
 area["name"="${ort.replace(/"/g, '')}"]["boundary"="administrative"]->.a;
 nwr(area.a)["addr:street"]["addr:postcode"];
 out tags;`;
-  const r = await fetch(OVERPASS, { method: 'POST', body: 'data=' + encodeURIComponent(q), headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-  if (!r.ok) throw new Error(r.status === 429 || r.status === 504 ? 'OpenStreetMap-Server ausgelastet – bitte in ein paar Minuten nochmal' : 'OpenStreetMap: ' + r.status);
+  const r = await overpassFetch(q);
   const txt = await r.text();
   const cnt = new Map();
   for (const line of txt.split('\n')) {
@@ -597,24 +610,46 @@ async function offlineUiList() {
   const el = $('#offlList'); if (!el) return;
   const all = (await db.setting('offlineStreets')) || {}; el.innerHTML = '';
   const orte = Object.keys(all).sort((a, b) => a.localeCompare(b, 'de'));
+  offlChipsUi();
   if (!orte.length) { el.innerHTML = '<p class="mute" style="margin:4px 0">Noch kein Ort geladen.</p>'; return; }
   for (const o of orte) {
     const row = document.createElement('div'); row.className = 'dbxrow';
     row.innerHTML = '<div style="flex:1"><b></b><div class="mute"></div></div><button class="ghost" data-x style="width:auto;padding:6px 10px;height:auto">✕</button>';
     row.querySelector('b').textContent = o; row.querySelector('.mute').textContent = `${all[o].n} Straßen · geladen ${new Date(all[o].t).toLocaleDateString('de-AT')}`;
-    row.querySelector('[data-x]').onclick = async () => { delete all[o]; await db.setting('offlineStreets', all); offlIdx = null; offlineUiList(); };
+    row.querySelector('[data-x]').onclick = async () => { delete all[o]; await db.setting('offlineStreets', all); offlIdx = null; offlineUiList(); offlChipsUi(); };
     el.appendChild(row);
   }
 }
+// 3.10.1 Mehrfachauswahl (Manuel 14.11.): Orte antippen (mehrere) und/oder mit Komma eintippen, „Laden“ holt alle nacheinander
+const offlSel = new Set();
+function offlBtnUi() { const n = offlWanted().length; const b = $('#offlLoad'); if (!b.disabled) b.textContent = n > 1 ? `${n} Orte laden` : 'Laden'; }
+function offlWanted() {
+  const typed = $('#offlOrt').value.split(/[,;\n]/).map(x => x.trim()).filter(Boolean);
+  const out = []; for (const o of [...offlSel, ...typed]) if (!out.some(x => x.toLowerCase() === o.toLowerCase())) out.push(o);
+  return out;
+}
+async function offlChipsUi() {
+  const all = (await db.setting('offlineStreets')) || {};
+  $$('#offlChips button').forEach(bt => { const o = bt.dataset.ort; bt.classList.toggle('sel', offlSel.has(o)); bt.textContent = (all[o] ? '✓ ' : '') + o; });
+  offlBtnUi();
+}
 $('#offlLoad').onclick = async () => {
-  const ort = $('#offlOrt').value.trim(); if (!ort) { toast('Ort eingeben, z. B. Linz'); return; }
+  const orte = offlWanted(); if (!orte.length) { toast('Orte antippen oder eintippen, z. B. Linz, Traun'); return; }
   if (!navigator.onLine) { toast('Zum Laden wird Netz gebraucht'); return; }
-  const b = $('#offlLoad'); b.disabled = true; b.textContent = 'Lade … (kann 1–2 Minuten dauern)';
-  try { const n = await loadOfflinePlace(ort); toast(`${ort}: ${n} Straßen offline gespeichert`, 3500); $('#offlOrt').value = ''; offlineUiList(); }
-  catch (e) { toast(e.message, 6000); }
-  b.disabled = false; b.textContent = 'Laden';
+  const b = $('#offlLoad'); b.disabled = true; const ok = [], bad = [];
+  for (let i = 0; i < orte.length; i++) {
+    b.textContent = orte.length > 1 ? `Lade ${i + 1}/${orte.length}: ${orte[i]} …` : 'Lade … (kann 1–2 Minuten dauern)';
+    try { const n = await loadOfflinePlace(orte[i]); ok.push(`${orte[i]} (${n})`); offlSel.delete(orte[i]); offlineUiList(); offlChipsUi(); }
+    catch (e) { bad.push([orte[i], e.message]); }
+  }
+  b.disabled = false;
+  $('#offlOrt').value = bad.filter(([o]) => !offlSel.has(o)).map(([o]) => o).join(', ');
+  offlChipsUi();
+  if (orte.length === 1) toast(ok.length ? `${orte[0]}: ${ok[0].replace(/.*\((\d+)\)$/, '$1')} Straßen offline gespeichert` : bad[0][1], ok.length ? 3500 : 6000);
+  else toast((ok.length ? `Gespeichert: ${ok.join(', ')}` : '') + (bad.length ? `${ok.length ? ' · ' : ''}Nicht geladen: ${bad.map(x => x[0]).join(', ')} – ${bad[0][1]}` : ''), bad.length ? 8000 : 4500);
 };
-$$('#offlChips button').forEach(bt => { bt.onclick = () => { $('#offlOrt').value = bt.textContent; $('#offlLoad').click(); }; });
+$$('#offlChips button').forEach(bt => { bt.dataset.ort = bt.textContent; bt.onclick = () => { const o = bt.dataset.ort; offlSel.has(o) ? offlSel.delete(o) : offlSel.add(o); offlChipsUi(); }; });
+$('#offlOrt').addEventListener('input', offlBtnUi);
 let remT = 0;
 function rememberStreetSoon() {
   clearTimeout(remT);
