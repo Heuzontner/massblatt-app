@@ -10,9 +10,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.12.0';
+const VERSION = '3.13.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Grundriss Stufe 2: Türen und Fenster auf die Wand setzen, Räume hängen sich über ihre Türen zur ganzen Wohnung zusammen (mit Kontrolle, ob es aufgeht)', 'Grundriss: Richtung nur noch per Tippen (links/rechts); „↶ Richtung ändern“ nimmt die letzte Richtung zurück', 'Neuer Reiter „Grundriss“: Raum für Raum mit dem Laser ablaufen, die App zeichnet mit und rechnet die Fläche (getrennt vom Massblatt)', 'Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
+const NEWS = ['Grundriss Stufe 3: maßstäbliches PDF und DXF für BricsCAD, Ablage in der Dropbox unter Grundrisse/Kunde; Grundrisse sind jetzt in der Gesamt-Sicherung', 'Grundriss Stufe 2: Türen und Fenster auf die Wand setzen, Räume hängen sich über ihre Türen zur ganzen Wohnung zusammen (mit Kontrolle, ob es aufgeht)', 'Grundriss: Richtung nur noch per Tippen (links/rechts); „↶ Richtung ändern“ nimmt die letzte Richtung zurück', 'Neuer Reiter „Grundriss“: Raum für Raum mit dem Laser ablaufen, die App zeichnet mit und rechnet die Fläche (getrennt vom Massblatt)', 'Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -1783,7 +1783,7 @@ function shotIssues(shot) {
   return out;
 }
 // Brücke für den getrennten Grundriss-Teil (plan.js): nur allgemeine Helfer, keine Massblatt-Daten außer der Projektliste zum Übernehmen der Adresse
-window.__app = { show, toast, confirmBox, promptBox, beep, keepAwake, liveProjects, rooms, goBack };
+window.__app = { show, toast, confirmBox, promptBox, beep, keepAwake, liveProjects, rooms, goBack, dropbox, dbxUpload, queueAdd, makeBackup, restoreBackup };
 let finishing = 0, checkDlg = null, softT = 0;
 // „Keine Pfeile“ (3.10): alles gemessen → nach 3 s von selbst zum nächsten Raum; wer das Foto berührt (noch ein Pfeil), bleibt
 const SOFT_MS = () => window.__softMs || 3000;
@@ -2890,7 +2890,7 @@ async function makeBackup() {
   for (const k of await db.settingKeys()) if (!BK_SKIP_SETTINGS.includes(k)) settings[k] = await packBlobs(await db.setting(k));
   const local = {}; for (const k of BK_LOCAL) { try { const v = localStorage.getItem(k); if (v != null) local[k] = v; } catch (e) { } }
   const d = new Date(), pad = n => String(n).padStart(2, '0');
-  const head = { app: 'massblatt-sicherung', version: 1, appVersion: VERSION, exported: d.toISOString(), device: navigator.userAgent.slice(0, 80), settings, local, projects: await packBlobs(projs) };
+  const head = { app: 'massblatt-sicherung', version: 1, appVersion: VERSION, exported: d.toISOString(), device: navigator.userAgent.slice(0, 80), settings, local, projects: await packBlobs(projs), grundrisse: window.__plan ? await window.__plan.store.all() : [] }; // Grundrisse (eigener Speicher, plan.js) fahren in der Sicherung mit
   // Fotos stückweise anhängen, damit nicht ein riesiger Text auf einmal entsteht
   const parts = [JSON.stringify(head).slice(0, -1), ',"shots":['];
   let first = true, n = 0;
@@ -2947,6 +2947,7 @@ async function restoreFromFile(f) {
 }
 async function restoreBackup(data, mode) {
   if (mode === 'replace') { await db.clear('shots'); await db.clear('projects'); await db.clear('settings'); }
+  if (window.__plan && Array.isArray(data.grundrisse)) { if (mode === 'replace') await window.__plan.store.clear(); for (const g of data.grundrisse) if (g && g.id) await window.__plan.store.put(g); }
   for (const p of data.projects || []) await db.put('projects', await unpackBlobs(p));
   for (const sh of data.shots || []) await db.put('shots', await unpackBlobs(sh));
   const st = data.settings || {};
@@ -3075,6 +3076,7 @@ $('#sWipe').onclick = async () => {
   if ((word || '').trim().toUpperCase() !== 'LÖSCHEN') { toast('Abgebrochen – nichts gelöscht'); return; }
   try {
     await db.clear('shots'); await db.clear('projects'); await db.clear('settings');
+    try { if (window.__plan) await window.__plan.store.clear(); } catch (e) { }
     try { localStorage.clear(); } catch (e) { }
     try { for (const k of await caches.keys()) if (!k.startsWith('mb-') && !k.startsWith('mblib')) await caches.delete(k); } catch (e) { }
     toast('Alles gelöscht – App startet neu', 3000);

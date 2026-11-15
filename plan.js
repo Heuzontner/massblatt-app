@@ -1,6 +1,7 @@
 // Grundriss (Stufe 1): eigener Reiter, eigene Daten, eigener Code – berührt das Massblatt nicht.
 // Gemeinsam genutzt werden nur: Laser-Verbindung, PIN/Sperre, Dialoge und die Raumnamen-Liste (lesend).
 import * as G from './plan-geo.js';
+import * as O from './plan-out.js';
 const $ = s => document.querySelector(s);
 const A = () => window.__app;                                   // Brücke aus app.js (show, toast, confirmBox, promptBox, beep …)
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -13,7 +14,7 @@ function odb() {
   return dbp;
 }
 const tx = async (mode, fn) => { const d = await odb(); return new Promise((res, rej) => { const t = d.transaction('plans', mode); const r = fn(t.objectStore('plans')); let out; if (r) r.onsuccess = () => { out = r.result; }; t.oncomplete = () => res(out); t.onerror = () => rej(t.error); }); };
-const store = { all: () => tx('readonly', s => s.getAll()), get: id => tx('readonly', s => s.get(id)), put: v => tx('readwrite', s => s.put(v)), del: id => tx('readwrite', s => s.delete(id)) };
+const store = { all: () => tx('readonly', s => s.getAll()), get: id => tx('readonly', s => s.get(id)), put: v => tx('readwrite', s => s.put(v)), del: id => tx('readwrite', s => s.delete(id)), clear: () => tx('readwrite', s => s.clear()) };
 
 const P = { plan: null, room: null, hold: null };
 const save = async () => { if (!P.plan) return; P.plan.updated = Date.now(); await store.put(P.plan); };
@@ -61,7 +62,8 @@ function renderPlan() {
   }
   const nd = p.rooms.filter(r => r.closed).length; $('#grFlatCard').style.display = nd ? '' : 'none';
   if (nd) { const { res, msgs } = flatInfo(); $('#grFlatHint').textContent = nd < 2 ? 'Wohnung ansehen' : msgs.length ? `Wohnung ansehen · ${msgs.length} ${msgs.length === 1 ? 'Hinweis' : 'Hinweise'}` : `Wohnung ansehen · ${res.T.size} Räume verbunden ✓`; requestAnimationFrame(() => drawFlat($('#grFlatMini'), false)); }
-  const tot = planArea(p); $('#grTotal').textContent = tot ? `Gesamt: ${fmtA(tot)} (${p.rooms.filter(r => r.closed).length} von ${p.rooms.length} Räumen fertig)` : '';
+  const tot = planArea(p), ex = (p.exports || []).slice(-1)[0]; $('#grTotal').textContent = (tot ? `Gesamt: ${fmtA(tot)} (${p.rooms.filter(r => r.closed).length} von ${p.rooms.length} Räumen fertig)` : '') + (ex ? ` · zuletzt ${ex.how} ${new Date(ex.t).toLocaleDateString('de-AT')}` : '');
+  $('#grExport').disabled = !nd;
 }
 for (const [id, key] of [['grStr', 'name'], ['grPlz', 'plz'], ['grOrt', 'ortName'], ['grKunde', 'kunde']]) $('#' + id).addEventListener('input', () => { if (!P.plan) return; P.plan[key] = $('#' + id).value.trim(); if (key === 'name') $('#grTitle').textContent = P.plan.name || 'Neuer Grundriss'; save(); });
 $('#grBack').onclick = () => A().goBack(false);
@@ -318,6 +320,44 @@ $('#grFlatCard').onclick = () => { A().show('planFlat'); A().keepAwake(true); fl
 $('#grFlatBack').onclick = () => A().goBack(false);
 $('#grWall').addEventListener('input', () => { if (!P.plan) return; const v = parseFloat($('#grWall').value.replace(',', '.')); if (v > 0 && v < 200) P.plan.wall = v; else delete P.plan.wall; save(); renderPlan(); });
 
+// ---------- Stufe 3: PDF + DXF, Dropbox ----------
+let fontBytes = null;
+async function planFiles() {
+  if (!fontBytes) fontBytes = new Uint8Array(await (await fetch('vendor/NotoSans.woff')).arrayBuffer());
+  const base = O.fileBase(P.plan), pdf = await O.buildPlanPdf(window.PDFLib, window.fontkit, fontBytes, P.plan, flatInfo().msgs), dxf = O.buildDxf(P.plan);
+  return { pdf: new File([pdf], base + '.pdf', { type: 'application/pdf' }), dxf: new File([dxf.text], base + '.dxf', { type: 'application/dxf' }) };
+}
+const planSub = () => 'Grundrisse' + ((P.plan.kunde || '').trim() ? '/' + P.plan.kunde.trim().replace(/[\\/:*?"<>|]+/g, ' ') : '');
+function saveLocal(file) { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); }
+async function shareFiles(files) {
+  try { if (navigator.canShare && navigator.canShare({ files })) { await navigator.share({ files, title: files[0].name }); return true; } } catch (e) { if (e && e.name === 'AbortError') return true; }
+  return false;
+}
+$('#grExport').onclick = async () => {
+  const p = P.plan, n = p.rooms.filter(r => r.closed).length;
+  if (!n) { A().toast('Erst mindestens einen Raum fertig messen'); return; }
+  const open = p.rooms.length - n, dbx = A().dropbox.connected;
+  const bg = sheet(`<h2>Grundriss ausgeben</h2><p class="mute" style="margin:-4px 0 10px;font-size:14px">${n} ${n === 1 ? 'Raum' : 'Räume'} fertig${open ? ` · ${open} noch offen (${open === 1 ? 'fehlt' : 'fehlen'} in der Ausgabe)` : ''} · PDF maßstäblich, DXF in cm für BricsCAD</p>
+    <button class="pri" data-dbx style="width:100%">☁ PDF + DXF in die Dropbox</button><p class="mute" data-where style="margin:4px 0 10px;font-size:13px"></p>
+    <div class="row2"><button class="ghost" data-pdf>PDF speichern</button><button class="ghost" data-dxf>DXF speichern</button></div>
+    <button class="ghost" data-share style="width:100%;margin-top:8px">Teilen …</button><button class="ghost" data-close style="width:100%;margin-top:8px">Schließen</button>`);
+  bg.querySelector('[data-where]').textContent = dbx ? 'Ordner: ' + A().dropbox.pathFor(planSub()) : 'Dropbox ist nicht verbunden (⚙ → Dropbox).';
+  bg.querySelector('[data-dbx]').disabled = !dbx;
+  const make = async () => { A().toast('Grundriss wird erstellt …', 8000); return planFiles(); };
+  bg.querySelector('[data-pdf]').onclick = async () => { const f = await make(); saveLocal(f.pdf); A().toast('PDF gespeichert: ' + f.pdf.name, 3000); };
+  bg.querySelector('[data-dxf]').onclick = async () => { const f = await make(); saveLocal(f.dxf); A().toast('DXF gespeichert: ' + f.dxf.name, 3000); };
+  bg.querySelector('[data-share]').onclick = async () => { const f = await make(); if (!await shareFiles([f.pdf, f.dxf])) { saveLocal(f.pdf); saveLocal(f.dxf); A().toast('Teilen geht hier nicht – beide Dateien wurden gespeichert', 3500); } };
+  bg.querySelector('[data-dbx]').onclick = async () => {
+    const bt = bg.querySelector('[data-dbx]'); bt.disabled = true; bt.textContent = 'Wird hochgeladen …';
+    try {
+      const f = await planFiles(), sub = planSub();
+      if (!navigator.onLine) { await A().queueAdd(f.pdf, sub); await A().queueAdd(f.dxf, sub); p.exports = [...(p.exports || []), { t: Date.now(), how: 'wartet auf Netz' }]; await save(); bg.remove(); A().toast('Kein Netz – PDF und DXF werden hochgeladen, sobald wieder Netz da ist', 4500); renderPlan(); return; }
+      const a = await A().dbxUpload(f.pdf, sub), b = await A().dbxUpload(f.dxf, sub);
+      p.exports = [...(p.exports || []), { t: Date.now(), how: 'in Dropbox', path: a.path, dxf: b.path }].slice(-20); await save(); bg.remove(); A().beep(true); A().toast('In Dropbox: ' + a.path.split('/').slice(-3).join('/') + ' + DXF', 5000); renderPlan();
+    } catch (e) { bt.disabled = false; bt.textContent = '☁ PDF + DXF in die Dropbox'; A().toast('Hochladen fehlgeschlagen: ' + e.message, 6000); }
+  };
+};
+
 // Wand bearbeiten: Länge ändern, Ecke umdrehen
 function editWall(i) {
   const r = P.room, w = r.walls[i];
@@ -410,5 +450,5 @@ window.__plan = {
     if (cur === 'plan') { P.plan = null; A().show('home', viaPop); setTab('gr'); return true; }
     return false;
   },
-  state: P, store, setTab, G,
+  state: P, store, setTab, G, O,
 };

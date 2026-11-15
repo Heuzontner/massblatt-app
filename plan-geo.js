@@ -103,3 +103,25 @@ export function placeRooms(rooms, defThick = 15) {
   }
   return { T, unplaced: done.filter(r => !T.has(r.id)).map(r => r.id), missing, issues, pairs, poly };
 }
+
+// ---------- Stufe 3: Lage aller fertigen Räume für die Ausgabe ----------
+// Verbundene Räume an ihrem Platz, die übrigen in einer Reihe rechts daneben (loose). Koordinaten in cm, y nach unten.
+export function layout(rooms, defThick = 15) {
+  const res = placeRooms(rooms, defThick), items = []; let bb = null;
+  const grow = q => { bb = bb ? { x0: Math.min(bb.x0, q.x), y0: Math.min(bb.y0, q.y), x1: Math.max(bb.x1, q.x), y1: Math.max(bb.y1, q.y) } : { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; };
+  for (const r of rooms) { const t = res.T.get(r.id); if (!t) continue; const poly = res.poly.get(r.id).map(q => applyT(t, q)); poly.forEach(grow); items.push({ room: r, poly, loose: false }); }
+  let x = bb ? bb.x1 + 150 : 0; const y0 = bb ? bb.y0 : 0;
+  for (const id of res.unplaced) {
+    const r = rooms.find(q => q.id === id), raw = res.poly.get(id), mnx = Math.min(...raw.map(q => q.x)), mny = Math.min(...raw.map(q => q.y));
+    const poly = raw.map(q => ({ x: q.x - mnx + x, y: q.y - mny + y0 })); poly.forEach(grow); x = Math.max(...poly.map(q => q.x)) + 100; items.push({ room: r, poly, loose: true });
+  }
+  return { items, bb: bb || { x0: 0, y0: 0, x1: 1, y1: 1 }, res };
+}
+// Eine Wand in Stücke teilen: massive Abschnitte und Öffnungen (in Reihenfolge entlang der Wand)
+export function wallParts(room, poly, i) {
+  const n = poly.length, a = poly[i], b = poly[(i + 1) % n], L = Math.hypot(b.x - a.x, b.y - a.y) || 1, k = L / (room.walls[i].cm || L), d = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+  const at = s => ({ x: a.x + d.x * s, y: a.y + d.y * s }), ops = (room.ops || []).filter(o => o.wall === i).sort((p, q) => p.pos - q.pos), out = []; let s = 0;
+  for (const o of ops) { const s0 = Math.max(s, o.pos * k), s1 = Math.min(L, (o.pos + o.w) * k); if (s1 <= s0) continue; if (s0 > s + 1e-6) out.push({ kind: 'W', p0: at(s), p1: at(s0) }); out.push({ kind: o.type, p0: at(s0), p1: at(s1), op: o }); s = s1; }
+  if (L > s + 1e-6) out.push({ kind: 'W', p0: at(s), p1: at(L) });
+  return { parts: out, d, n: wallGeo(poly, i).n, mid: at(L / 2), L };
+}
