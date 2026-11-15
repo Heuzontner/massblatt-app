@@ -15,7 +15,7 @@ function odb() {
 const tx = async (mode, fn) => { const d = await odb(); return new Promise((res, rej) => { const t = d.transaction('plans', mode); const r = fn(t.objectStore('plans')); let out; if (r) r.onsuccess = () => { out = r.result; }; t.oncomplete = () => res(out); t.onerror = () => rej(t.error); }); };
 const store = { all: () => tx('readonly', s => s.getAll()), get: id => tx('readonly', s => s.get(id)), put: v => tx('readwrite', s => s.put(v)), del: id => tx('readwrite', s => s.delete(id)) };
 
-const P = { plan: null, room: null, hold: null, alpha: null, lastAlpha: null };
+const P = { plan: null, room: null, hold: null };
 const save = async () => { if (!P.plan) return; P.plan.updated = Date.now(); await store.put(P.plan); };
 const fmtM = cm => (cm / 100).toFixed(2).replace('.', ',') + ' m';
 const fmtA = m2 => m2.toFixed(2).replace('.', ',') + ' m²';
@@ -95,8 +95,8 @@ $('#grAddRoom').onclick = async () => {
 
 // ---------- Raum ablaufen ----------
 function openRoom(id) {
-  P.room = P.plan.rooms.find(r => r.id === id); if (!P.room) return; P.hold = null; P.lastAlpha = null;
-  A().show('planRoom'); A().keepAwake(true); roomUi(); gyroOn();
+  P.room = P.plan.rooms.find(r => r.id === id); if (!P.room) return; P.hold = null;
+  A().show('planRoom'); A().keepAwake(true); roomUi();
 }
 const walls = () => P.room.walls;
 const lastW = () => walls()[walls().length - 1];
@@ -109,12 +109,13 @@ function roomUi() {
   if (r.closed) { txt = `✓ Raum fertig · ${fmtA(s.area)}`; sub = `${n} Wände · Umfang ${fmtM(s.perimeter)}${r.adjust ? ` · ${Math.round(r.adjust)} cm ausgeglichen` : ''}`; }
   else if (P.hold) { txt = 'Wohin ging es vor dieser Wand?'; sub = `${Math.round(P.hold.cm)} cm gemessen – links oder rechts antippen`; }
   else if (!n) { txt = 'Erste Wand messen'; sub = 'In einer Ecke beginnen und im Uhrzeigersinn Wand für Wand messen.'; }
-  else if (pending()) { txt = `Wand ${n}: ${Math.round(lastW().cm)} cm · Wohin geht es weiter?`; sub = gyroOk() ? 'Links oder rechts antippen – oder einfach die nächste Wand messen (Richtung wird erkannt).' : 'Links oder rechts antippen.'; }
+  else if (pending()) { txt = `Wand ${n}: ${Math.round(lastW().cm)} cm · Wohin geht es weiter?`; sub = 'Links oder rechts antippen.'; }
   else { txt = `Wand ${n + 1} messen`; sub = n >= 2 ? (s.gap < 5 ? 'Der Raum geht auf – „✓ Raum fertig“ antippen.' : `Bis zum Anfang fehlen noch ${Math.round(s.gap)} cm.`) : ''; }
   $('#grInfo').textContent = txt; $('#grSub').textContent = sub;
   const turnMode = !r.closed && (pending() || !!P.hold);
   $('#grTurnBar').style.display = turnMode ? 'flex' : 'none'; $('#grMeasBar').style.display = !r.closed && !turnMode ? 'flex' : 'none'; $('#grDoneBar').style.display = r.closed ? 'flex' : 'none';
   $('#grUndo').disabled = !n; $('#grClose').disabled = n < 2;
+  $('#grUndo').textContent = n && lastW().turn != null ? '↶ Richtung ändern' : '↶ zurück'; $('#grUndo2').textContent = P.hold ? '↶ Wert weg' : '↶ Wand weg';
   $('#grDiag').style.display = r.closed && n === 4 ? '' : 'none'; $('#grDiag').textContent = r.diag ? `Diagonale: ${Math.round(r.diag)} cm` : '＋ Diagonale (schiefer Raum)';
   // Wand-Leiste
   const ch = $('#grWalls'); ch.innerHTML = '';
@@ -125,7 +126,7 @@ const turnIcon = t => t == null ? '?' : Math.abs(Math.abs(t) - 90) < 0.5 ? (t > 
 
 async function addWall(cm) {
   const r = P.room; if (!r || r.closed) return;
-  r.walls.push({ cm, turn: null }); P.lastAlpha = P.alpha; A().beep(true); await save(); roomUi();
+  r.walls.push({ cm, turn: null }); A().beep(true); await save(); roomUi();
 }
 async function setTurn(t, auto = false) {
   const w = lastW(); if (!w || P.room.closed) return;
@@ -138,11 +139,7 @@ async function measure(cm) {
   const r = P.room; if (!r) return;
   if (r.closed) { if (P.wantDiag) { P.wantDiag = false; return applyDiag(cm); } A().toast('Raum ist fertig – „Wieder öffnen“, um weiterzumessen', 2600); A().beep(false); return; }
   if (P.hold) { P.hold = { cm }; A().toast('Erst links oder rechts antippen'); roomUi(); return; }
-  if (pending()) {
-    const g = gyroTurn();
-    if (g) { lastW().turn = g; lastW().auto = true; A().toast(`Ecke erkannt: nach ${g > 0 ? 'rechts' : 'links'} (Wand antippen zum Ändern)`, 2400); }
-    else { P.hold = { cm }; A().beep(true); roomUi(); return; }
-  }
+  if (pending()) { P.hold = { cm }; A().beep(true); roomUi(); return; } // Richtung wird immer getippt; der Wert wartet solange
   await addWall(cm);
 }
 $('#grL').onclick = () => setTurn(-90); $('#grR').onclick = () => setTurn(90);
@@ -208,21 +205,6 @@ function editWall(i) {
   bg.querySelector('[data-len]').onclick = async () => { bg.remove(); const v = await A().promptBox(`Wand ${i + 1} in cm`, '', String(Math.round(w.cm))); if (v == null) return; const cm = parseFloat(String(v).replace(',', '.')); if (!(cm > 0 && cm < 10000)) return; w.cm = cm; delete w.calc; reclose(); };
   bg.querySelector('[data-re]').onclick = () => { bg.remove(); P.remeasure = i; A().toast(`Wand ${i + 1} neu messen …`, 3000); };
   bg.querySelectorAll('[data-t]').forEach(b => { b.onclick = () => { bg.remove(); w.turn = +b.dataset.t; delete w.auto; reclose(); }; });
-}
-
-// ---------- Drehung des Tablets (Vorschlag für links/rechts) ----------
-let gyroBound = false;
-function gyroOn() {
-  if (gyroBound) return; gyroBound = true;
-  const h = e => { if (e.alpha != null) P.alpha = e.alpha; };
-  window.addEventListener('deviceorientation', h);
-}
-const gyroOk = () => P.alpha != null && localStorage.getItem('mb_grGyro') !== '0';
-function gyroTurn() {
-  if (!gyroOk() || P.lastAlpha == null) return 0;
-  const d = G.norm180(P.alpha - P.lastAlpha);                    // alpha wächst bei Drehung nach links
-  if (Math.abs(d) < 50 || Math.abs(d) > 130) return 0;           // nicht eindeutig → nachfragen
-  return d < 0 ? 90 : -90;
 }
 
 // ---------- Zeichnung ----------
