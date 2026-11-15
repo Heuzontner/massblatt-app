@@ -432,6 +432,14 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
 .grwalls button i { font-style:normal; font-size:11px; color:var(--mute); } .grwalls button small { color:var(--acc); font-size:14px; } .grwalls button.auto small { text-decoration:underline dotted; }
 .grbar { display:flex; gap:8px; } .grbar button { flex:1; height:58px; font-size:17px; } .grbar button.ghost { flex:0 1 auto; min-width:58px; padding:0 12px; } .grbar button.pri { flex:2; }
 @media (orientation:landscape) { body.land #planRoom.on { flex-direction:row; flex-wrap:wrap; } body.land #planRoom header.top { width:100%; } body.land #planRoom .grstage { flex:1; height:calc(100% - 66px); } body.land #planRoom .grpanel { width:340px; border-top:0; border-left:1px solid var(--line); } }
+/* 3.12 Grundriss Stufe 2 */
+.grmini { display:flex; gap:8px; margin-top:8px; } .grmini button { flex:1; padding:9px 8px; font-size:14px; }
+.grwalls button.op { border-color:var(--yellow); } .grwalls button.pick { border-color:var(--warn); background:var(--acc-soft); }
+.grgrid2 { display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; } .grgrid2 button { padding:12px 6px; }
+#grFlatCard { display:flex; align-items:center; gap:12px; cursor:pointer; } #grFlatCard b { flex:1; }
+.grmini-cv { width:120px; height:84px; position:relative; flex:none; border:1px solid var(--line); border-radius:4px; background:var(--bg); } .grmini-cv canvas { position:absolute; inset:0; }
+.grwarn { margin:4px 0; color:var(--warn); font-size:14px; } .grok { margin:4px 0; color:var(--green); font-size:14px; }
+#planFlat .grpanel { max-height:38vh; overflow:auto; }
 </style>
 </head>
 <body>
@@ -474,12 +482,22 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
       <label class="f">Straße + Hausnummer (+ Geschoß, WG)</label><input id="grStr" autocomplete="off">
       <div class="row2"><div><label class="f">PLZ</label><input id="grPlz" inputmode="numeric" autocomplete="off"></div><div><label class="f">Ort</label><input id="grOrt" autocomplete="off"></div></div>
       <label class="f">Kunde</label><input id="grKunde" autocomplete="off">
+      <label class="f">Standard-Wandstärke zwischen Räumen (cm)</label><input id="grWall" inputmode="decimal" placeholder="15" autocomplete="off">
       <button class="danger" id="grDel" style="width:100%;margin-top:14px">Grundriss löschen</button>
     </details>
+    <div class="card" id="grFlatCard" style="display:none"><div class="grmini-cv"><canvas id="grFlatMini"></canvas></div><b id="grFlatHint">Wohnung ansehen</b><span class="mute">›</span></div>
     <div id="grRooms"></div>
     <p class="mute" id="grTotal" style="margin:6px 2px;font-family:var(--mono);font-size:14px"></p>
   </div>
   <div class="bottombar"><button class="pri" id="grAddRoom">+ Raum</button></div>
+</section>
+<section class="screen" id="planFlat">
+  <header class="top">
+    <button class="ghost" id="grFlatBack">‹</button>
+    <h1 id="grFlatTitle">Wohnung</h1>
+  </header>
+  <div class="grstage"><canvas id="grFlatCv"></canvas></div>
+  <div class="grpanel"><p class="mute" id="grFlatSum" style="margin:0 0 6px;font-family:var(--mono);font-size:13px"></p><div id="grFlatMsgs"></div></div>
 </section>
 <section class="screen" id="planRoom">
   <header class="top">
@@ -494,7 +512,9 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
     <div class="grwalls" id="grWalls"></div>
     <div class="grbar" id="grMeasBar"><button class="ghost" id="grKey" aria-label="Eintippen">⌨</button><button class="ghost" id="grUndo">↶ zurück</button><button class="pri" id="grClose">✓ Raum fertig</button></div>
     <div class="grbar" id="grTurnBar"><button class="pri" id="grL">↰ links</button><button class="pri" id="grR">↱ rechts</button><button class="ghost" id="grAng">∠</button><button class="ghost" id="grUndo2">↶ Wand weg</button></div>
-    <div class="grbar" id="grDoneBar"><button class="ghost" id="grReopen">Wieder öffnen</button><button class="ghost" id="grDiag"></button><button class="ghost" id="grKey2" style="display:none">⌨</button><button class="pri" id="grRoomOk">✓ Weiter</button></div>
+    <div class="grbar" id="grDoneBar"><button class="ghost" id="grDoor">＋ Tür</button><button class="ghost" id="grWin">＋ Fenster</button><button class="pri" id="grRoomOk">✓ Weiter</button></div>
+    <div class="grmini" id="grMini"><button class="ghost" id="grReopen">Wieder öffnen</button><button class="ghost" id="grDiag"></button><button class="ghost" id="grKey2" style="display:none">⌨</button></div>
+    <div class="grbar" id="grOpBar"><button class="ghost" id="grOpKey" aria-label="Eintippen">⌨</button><button class="ghost" id="grOpCancel" style="flex:1">Abbrechen</button></div>
   </div>
 </section>
 

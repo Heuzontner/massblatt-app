@@ -47,7 +47,7 @@ $('#grNew').onclick = async () => {
 };
 async function openPlan(id) {
   P.plan = await store.get(id); if (!P.plan) return; P.room = null;
-  $('#grStr').value = P.plan.name || ''; $('#grPlz').value = P.plan.plz || ''; $('#grOrt').value = P.plan.ortName || ''; $('#grKunde').value = P.plan.kunde || '';
+  $('#grStr').value = P.plan.name || ''; $('#grPlz').value = P.plan.plz || ''; $('#grOrt').value = P.plan.ortName || ''; $('#grKunde').value = P.plan.kunde || ''; $('#grWall').value = P.plan.wall || '';
   renderPlan(); A().show('plan'); A().keepAwake(true);
 }
 function renderPlan() {
@@ -59,6 +59,8 @@ function renderPlan() {
     c.innerHTML = `<div class="t"><b>${esc(r.name)}</b><small>${r.closed ? `✓ ${s.n} Wände · ${fmtA(s.area)}` : s.n ? `${s.n} ${s.n === 1 ? 'Wand' : 'Wände'} · noch offen` : 'noch nichts gemessen'}</small></div><span class="mute">›</span>`;
     c.onclick = () => openRoom(r.id); el.appendChild(c);
   }
+  const nd = p.rooms.filter(r => r.closed).length; $('#grFlatCard').style.display = nd ? '' : 'none';
+  if (nd) { const { res, msgs } = flatInfo(); $('#grFlatHint').textContent = nd < 2 ? 'Wohnung ansehen' : msgs.length ? `Wohnung ansehen · ${msgs.length} ${msgs.length === 1 ? 'Hinweis' : 'Hinweise'}` : `Wohnung ansehen · ${res.T.size} Räume verbunden ✓`; requestAnimationFrame(() => drawFlat($('#grFlatMini'), false)); }
   const tot = planArea(p); $('#grTotal').textContent = tot ? `Gesamt: ${fmtA(tot)} (${p.rooms.filter(r => r.closed).length} von ${p.rooms.length} Räumen fertig)` : '';
 }
 for (const [id, key] of [['grStr', 'name'], ['grPlz', 'plz'], ['grOrt', 'ortName'], ['grKunde', 'kunde']]) $('#' + id).addEventListener('input', () => { if (!P.plan) return; P.plan[key] = $('#' + id).value.trim(); if (key === 'name') $('#grTitle').textContent = P.plan.name || 'Neuer Grundriss'; save(); });
@@ -95,7 +97,7 @@ $('#grAddRoom').onclick = async () => {
 
 // ---------- Raum ablaufen ----------
 function openRoom(id) {
-  P.room = P.plan.rooms.find(r => r.id === id); if (!P.room) return; P.hold = null;
+  P.room = P.plan.rooms.find(r => r.id === id); if (!P.room) return; P.hold = null; P.op = null;
   A().show('planRoom'); A().keepAwake(true); roomUi();
 }
 const walls = () => P.room.walls;
@@ -106,21 +108,30 @@ function roomUi() {
   const r = P.room, s = roomSum(r), n = r.walls.length;
   $('#grRoomTitle').textContent = r.name;
   let txt, sub = '';
-  if (r.closed) { txt = `✓ Raum fertig · ${fmtA(s.area)}`; sub = `${n} Wände · Umfang ${fmtM(s.perimeter)}${r.adjust ? ` · ${Math.round(r.adjust)} cm ausgeglichen` : ''}`; }
+  const op = r.closed ? P.op : null, kind = op && op.type === 'T' ? 'Tür' : 'Fenster';
+  if (op && op.step === 'wall') { txt = `${kind}: an welcher Wand?`; sub = 'Wand im Bild oder unten in der Leiste antippen.'; }
+  else if (op && op.step === 'pos') { txt = `${kind} an Wand ${op.wall + 1}: Abstand von der Ecke`; sub = `Vom orangen Punkt bis zur ersten Kante der ${kind === 'Tür' ? 'Tür' : 'Fensteröffnung'} messen (oder ⌨). Wand: ${Math.round(r.walls[op.wall].cm)} cm.`; }
+  else if (op && op.step === 'w') { txt = `${kind} an Wand ${op.wall + 1}: Breite`; sub = `Abstand ${Math.round(op.pos)} cm ✓ – jetzt die Breite messen (oder ⌨).`; }
+  else if (r.closed) { txt = `✓ Raum fertig · ${fmtA(s.area)}`; sub = `${n} Wände · Umfang ${fmtM(s.perimeter)}${r.adjust ? ` · ${Math.round(r.adjust)} cm ausgeglichen` : ''}`; }
   else if (P.hold) { txt = 'Wohin ging es vor dieser Wand?'; sub = `${Math.round(P.hold.cm)} cm gemessen – links oder rechts antippen`; }
   else if (!n) { txt = 'Erste Wand messen'; sub = 'In einer Ecke beginnen und im Uhrzeigersinn Wand für Wand messen.'; }
   else if (pending()) { txt = `Wand ${n}: ${Math.round(lastW().cm)} cm · Wohin geht es weiter?`; sub = 'Links oder rechts antippen.'; }
   else { txt = `Wand ${n + 1} messen`; sub = n >= 2 ? (s.gap < 5 ? 'Der Raum geht auf – „✓ Raum fertig“ antippen.' : `Bis zum Anfang fehlen noch ${Math.round(s.gap)} cm.`) : ''; }
   $('#grInfo').textContent = txt; $('#grSub').textContent = sub;
   const turnMode = !r.closed && (pending() || !!P.hold);
-  $('#grTurnBar').style.display = turnMode ? 'flex' : 'none'; $('#grMeasBar').style.display = !r.closed && !turnMode ? 'flex' : 'none'; $('#grDoneBar').style.display = r.closed ? 'flex' : 'none';
+  $('#grTurnBar').style.display = turnMode ? 'flex' : 'none'; $('#grMeasBar').style.display = !r.closed && !turnMode ? 'flex' : 'none';
+  $('#grDoneBar').style.display = r.closed && !op ? 'flex' : 'none'; $('#grMini').style.display = r.closed && !op ? 'flex' : 'none'; $('#grOpBar').style.display = op ? 'flex' : 'none';
+  $('#grOpKey').style.display = op && op.step !== 'wall' ? '' : 'none';
   $('#grUndo').disabled = !n; $('#grClose').disabled = n < 2;
   $('#grUndo').textContent = n && lastW().turn != null ? '↶ Richtung ändern' : '↶ zurück'; $('#grUndo2').textContent = P.hold ? '↶ Wert weg' : '↶ Wand weg';
   $('#grDiag').style.display = r.closed && n === 4 ? '' : 'none'; $('#grDiag').textContent = r.diag ? `Diagonale: ${Math.round(r.diag)} cm` : '＋ Diagonale (schiefer Raum)';
   // Wand-Leiste
   const ch = $('#grWalls'); ch.innerHTML = '';
-  r.walls.forEach((w, i) => { const b = document.createElement('button'); b.dataset.i = i; b.innerHTML = `<i>${i + 1}</i>${Math.round(w.cm)}<small>${turnIcon(w.turn)}</small>`; if (w.auto) b.classList.add('auto'); b.onclick = () => editWall(i); ch.appendChild(b); });
-  ch.scrollLeft = ch.scrollWidth; draw();
+  r.walls.forEach((w, i) => { const b = document.createElement('button'); b.dataset.i = i; b.innerHTML = `<i>${i + 1}</i>${Math.round(w.cm)}<small>${turnIcon(w.turn)}</small>`; if (op && op.wall === i) b.classList.add('pick');
+    b.onclick = () => (P.op && P.op.step === 'wall' ? opWall(i) : editWall(i)); ch.appendChild(b); });
+  (r.ops || []).forEach(o => { const b = document.createElement('button'); b.className = 'op'; b.dataset.op = o.id; const to = o.to && P.plan.rooms.find(x => x.id === o.to);
+    b.innerHTML = `<i>${o.type === 'T' ? 'Tür' : 'Fe'} W${o.wall + 1}</i>${Math.round(o.w)}${to ? `<small>→ ${esc(to.name)}</small>` : ''}`; b.onclick = () => editOp(o); ch.appendChild(b); });
+  if (!r.closed) ch.scrollLeft = ch.scrollWidth; draw();
 }
 const turnIcon = t => t == null ? '?' : Math.abs(Math.abs(t) - 90) < 0.5 ? (t > 0 ? '↱' : '↰') : (t > 0 ? '↱' : '↰') + Math.round(180 - Math.abs(t)) + '°'; // angezeigt wird der Innenwinkel der Ecke
 
@@ -137,6 +148,8 @@ async function setTurn(t, auto = false) {
 // Messwert vom Laser (oder von Hand): Ist die letzte Ecke noch offen, wird die Richtung aus der Drehung des Tablets genommen – sonst nachgefragt.
 async function measure(cm) {
   const r = P.room; if (!r) return;
+  if (P.thInput && document.body.contains(P.thInput)) { P.thInput.value = Math.round(cm * 10) / 10; A().beep(true); return; }
+  if (r.closed && P.op) return opValue(cm);
   if (r.closed) { if (P.wantDiag) { P.wantDiag = false; return applyDiag(cm); } A().toast('Raum ist fertig – „Wieder öffnen“, um weiterzumessen', 2600); A().beep(false); return; }
   if (P.hold) { P.hold = { cm }; A().toast('Erst links oder rechts antippen'); roomUi(); return; }
   if (pending()) { P.hold = { cm }; A().beep(true); roomUi(); return; } // Richtung wird immer getippt; der Wert wartet solange
@@ -153,11 +166,15 @@ $('#grKey').onclick = async () => {
   const v = await A().promptBox(P.wantDiag ? 'Diagonale in cm' : 'Wandlänge in cm', 'z. B. 412'); if (v == null) return;
   const cm = parseFloat(String(v).replace(',', '.')); if (!(cm > 0 && cm < 10000)) { A().toast('Bitte eine Länge in cm eingeben'); return; } measure(cm);
 };
+$('#grOpKey').onclick = async () => {
+  const v = await A().promptBox(P.op && P.op.step === 'pos' ? 'Abstand von der Ecke in cm (0 = direkt an der Ecke)' : 'Breite in cm', 'z. B. 80'); if (v == null) return;
+  const cm = parseFloat(String(v).replace(',', '.')); if (!(cm >= 0 && cm < 10000)) { A().toast('Bitte eine Länge in cm eingeben'); return; } opValue(cm);
+};
 $('#grKey2').onclick = () => $('#grKey').onclick();
 $('#grUndo').onclick = $('#grUndo2').onclick = async () => {
   const r = P.room; if (P.hold) { P.hold = null; roomUi(); return; }
   if (!r.walls.length) return;
-  const w = lastW(); if (w.turn != null && !r.closed) { w.turn = null; delete w.auto; } else r.walls.pop();
+  const w = lastW(); if (w.turn != null && !r.closed) { w.turn = null; delete w.auto; } else { r.walls.pop(); if (r.ops) r.ops = r.ops.filter(o => o.wall < r.walls.length); }
   r.closed = false; delete r.diag; delete r.adjust; await save(); roomUi();
 };
 // Raum schließen: geht er auf (≤ 5 cm) → fertig. Liegt die Lücke in Laufrichtung → das ist die fehlende letzte Wand. Sonst: Lücke zeigen.
@@ -182,9 +199,9 @@ $('#grClose').onclick = async () => {
   const sum = r.walls.slice(0, -1).reduce((s, w) => s + (w.turn || 0), 0); const lw = lastW(); if (lw.turn == null) lw.turn = G.norm180(360 - sum) || 90;
   r.closed = true; r.adjust = g.len > 0.5 ? g.len : 0; A().beep(true); await save(); roomUi();
 };
-$('#grReopen').onclick = async () => { const r = P.room; r.closed = false; delete r.diag; delete r.adjust; if (lastW() && lastW().calc) r.walls.pop(); await save(); roomUi(); };
+$('#grReopen').onclick = async () => { const r = P.room; if ((r.ops || []).length && !await A().confirmBox('Raum wieder öffnen?', 'Öffnen', 'Abbrechen', 'pri', 'Türen und Fenster bleiben erhalten, solange ihre Wand bestehen bleibt.')) return; r.closed = false; P.op = null; delete r.diag; delete r.adjust; if (lastW() && lastW().calc) { r.walls.pop(); if (r.ops) r.ops = r.ops.filter(o => o.wall < r.walls.length); } await save(); roomUi(); };
 $('#grRoomOk').onclick = $('#grRoomBack').onclick = () => A().goBack(false);
-$('#grRoomDel').onclick = async () => { if (!await A().confirmBox(`Raum „${P.room.name}“ löschen?`, 'Löschen')) return; P.plan.rooms = P.plan.rooms.filter(r => r !== P.room); P.room = null; await save(); A().goBack(false); };
+$('#grRoomDel').onclick = async () => { if (!await A().confirmBox(`Raum „${P.room.name}“ löschen?`, 'Löschen')) return; const gone = P.room.id; P.plan.rooms = P.plan.rooms.filter(r => r !== P.room); for (const x of P.plan.rooms) for (const o of x.ops || []) if (o.to === gone) o.to = null; P.room = null; await save(); A().goBack(false); };
 $('#grRoomTitle').onclick = async () => { const v = await A().promptBox('Raumname', '', P.room.name); if (v && v.trim()) { P.room.name = v.trim(); await save(); roomUi(); } };
 // Diagonale von Ecke 1 zu Ecke 3 (Anfang der 1. Wand → Ende der 2. Wand): echte Winkel statt 90°
 $('#grDiag').onclick = () => { P.wantDiag = true; A().toast('Diagonale messen: vom Startpunkt (●) zur gegenüberliegenden Ecke – oder ⌨', 4000); $('#grKey2').style.display = ''; };
@@ -195,6 +212,112 @@ async function applyDiag(cm) {
   t.forEach((v, i) => { w[i].turn = v; delete w[i].auto; }); r.diag = cm; r.adjust = 0; $('#grKey2').style.display = 'none'; A().beep(true); await save(); roomUi();
   A().toast(`Winkel berechnet: ${t.map(v => Math.round((180 - Math.abs(v)) * 10) / 10 + '°').join(' · ')}`, 4500);
 }
+// ---------- Stufe 2: Türen und Fenster ----------
+// Ablauf: Wand antippen → Abstand von der Ecke (Beginn der Wand in Laufrichtung) → Breite → bei Türen: wohin + Wandstärke
+function opStart(type) { if (!P.room.closed) return; P.op = { type, step: 'wall', wall: null }; P.wantDiag = false; roomUi(); }
+function opWall(i) { if (!P.op) return; P.op.wall = i; P.op.step = 'pos'; roomUi(); }
+async function opValue(cm) {
+  const r = P.room, op = P.op; if (!op) return;
+  if (op.step === 'wall') { A().toast('Erst die Wand antippen'); A().beep(false); return; }
+  const L = r.walls[op.wall].cm;
+  if (op.step === 'pos') { if (cm >= L - 5) { A().toast(`Passt nicht: die Wand ist nur ${Math.round(L)} cm lang`, 3000); A().beep(false); return; } op.pos = cm; op.step = 'w'; A().beep(true); roomUi(); return; }
+  if (!(cm > 5)) { A().toast('Breite zu klein'); A().beep(false); return; }
+  if (op.pos + cm > L + 2) { A().toast(`Passt nicht: Abstand ${Math.round(op.pos)} + Breite ${Math.round(cm)} ist länger als die Wand (${Math.round(L)} cm)`, 4000); A().beep(false); return; }
+  const o = { id: uid(), type: op.type, wall: op.wall, pos: op.pos, w: Math.min(cm, L - op.pos), to: null }; (r.ops = r.ops || []).push(o); P.op = null; A().beep(true); await save(); roomUi();
+  if (o.type === 'T') doorTarget(o);
+}
+$('#grDoor').onclick = () => opStart('T'); $('#grWin').onclick = () => opStart('F'); $('#grOpCancel').onclick = () => { P.op = null; roomUi(); };
+// Tür: in welchen Raum führt sie, und wie dick ist die Wand dort (an der Laibung messen)?
+function doorTarget(o) {
+  const others = P.plan.rooms.filter(x => x !== P.room), def = P.plan.wall || 15;
+  const bg = sheet(`<h2>Wohin führt die Tür?</h2><div class="grgrid2" data-list></div><button class="ghost" data-none style="width:100%;margin-top:8px">Nach außen / noch offen</button>
+    <label class="f">Wandstärke an dieser Tür (cm)</label><div style="display:flex;gap:8px;align-items:center"><input data-th inputmode="decimal" value="${o.thick || ''}" placeholder="${def} (Standard)" style="flex:1"><span class="mute" style="font-size:13px;flex:2">An der Laibung messen – der Laserwert landet hier.</span></div>
+    <button class="pri" data-ok style="width:100%;margin-top:12px">Fertig</button>`);
+  P.thInput = bg.querySelector('[data-th]'); let to = o.to;
+  const paint = () => bg.querySelectorAll('[data-to]').forEach(b => b.classList.toggle('pri', b.dataset.to === to)) || bg.querySelector('[data-none]').classList.toggle('pri', !to);
+  for (const x of others) { const b = document.createElement('button'); b.className = 'ghost'; b.dataset.to = x.id; b.textContent = x.name; b.onclick = () => { to = x.id; paint(); }; bg.querySelector('[data-list]').appendChild(b); }
+  if (!others.length) bg.querySelector('[data-list]').innerHTML = '<p class="mute" style="margin:0 0 6px;font-size:14px">Noch kein anderer Raum angelegt – das Ziel kannst du später über die Tür unten in der Leiste setzen.</p>';
+  bg.querySelector('[data-none]').onclick = () => { to = null; paint(); }; paint();
+  bg.querySelector('[data-ok]').onclick = async () => { const th = parseFloat(String(P.thInput.value).replace(',', '.')); o.to = to; if (th > 0 && th < 200) o.thick = th; else delete o.thick; P.thInput = null; bg.remove(); await save(); roomUi(); };
+}
+function editOp(o) {
+  const r = P.room, kind = o.type === 'T' ? 'Tür' : 'Fenster';
+  const bg = sheet(`<h2>${kind} an Wand ${o.wall + 1}</h2><p class="mute" style="margin:-4px 0 10px">Abstand von der Ecke ${Math.round(o.pos)} cm · Breite ${Math.round(o.w)} cm${o.thick ? ` · Wand ${Math.round(o.thick)} cm` : ''}</p>
+    <div class="row2"><button class="ghost" data-pos>✎ Abstand</button><button class="ghost" data-w>✎ Breite</button></div>
+    ${o.type === 'T' ? '<button class="ghost" data-to style="width:100%;margin-top:8px">Ziel-Raum / Wandstärke</button>' : ''}
+    <button class="danger" data-del style="width:100%;margin-top:8px">Löschen</button><button class="ghost" data-close style="width:100%;margin-top:8px">Schließen</button>`);
+  const num = async (title, cur) => { const v = await A().promptBox(title, '', String(Math.round(cur))); if (v == null) return null; const cm = parseFloat(String(v).replace(',', '.')); return cm >= 0 && cm < 10000 ? cm : null; };
+  bg.querySelector('[data-pos]').onclick = async () => { bg.remove(); const v = await num('Abstand von der Ecke in cm', o.pos); if (v == null) return; if (v + o.w > r.walls[o.wall].cm + 2) { A().toast('Passt nicht auf die Wand'); return; } o.pos = v; await save(); roomUi(); };
+  bg.querySelector('[data-w]').onclick = async () => { bg.remove(); const v = await num('Breite in cm', o.w); if (!v) return; if (o.pos + v > r.walls[o.wall].cm + 2) { A().toast('Passt nicht auf die Wand'); return; } o.w = v; await save(); roomUi(); };
+  if (o.type === 'T') bg.querySelector('[data-to]').onclick = () => { bg.remove(); doorTarget(o); };
+  bg.querySelector('[data-del]').onclick = async () => { bg.remove(); r.ops = r.ops.filter(x => x !== o); await save(); roomUi(); };
+}
+// Wand im Bild antippen (nur während „an welcher Wand?“)
+$('#grCv').addEventListener('click', e => {
+  if (!P.op || P.op.step !== 'wall' || !P.view) return; const b = $('#grCv').getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top, pts = P.view.pts; let best = -1, bd = 44;
+  for (let i = 0; i < pts.length; i++) { const a = pts[i], c = pts[(i + 1) % pts.length], dx = c.x - a.x, dy = c.y - a.y, t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1))), d = Math.hypot(x - a.x - t * dx, y - a.y - t * dy); if (d < bd) { bd = d; best = i; } }
+  if (best >= 0) opWall(best);
+});
+
+// ---------- Stufe 2: ganze Wohnung ----------
+function flatInfo() {
+  const p = P.plan, res = G.placeRooms(p.rooms, p.wall || 15), name = id => (p.rooms.find(r => r.id === id) || {}).name || '?', msgs = [];
+  for (const m of res.missing) msgs.push(m.why === 'offen' ? `„${name(m.to)}“ ist noch nicht fertig gemessen (Tür von „${name(m.from)}“ führt dorthin).` : `In „${name(m.to)}“ fehlt die Tür zu „${name(m.from)}“.`);
+  for (const id of res.unplaced) if (!res.missing.some(m => m.to === id || m.from === id)) msgs.push(`„${name(id)}“ hängt noch an keiner Tür.`);
+  for (const i of res.issues) msgs.push(`Zwischen „${name(i.a)}“ und „${name(i.b)}“ geht es nicht auf: ${Math.round(i.off)} cm Versatz – eine Türposition, Wandlänge oder Wandstärke stimmt nicht.`);
+  return { res, msgs };
+}
+// Zeichnet alle fertigen Räume: verbundene an ihrem Platz, die übrigen daneben (gestrichelt)
+function drawFlat(cv, big) {
+  const p = P.plan; if (!p || !cv) return; const box = cv.parentElement.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+  const W = Math.max(50, box.width), H = Math.max(50, box.height); cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const { res } = flatInfo(); const items = []; let bb = null; const grow = q => { bb = bb ? { x0: Math.min(bb.x0, q.x), y0: Math.min(bb.y0, q.y), x1: Math.max(bb.x1, q.x), y1: Math.max(bb.y1, q.y) } : { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; };
+  for (const r of p.rooms) { const t = res.T.get(r.id); if (!t) continue; const pl = res.poly.get(r.id).map(q => G.applyT(t, q)); pl.forEach(grow); items.push({ r, pl, t, loose: false }); }
+  let x = bb ? bb.x1 + 120 : 0; const y0 = bb ? bb.y0 : 0;
+  for (const id of res.unplaced) { const r = p.rooms.find(q => q.id === id), raw = res.poly.get(id), mnx = Math.min(...raw.map(q => q.x)), mny = Math.min(...raw.map(q => q.y)), t = { c: 1, s: 0, x: x - mnx, y: y0 - mny }, pl = raw.map(q => G.applyT(t, q)); pl.forEach(grow); x = Math.max(...pl.map(q => q.x)) + 80; items.push({ r, pl, t, loose: true }); }
+  if (!items.length) return;
+  const pad = big ? 40 : 16, sc = Math.min((W - 2 * pad) / Math.max(1, bb.x1 - bb.x0), (H - 2 * pad) / Math.max(1, bb.y1 - bb.y0)), ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc;
+  const X = q => ox + q.x * sc, Y = q => oy + q.y * sc, css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim() || '#888';
+  for (const it of items) paintRoom(g, it.r, it.pl, X, Y, { col, css, loose: it.loose, label: true, big, dims: false });
+}
+function paintOps(g, r, pl, X, Y, o) {
+  const n = pl.length, mono = o.css.getPropertyValue('--mono') || 'monospace', lw = o.big === false ? 2 : 4;
+  for (const op of r.ops || []) {
+    if (op.wall >= n) continue; const a = pl[op.wall], b = pl[(op.wall + 1) % n], L = Math.hypot(b.x - a.x, b.y - a.y) || 1, k = L / (r.walls[op.wall].cm || L), dx = (b.x - a.x) / L, dy = (b.y - a.y) / L;
+    const p0 = { x: a.x + dx * op.pos * k, y: a.y + dy * op.pos * k }, p1 = { x: p0.x + dx * op.w * k, y: p0.y + dy * op.w * k };
+    g.strokeStyle = o.col('--bg'); g.lineWidth = lw + 3; g.beginPath(); g.moveTo(X(p0), Y(p0)); g.lineTo(X(p1), Y(p1)); g.stroke();           // Öffnung freistellen
+    const sx = X(p1) - X(p0), sy = Y(p1) - Y(p0), SL = Math.hypot(sx, sy) || 1, nx = -sy / SL, ny = sx / SL;
+    if (op.type === 'F') { g.strokeStyle = o.col('--acc'); g.lineWidth = 1.5; for (const k2 of [-2.5, 2.5]) { g.beginPath(); g.moveTo(X(p0) + nx * k2, Y(p0) + ny * k2); g.lineTo(X(p1) + nx * k2, Y(p1) + ny * k2); g.stroke(); } }
+    g.strokeStyle = op.type === 'T' ? o.col('--yellow') : o.col('--acc'); g.lineWidth = 2;                                                    // Kanten der Öffnung
+    for (const q of [p0, p1]) { g.beginPath(); g.moveTo(X(q) - nx * 6, Y(q) - ny * 6); g.lineTo(X(q) + nx * 6, Y(q) + ny * 6); g.stroke(); }
+    if (op.type === 'T') { g.beginPath(); g.moveTo(X(p0), Y(p0)); g.lineTo(X(p1), Y(p1)); g.setLineDash([3, 4]); g.stroke(); g.setLineDash([]); }
+    if (o.dims) { g.font = `600 11px ${mono}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = op.type === 'T' ? o.col('--warn') : o.col('--acc'); g.fillText(`${op.type === 'T' ? 'T' : 'F'} ${Math.round(op.w)}`, (X(p0) + X(p1)) / 2 + nx * (Math.abs(nx) > 0.5 ? 30 : 16), (Y(p0) + Y(p1)) / 2 + ny * (Math.abs(nx) > 0.5 ? 30 : 16)); }
+  }
+}
+// Ein Raum mit Wänden, Türen (Lücke) und Fenstern (Doppellinie)
+function paintRoom(g, r, pl, X, Y, o) {
+  const ink = o.col('--text'), n = pl.length, mono = o.css.getPropertyValue('--mono') || 'monospace', lw = o.big === false ? 2 : 4;
+  g.beginPath(); pl.forEach((q, i) => i ? g.lineTo(X(q), Y(q)) : g.moveTo(X(q), Y(q))); g.closePath(); g.fillStyle = o.col('--acc-soft'); g.fill();
+  g.lineJoin = 'round'; g.lineCap = 'butt'; g.lineWidth = lw; g.strokeStyle = o.loose ? o.col('--mute') : ink; g.setLineDash(o.loose ? [7, 6] : []); g.stroke(); g.setLineDash([]);
+  paintOps(g, r, pl, X, Y, o);
+  if (o.label) { const c = pl.reduce((s, q) => ({ x: s.x + X(q) / n, y: s.y + Y(q) / n }), { x: 0, y: 0 }); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = ink;
+    const wpx = Math.max(...pl.map(q => X(q))) - Math.min(...pl.map(q => X(q))), fs = Math.min(o.big ? 15 : 10, (wpx - 8) / Math.max(3, r.name.length * 0.6)); if (fs < 6) return; // Name muss in den Raum passen
+    g.font = `700 ${fs}px ${o.css.getPropertyValue('--display') || 'sans-serif'}`; g.fillText(r.name, c.x, c.y - (o.big && fs > 10 ? 9 : 0)); if (o.big && fs > 10) { g.font = `12px ${mono}`; g.fillStyle = o.col('--mute'); g.fillText(fmtA(roomSum(r).area), c.x, c.y + 9); } }
+}
+function flatUi() {
+  const { res, msgs } = flatInfo(), p = P.plan, n = p.rooms.filter(r => r.closed).length;
+  $('#grFlatTitle').textContent = p.name || 'Wohnung';
+  $('#grFlatSum').textContent = `${res.T.size} von ${n} fertigen Räumen verbunden · ${fmtA(planArea(p))} · Wandstärke Standard ${p.wall || 15} cm`;
+  const el = $('#grFlatMsgs'); el.innerHTML = '';
+  if (!msgs.length && n > 1) el.innerHTML = '<p class="grok">✓ Alle Räume hängen zusammen und es geht auf.</p>';
+  for (const m of msgs) { const d = document.createElement('p'); d.className = 'grwarn'; d.textContent = '⚠ ' + m; el.appendChild(d); }
+  drawFlat($('#grFlatCv'), true);
+}
+$('#grFlatCard').onclick = () => { A().show('planFlat'); A().keepAwake(true); flatUi(); };
+$('#grFlatBack').onclick = () => A().goBack(false);
+$('#grWall').addEventListener('input', () => { if (!P.plan) return; const v = parseFloat($('#grWall').value.replace(',', '.')); if (v > 0 && v < 200) P.plan.wall = v; else delete P.plan.wall; save(); renderPlan(); });
+
 // Wand bearbeiten: Länge ändern, Ecke umdrehen
 function editWall(i) {
   const r = P.room, w = r.walls[i];
@@ -241,6 +364,14 @@ function draw() {
     const lx = mx + nx * 16, ly = my + ny * 16;
     g.fillStyle = col('--panel'); g.fillRect(lx - tw / 2, ly - 10, tw, 20); g.fillStyle = w[i].calc ? mute : ink; g.fillText(t, lx, ly);
   }
+  if (r.closed) { // Türen/Fenster einzeichnen (Wände stehen schon)
+    const o2 = { col, css, loose: false, label: false, big: true, dims: true }; const sv = g.fillStyle;
+    g.save(); g.globalCompositeOperation = 'source-over';
+    for (const op of r.ops || []) { const fake = { ...r, ops: [op] }; paintOps(g, fake, pts, X, Y, o2); }
+    g.restore(); g.fillStyle = sv;
+    if (P.op && P.op.wall != null) { const a = pts[P.op.wall], b = pts[(P.op.wall + 1) % n]; g.strokeStyle = col('--warn'); g.lineWidth = 6; g.beginPath(); g.moveTo(X(a), Y(a)); g.lineTo(X(b), Y(b)); g.stroke();
+      g.fillStyle = col('--warn'); g.beginPath(); g.arc(X(a), Y(a), 9, 0, 7); g.fill(); }
+  }
   // Startpunkt
   g.fillStyle = acc; g.beginPath(); g.arc(X(pts[0]), Y(pts[0]), 6, 0, 7); g.fill();
   if (!r.closed) {
@@ -259,7 +390,7 @@ function draw() {
     g.fillStyle = ink; g.font = `700 20px ${css.getPropertyValue('--display') || 'sans-serif'}`; g.fillText(fmtA(roomSum(r).area), c.x, c.y);
   }
 }
-window.addEventListener('resize', () => { if ($('#planRoom').classList.contains('on')) draw(); });
+window.addEventListener('resize', () => { if ($('#planRoom').classList.contains('on')) draw(); if ($('#planFlat').classList.contains('on')) drawFlat($('#grFlatCv'), true); });
 
 // ---------- Andockstellen für app.js ----------
 window.__plan = {
@@ -274,7 +405,8 @@ window.__plan = {
   },
   // Zurück: Raum → Grundriss → Startseite (Reiter Grundriss)
   back(cur, viaPop) {
-    if (cur === 'planRoom') { P.room = null; P.hold = null; P.wantDiag = false; P.remeasure = null; renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
+    if (cur === 'planFlat') { renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
+    if (cur === 'planRoom') { P.room = null; P.hold = null; P.op = null; P.thInput = null; P.wantDiag = false; P.remeasure = null; renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
     if (cur === 'plan') { P.plan = null; A().show('home', viaPop); setTab('gr'); return true; }
     return false;
   },
