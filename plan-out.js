@@ -8,10 +8,24 @@ export const fileBase = plan => ('Grundriss ' + (plan.name || 'ohne Adresse')).r
 
 // ---------------- DXF (R12, Einheit cm, y nach oben) ----------------
 const asc = s => String(s).replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/Ä/g, 'Ae').replace(/Ö/g, 'Oe').replace(/Ü/g, 'Ue').replace(/ß/g, 'ss').replace(/²/g, '2').replace(/[^\x20-\x7e]/g, '?');
-export function buildDxf(plan) {
+// Wandflächen wie im fertigen Plan: Wandbänder aller verbundenen Räume zu einer Fläche verschmolzen,
+// Raumflächen und Öffnungen (ganz durch die Wand) herausgeschnitten. Ergebnis: geschlossene Umrisse in cm.
+export function wallOutlines(plan, lay, PC) {
+  const ring = pl => [pl.map(q => [q.x, q.y])], out = [];
+  const build = (items, loose) => {
+    if (!items.length) return; const gfs = items.map(it => G.gfx(plan, it.room, it.poly, { chains: false }));
+    let reg = PC.union(...gfs.map(g => ring(g.band)));
+    reg = PC.difference(reg, ...gfs.map(g => ring(g.inner)), ...gfs.flatMap(g => g.cutsX.map(ring)));
+    for (const poly of reg) for (const r of poly) { const pts = r.slice(0, -1).map(([x, y]) => ({ x, y })); if (pts.length >= 3) out.push({ pts, loose }); }
+  };
+  build(lay.items.filter(i => !i.loose), false);
+  for (const it of lay.items.filter(i => i.loose)) build([it], true);
+  return out;
+}
+export function buildDxf(plan, PC = globalThis.polygonClipping) {
   const done = plan.rooms.filter(r => r.closed && r.walls.length >= 3), lay = G.layout(plan.rooms, plan.wall || 15), o = [];
   const w = (...a) => { for (let i = 0; i < a.length; i += 2) o.push(String(a[i]), String(a[i + 1])); }, f = v => (Math.round(v * 1000) / 1000).toString();
-  const LAYERS = [['WAND', 7], ['WAND_AUSSEN', 7], ['TUER', 2], ['FENSTER', 5], ['RAUMTEXT', 3], ['MASSE', 8], ['MASSKETTE', 8], ['LOSE', 9]];
+  const LAYERS = [['WAND', 7], ['TUER', 2], ['FENSTER', 5], ['RAUMTEXT', 3], ['MASSE', 8], ['MASSKETTE', 8], ['LOSE', 9]];
   w(0, 'SECTION', 2, 'HEADER', 9, '$ACADVER', 1, 'AC1009', 9, '$INSUNITS', 70, 5, 0, 'ENDSEC');
   w(0, 'SECTION', 2, 'TABLES', 0, 'TABLE', 2, 'LTYPE', 70, 1, 0, 'LTYPE', 2, 'CONTINUOUS', 70, 64, 3, 'Solid line', 72, 65, 73, 0, 40, 0.0, 0, 'ENDTAB');
   w(0, 'TABLE', 2, 'LAYER', 70, LAYERS.length); for (const [n, c] of LAYERS) w(0, 'LAYER', 2, n, 70, 64, 62, c, 6, 'CONTINUOUS'); w(0, 'ENDTAB', 0, 'ENDSEC');
@@ -20,15 +34,19 @@ export function buildDxf(plan) {
   const text = (L, p, h, t, rot = 0) => w(0, 'TEXT', 8, L, 10, f(p.x), 20, f(-p.y), 30, 0, 40, f(h), 1, asc(t), 50, f(rot), 72, 1, 11, f(p.x), 21, f(-p.y), 31, 0);
   const arc = (L, c, r, from, to) => { const a0 = Math.atan2(-(from.y - c.y), from.x - c.x) * 180 / Math.PI, a1 = Math.atan2(-(to.y - c.y), to.x - c.x) * 180 / Math.PI, ccw = G.norm180(a1 - a0) > 0; w(0, 'ARC', 8, L, 10, f(c.x), 20, f(-c.y), 30, 0, 40, f(r), 50, f(((ccw ? a0 : a1) + 360) % 360), 51, f(((ccw ? a1 : a0) + 360) % 360)); };
   const rotOf = d => { const ang = Math.atan2(-d.y, d.x) * 180 / Math.PI; return ang > 90.01 || ang <= -89.99 ? ang + 180 : ang; };
+  // Wände: verschmolzene, geschlossene Umrisse (Polylinien). Geht das Verschmelzen schief, bleiben die einfachen Innenkanten als Ersatz.
+  let merged = null; try { if (PC) merged = wallOutlines(plan, lay, PC); } catch (e) { merged = null; }
+  const poly = (L, pts) => { w(0, 'POLYLINE', 8, L, 66, 1, 70, 1); for (const q of pts) w(0, 'VERTEX', 8, L, 10, f(q.x), 20, f(-q.y), 30, 0); w(0, 'SEQEND', 8, L); };
+  if (merged) for (const m of merged) poly(m.loose ? 'LOSE' : 'WAND', m.pts);
   for (const it of lay.items) {
     const r = it.room, pl = it.poly, n = pl.length, WL = it.loose ? 'LOSE' : 'WAND', gf = G.gfx(plan, r, pl, { chains: true, outerOnly: true, u: 1 }); // Maßketten nur an Wänden ohne Verbindungstür, sonst liegen sie im Nachbarraum
-    for (let i = 0; i < n; i++) { // Innenkanten, an Öffnungen unterbrochen; Wandmaß innen
-      const wp = G.wallParts(r, pl, i); for (const p of wp.parts) if (p.kind === 'W') line(WL, p.p0, p.p1);
+    for (let i = 0; i < n; i++) { // Wandmaß innen (ohne verschmolzene Wände zusätzlich die Innenkanten)
+      const wp = G.wallParts(r, pl, i); if (!merged) for (const p of wp.parts) if (p.kind === 'W') line(WL, p.p0, p.p1);
       const an = G.dimAnchor(wp); text('MASSE', { x: an.x - wp.n.x * 14, y: an.y - wp.n.y * 14 }, 8, String(Math.round(r.walls[i].cm)), rotOf(wp.d));
     }
-    for (let i = 0; i < gf.band.length; i++) line(it.loose ? 'LOSE' : 'WAND_AUSSEN', gf.band[i], gf.band[(i + 1) % gf.band.length]);   // Außenkante der Wand (je Raum, Standard-Stärke)
     for (const wn of gf.wins) { for (let k = 0; k < 4; k++) line('FENSTER', wn.rect[k], wn.rect[(k + 1) % 4]); line('FENSTER', wn.glass[0], wn.glass[1]); }
-    for (const dr of gf.doors) { for (const j of dr.jambs) line('TUER', j[0], j[1]); if (dr.leaf) { line('TUER', dr.leaf[0], dr.leaf[1]); arc('TUER', dr.arc.c, dr.arc.r, dr.arc.from, dr.arc.to); } }
+    for (const dr of gf.doors) { if (!merged) for (const j of dr.jambs) line('TUER', j[0], j[1]); if (dr.leaf) // Laibungen sind Teil des Wandumrisses
+      { line('TUER', dr.leaf[0], dr.leaf[1]); arc('TUER', dr.arc.c, dr.arc.r, dr.arc.from, dr.arc.to); } }
     for (const ch of gf.chains) { line('MASSKETTE', ch.line[0], ch.line[1]); for (const t of ch.ticks) line('MASSKETTE', t[0], t[1]); for (const l of ch.labels) text('MASSKETTE', l.p, 7, l.t, rotOf(l.d)); }
     const c = pl.reduce((s2, q) => ({ x: s2.x + q.x / n, y: s2.y + q.y / n }), { x: 0, y: 0 });
     text('RAUMTEXT', { x: c.x, y: c.y - 18 }, 14, r.name); text('RAUMTEXT', { x: c.x, y: c.y + 2 }, 10, fmtA(areaOf(r))); text('RAUMTEXT', { x: c.x, y: c.y + 18 }, 7, `U ${fmtM(G.summary(r).perimeter)}${r.rh ? ` / Rh ${fmtM(r.rh)}` : ''}`);

@@ -151,17 +151,18 @@ export function offsetPoly(poly, d) {
   return out;
 }
 // Wandtiefe an einer Öffnung: Tür mit Gegenstück = gemessene/Standard-Innenwand, sonst Außenwand
-export const opDepth = (plan, room, op) => { const pr = op.type === 'T' ? partnerOf(plan, room, op) : null; return pr ? (op.thick || pr.thick || plan.wall || 15) : (op.thick || plan.wallOut || 30); };
+export const opDepth = (plan, room, op) => { const pr = op.type === 'T' ? partnerOf(plan, room, op) : null; return pr ? (op.thick || pr.thick || plan.wall || 15) : Math.max(op.thick || 0, plan.wallOut || 30); }; // ohne Gegenstück mindestens die Außenwand, damit die Öffnung die Wand ganz durchdringt
 // Alles, was für einen Raum zu zeichnen ist, als einfache Formen in cm (y nach unten). u = cm je Ausgabe-Einheit (Pixel/Punkt) für Abstände der Maßketten.
 export function gfx(plan, room, poly, o = {}) {
   const n = poly.length, wOut = plan.wallOut || 30, u = o.u || 1, add = (p, v, k) => ({ x: p.x + v.x * k, y: p.y + v.y * k });
-  const out = { band: offsetPoly(poly, wOut), inner: poly, cuts: [], wins: [], doors: [], chains: [], ext: [] };
+  const out = { band: offsetPoly(poly, wOut), inner: poly, cuts: [], cutsX: [], wins: [], doors: [], chains: [], ext: [] };
   out.ext.push(...out.band);
   for (let i = 0; i < n; i++) {
     const wp = wallParts(room, poly, i), nn = wp.n;
     for (const p of wp.parts) {
       if (p.kind === 'W') continue; const dep = opDepth(plan, room, p.op), q0 = add(p.p0, nn, dep), q1 = add(p.p1, nn, dep);
       out.cuts.push([p.p0, p.p1, q1, q0]);
+      out.cutsX.push([add(p.p0, nn, -1), add(p.p1, nn, -1), add(p.p1, nn, dep + 1), add(p.p0, nn, dep + 1)]); // 1 cm über beide Wandkanten hinaus: schneidet beim Verschmelzen sicher durch
       if (p.kind === 'F') out.wins.push({ rect: [p.p0, p.p1, q1, q0], glass: [add(p.p0, nn, dep / 2), add(p.p1, nn, dep / 2)] });
       else {
         const d = { jambs: [[p.p0, q0], [p.p1, q1]], op: p.op };
