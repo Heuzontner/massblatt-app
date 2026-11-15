@@ -155,7 +155,7 @@ export const opDepth = (plan, room, op) => { const pr = op.type === 'T' ? partne
 // Alles, was für einen Raum zu zeichnen ist, als einfache Formen in cm (y nach unten). u = cm je Ausgabe-Einheit (Pixel/Punkt) für Abstände der Maßketten.
 export function gfx(plan, room, poly, o = {}) {
   const n = poly.length, wOut = plan.wallOut || 30, u = o.u || 1, add = (p, v, k) => ({ x: p.x + v.x * k, y: p.y + v.y * k });
-  const out = { band: offsetPoly(poly, wOut), inner: poly, cuts: [], cutsX: [], wins: [], doors: [], chains: [], ext: [] };
+  const out = { band: offsetPoly(poly, wOut), inner: poly, cuts: [], cutsX: [], wins: [], doors: [], chains: [], chained: new Set(), ext: [] };
   out.ext.push(...out.band);
   for (let i = 0; i < n; i++) {
     const wp = wallParts(room, poly, i), nn = wp.n;
@@ -182,7 +182,7 @@ export function gfx(plan, room, poly, o = {}) {
         const last = list[list.length - 1]; ticks.push([add(last.p1, nn, off - 3 * u), add(last.p1, nn, off + 3 * u)]); out.ext.push(add(a, nn, off + 13 * u), add(b, nn, off + 13 * u)); return { line, ticks, labels }; };
       let off = wOut + 10 * u; for (const d of out.doors) if (d.leaf && d.op.wall === i && d.op.swing === 'out') off = Math.max(off, opDepth(plan, room, d.op) + d.arc.r + 8 * u); // nach außen aufgehende Tür: Kette dahinter
       if (segs.length > 1) { out.chains.push(mk(off, segs)); off += 17 * u; }
-      out.chains.push(mk(off, [{ p0: a, p1: b, cm: cmL }]));
+      out.chains.push(mk(off, [{ p0: a, p1: b, cm: cmL }])); out.chained.add(i);
     }
   }
   return out;

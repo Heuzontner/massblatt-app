@@ -40,9 +40,9 @@ export function buildDxf(plan, PC = globalThis.polygonClipping) {
   if (merged) for (const m of merged) poly(m.loose ? 'LOSE' : 'WAND', m.pts);
   for (const it of lay.items) {
     const r = it.room, pl = it.poly, n = pl.length, WL = it.loose ? 'LOSE' : 'WAND', gf = G.gfx(plan, r, pl, { chains: true, outerOnly: true, u: 1 }); // Maßketten nur an Wänden ohne Verbindungstür, sonst liegen sie im Nachbarraum
-    for (let i = 0; i < n; i++) { // Wandmaß innen (ohne verschmolzene Wände zusätzlich die Innenkanten)
+    for (let i = 0; i < n; i++) { // Wandmaß innen nur dort, wo außen keine Maßkette steht (Wand mit Verbindungstür)
       const wp = G.wallParts(r, pl, i); if (!merged) for (const p of wp.parts) if (p.kind === 'W') line(WL, p.p0, p.p1);
-      const an = G.dimAnchor(wp); text('MASSE', { x: an.x - wp.n.x * 14, y: an.y - wp.n.y * 14 }, 8, String(Math.round(r.walls[i].cm)), rotOf(wp.d));
+      if (!gf.chained.has(i)) { const an = G.dimAnchor(wp); text('MASSE', { x: an.x - wp.n.x * 14, y: an.y - wp.n.y * 14 }, 8, String(Math.round(r.walls[i].cm)), rotOf(wp.d)); } // jede Wand nur einmal bemaßen: außen als Kette, sonst innen
     }
     for (const wn of gf.wins) { for (let k = 0; k < 4; k++) line('FENSTER', wn.rect[k], wn.rect[(k + 1) % 4]); line('FENSTER', wn.glass[0], wn.glass[1]); }
     for (const dr of gf.doors) { if (!merged) for (const j of dr.jambs) line('TUER', j[0], j[1]); if (dr.leaf) // Laibungen sind Teil des Wandumrisses
