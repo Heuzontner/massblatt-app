@@ -125,3 +125,19 @@ export function wallParts(room, poly, i) {
   if (L > s + 1e-6) out.push({ kind: 'W', p0: at(s), p1: at(L) });
   return { parts: out, d, n: wallGeo(poly, i).n, mid: at(L / 2), L };
 }
+
+// ---------- Plansymbole (3.14): Tür mit Aufschlag, Fenster mit Rahmen ----------
+// Tür: Anschlag am Anfang ('a', von innen gesehen links) oder Ende ('b', rechts) der Öffnung; geht in den Raum ('in') oder hinaus ('out')
+export function doorSym(part, nOut, op) {
+  const hinge = op.hinge === 'b' ? part.p1 : part.p0, other = op.hinge === 'b' ? part.p0 : part.p1, r = Math.hypot(other.x - hinge.x, other.y - hinge.y), s = op.swing === 'out' ? 1 : -1;
+  return { hinge, other, r, tip: { x: hinge.x + nOut.x * s * r, y: hinge.y + nOut.y * s * r } };
+}
+export function winSym(part, nOut, depth) {
+  const o = k => q => ({ x: q.x + nOut.x * k, y: q.y + nOut.y * k }), h = depth / 2;
+  return [o(-h)(part.p0), o(-h)(part.p1), o(h)(part.p1), o(h)(part.p0)];
+}
+// Ein Türblatt wird nur einmal gezeichnet: in dem Raum, in den die Tür aufgeht – oder hier, wenn es kein Gegenstück gibt
+export const partnerOf = (plan, room, op) => op.to ? ((plan.rooms.find(r => r.id === op.to) || {}).ops || []).find(o => o.type === 'T' && o.to === room.id) : null;
+export const drawLeaf = (plan, room, op) => op.swing !== 'out' || !partnerOf(plan, room, op);
+// Wo das Wandmaß steht: in der Mitte des längsten massiven Wandstücks, damit es keine Öffnung überschreibt
+export function dimAnchor(wp) { let best = null, bl = -1; for (const p of wp.parts) if (p.kind === 'W') { const l = Math.hypot(p.p1.x - p.p0.x, p.p1.y - p.p0.y); if (l > bl) { bl = l; best = p; } } return best ? { x: (best.p0.x + best.p1.x) / 2, y: (best.p0.y + best.p1.y) / 2 } : wp.mid; }

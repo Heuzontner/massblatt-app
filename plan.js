@@ -126,7 +126,8 @@ function roomUi() {
   $('#grOpKey').style.display = op && op.step !== 'wall' ? '' : 'none';
   $('#grUndo').disabled = !n; $('#grClose').disabled = n < 2;
   $('#grUndo').textContent = n && lastW().turn != null ? '↶ Richtung ändern' : '↶ zurück'; $('#grUndo2').textContent = P.hold ? '↶ Wert weg' : '↶ Wand weg';
-  $('#grDiag').style.display = r.closed && n === 4 ? '' : 'none'; $('#grDiag').textContent = r.diag ? `Diagonale: ${Math.round(r.diag)} cm` : '＋ Diagonale (schiefer Raum)';
+  $('#grRh').textContent = r.rh ? `Rh ${Math.round(r.rh)} cm` : '＋ Raumhöhe';
+  $('#grDiag').style.display = r.closed && n === 4 ? '' : 'none'; $('#grDiag').textContent = r.diag ? `Diagonale ${Math.round(r.diag)} cm` : '＋ Diagonale';
   // Wand-Leiste
   const ch = $('#grWalls'); ch.innerHTML = '';
   r.walls.forEach((w, i) => { const b = document.createElement('button'); b.dataset.i = i; b.innerHTML = `<i>${i + 1}</i>${Math.round(w.cm)}<small>${turnIcon(w.turn)}</small>`; if (op && op.wall === i) b.classList.add('pick');
@@ -151,6 +152,7 @@ async function setTurn(t, auto = false) {
 async function measure(cm) {
   const r = P.room; if (!r) return;
   if (P.thInput && document.body.contains(P.thInput)) { P.thInput.value = Math.round(cm * 10) / 10; A().beep(true); return; }
+  if (P.wantRh) { if (!(cm >= 150 && cm <= 700)) { A().toast(`${Math.round(cm)} cm passt nicht als Raumhöhe (150–700)`, 3000); A().beep(false); return; } P.wantRh = false; r.rh = cm; A().beep(true); await save(); roomUi(); A().toast(`Raumhöhe ${Math.round(cm)} cm ✓`, 2000); return; }
   if (r.closed && P.op) return opValue(cm);
   if (r.closed) { if (P.wantDiag) { P.wantDiag = false; return applyDiag(cm); } A().toast('Raum ist fertig – „Wieder öffnen“, um weiterzumessen', 2600); A().beep(false); return; }
   if (P.hold) { P.hold = { cm }; A().toast('Erst links oder rechts antippen'); roomUi(); return; }
@@ -165,7 +167,7 @@ $('#grAng').onclick = async () => {
   bg.querySelectorAll('[data-s]').forEach(b => { b.onclick = () => { bg.remove(); setTurn((180 - d) * +b.dataset.s); }; });
 };
 $('#grKey').onclick = async () => {
-  const v = await A().promptBox(P.wantDiag ? 'Diagonale in cm' : 'Wandlänge in cm', 'z. B. 412'); if (v == null) return;
+  const v = await A().promptBox(P.wantRh ? 'Raumhöhe in cm' : P.wantDiag ? 'Diagonale in cm' : 'Wandlänge in cm', P.wantRh ? 'z. B. 255' : 'z. B. 412'); if (v == null) return;
   const cm = parseFloat(String(v).replace(',', '.')); if (!(cm > 0 && cm < 10000)) { A().toast('Bitte eine Länge in cm eingeben'); return; } measure(cm);
 };
 $('#grOpKey').onclick = async () => {
@@ -216,7 +218,7 @@ async function applyDiag(cm) {
 }
 // ---------- Stufe 2: Türen und Fenster ----------
 // Ablauf: Wand antippen → Abstand von der Ecke (Beginn der Wand in Laufrichtung) → Breite → bei Türen: wohin + Wandstärke
-function opStart(type) { if (!P.room.closed) return; P.op = { type, step: 'wall', wall: null }; P.wantDiag = false; roomUi(); }
+function opStart(type) { if (!P.room.closed) return; P.op = { type, step: 'wall', wall: null }; P.wantDiag = false; P.wantRh = false; roomUi(); }
 function opWall(i) { if (!P.op) return; P.op.wall = i; P.op.step = 'pos'; roomUi(); }
 async function opValue(cm) {
   const r = P.room, op = P.op; if (!op) return;
@@ -228,19 +230,28 @@ async function opValue(cm) {
   const o = { id: uid(), type: op.type, wall: op.wall, pos: op.pos, w: Math.min(cm, L - op.pos), to: null }; (r.ops = r.ops || []).push(o); P.op = null; A().beep(true); await save(); roomUi();
   if (o.type === 'T') doorTarget(o);
 }
+$('#grRh').onclick = () => { P.wantRh = true; P.wantDiag = false; A().toast('Raumhöhe messen (Boden → Decke) – oder ⌨', 4000); $('#grKey2').style.display = ''; };
 $('#grDoor').onclick = () => opStart('T'); $('#grWin').onclick = () => opStart('F'); $('#grOpCancel').onclick = () => { P.op = null; roomUi(); };
 // Tür: in welchen Raum führt sie, und wie dick ist die Wand dort (an der Laibung messen)?
 function doorTarget(o) {
   const others = P.plan.rooms.filter(x => x !== P.room), def = P.plan.wall || 15;
   const bg = sheet(`<h2>Wohin führt die Tür?</h2><div class="grgrid2" data-list></div><button class="ghost" data-none style="width:100%;margin-top:8px">Nach außen / noch offen</button>
+    <label class="f">Anschlag (von diesem Raum aus gesehen)</label><div class="row2"><button class="ghost" data-h="a">◧ links</button><button class="ghost" data-h="b">rechts ◨</button></div>
+    <label class="f">Die Tür geht auf</label><div class="row2"><button class="ghost" data-sw="in">in diesen Raum</button><button class="ghost" data-sw="out">hinaus</button></div>
     <label class="f">Wandstärke an dieser Tür (cm)</label><div style="display:flex;gap:8px;align-items:center"><input data-th inputmode="decimal" value="${o.thick || ''}" placeholder="${def} (Standard)" style="flex:1"><span class="mute" style="font-size:13px;flex:2">An der Laibung messen – der Laserwert landet hier.</span></div>
     <button class="pri" data-ok style="width:100%;margin-top:12px">Fertig</button>`);
-  P.thInput = bg.querySelector('[data-th]'); let to = o.to;
-  const paint = () => bg.querySelectorAll('[data-to]').forEach(b => b.classList.toggle('pri', b.dataset.to === to)) || bg.querySelector('[data-none]').classList.toggle('pri', !to);
-  for (const x of others) { const b = document.createElement('button'); b.className = 'ghost'; b.dataset.to = x.id; b.textContent = x.name; b.onclick = () => { to = x.id; paint(); }; bg.querySelector('[data-list]').appendChild(b); }
+  P.thInput = bg.querySelector('[data-th]'); let to = o.to, hinge = o.hinge || 'a', swing = o.swing || 'in', touched = !!o.hinge;
+  // Gibt es im Ziel-Raum schon das Gegenstück, ist dessen Angabe die Vorgabe (dieselbe Tür von der anderen Seite: Seite und Richtung gespiegelt)
+  const fromPartner = () => { if (touched) return; const x = P.plan.rooms.find(q => q.id === to), pr = x && (x.ops || []).find(q => q.type === 'T' && q.to === P.room.id && q.hinge); if (pr) { hinge = pr.hinge === 'a' ? 'b' : 'a'; swing = pr.swing === 'out' ? 'in' : 'out'; } };
+  const paint = () => { bg.querySelectorAll('[data-to]').forEach(b => b.classList.toggle('pri', b.dataset.to === to)); bg.querySelector('[data-none]').classList.toggle('pri', !to);
+    bg.querySelectorAll('[data-h]').forEach(b => { b.classList.toggle('pri', b.dataset.h === hinge); b.classList.toggle('ghost', b.dataset.h !== hinge); }); bg.querySelectorAll('[data-sw]').forEach(b => { b.classList.toggle('pri', b.dataset.sw === swing); b.classList.toggle('ghost', b.dataset.sw !== swing); }); };
+  bg.querySelectorAll('[data-h]').forEach(b => { b.onclick = () => { hinge = b.dataset.h; touched = true; paint(); }; }); bg.querySelectorAll('[data-sw]').forEach(b => { b.onclick = () => { swing = b.dataset.sw; touched = true; paint(); }; });
+  for (const x of others) { const b = document.createElement('button'); b.className = 'ghost'; b.dataset.to = x.id; b.textContent = x.name; b.onclick = () => { to = x.id; fromPartner(); paint(); }; bg.querySelector('[data-list]').appendChild(b); }
   if (!others.length) bg.querySelector('[data-list]').innerHTML = '<p class="mute" style="margin:0 0 6px;font-size:14px">Noch kein anderer Raum angelegt – das Ziel kannst du später über die Tür unten in der Leiste setzen.</p>';
-  bg.querySelector('[data-none]').onclick = () => { to = null; paint(); }; paint();
-  bg.querySelector('[data-ok]').onclick = async () => { const th = parseFloat(String(P.thInput.value).replace(',', '.')); o.to = to; if (th > 0 && th < 200) o.thick = th; else delete o.thick; P.thInput = null; bg.remove(); await save(); roomUi(); };
+  bg.querySelector('[data-none]').onclick = () => { to = null; paint(); }; fromPartner(); paint();
+  bg.querySelector('[data-ok]').onclick = async () => { const th = parseFloat(String(P.thInput.value).replace(',', '.')); o.to = to; o.hinge = hinge; o.swing = swing; if (th > 0 && th < 200) o.thick = th; else delete o.thick;
+    const pr = G.partnerOf(P.plan, P.room, o); if (pr) { pr.hinge = hinge === 'a' ? 'b' : 'a'; pr.swing = swing === 'out' ? 'in' : 'out'; } // Gegenstück mitziehen, damit das Türblatt nur einmal und richtig herum erscheint
+    P.thInput = null; bg.remove(); await save(); roomUi(); };
 }
 function editOp(o) {
   const r = P.room, kind = o.type === 'T' ? 'Tür' : 'Fenster';
@@ -284,18 +295,38 @@ function drawFlat(cv, big) {
   for (const it of items) paintRoom(g, it.r, it.pl, X, Y, { col, css, loose: it.loose, label: true, big, dims: false });
 }
 function paintOps(g, r, pl, X, Y, o) {
-  const n = pl.length, mono = o.css.getPropertyValue('--mono') || 'monospace', lw = o.big === false ? 2 : 4;
-  for (const op of r.ops || []) {
-    if (op.wall >= n) continue; const a = pl[op.wall], b = pl[(op.wall + 1) % n], L = Math.hypot(b.x - a.x, b.y - a.y) || 1, k = L / (r.walls[op.wall].cm || L), dx = (b.x - a.x) / L, dy = (b.y - a.y) / L;
-    const p0 = { x: a.x + dx * op.pos * k, y: a.y + dy * op.pos * k }, p1 = { x: p0.x + dx * op.w * k, y: p0.y + dy * op.w * k };
-    g.strokeStyle = o.col('--bg'); g.lineWidth = lw + 3; g.beginPath(); g.moveTo(X(p0), Y(p0)); g.lineTo(X(p1), Y(p1)); g.stroke();           // Öffnung freistellen
-    const sx = X(p1) - X(p0), sy = Y(p1) - Y(p0), SL = Math.hypot(sx, sy) || 1, nx = -sy / SL, ny = sx / SL;
-    if (op.type === 'F') { g.strokeStyle = o.col('--acc'); g.lineWidth = 1.5; for (const k2 of [-2.5, 2.5]) { g.beginPath(); g.moveTo(X(p0) + nx * k2, Y(p0) + ny * k2); g.lineTo(X(p1) + nx * k2, Y(p1) + ny * k2); g.stroke(); } }
-    g.strokeStyle = op.type === 'T' ? o.col('--yellow') : o.col('--acc'); g.lineWidth = 2;                                                    // Kanten der Öffnung
-    for (const q of [p0, p1]) { g.beginPath(); g.moveTo(X(q) - nx * 6, Y(q) - ny * 6); g.lineTo(X(q) + nx * 6, Y(q) + ny * 6); g.stroke(); }
-    if (op.type === 'T') { g.beginPath(); g.moveTo(X(p0), Y(p0)); g.lineTo(X(p1), Y(p1)); g.setLineDash([3, 4]); g.stroke(); g.setLineDash([]); }
-    if (o.dims) { g.font = `600 11px ${mono}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = op.type === 'T' ? o.col('--warn') : o.col('--acc'); g.fillText(`${op.type === 'T' ? 'T' : 'F'} ${Math.round(op.w)}`, (X(p0) + X(p1)) / 2 + nx * (Math.abs(nx) > 0.5 ? 30 : 16), (Y(p0) + Y(p1)) / 2 + ny * (Math.abs(nx) > 0.5 ? 30 : 16)); }
+  const n = pl.length, mono = o.css.getPropertyValue('--mono') || 'monospace', lw = o.big === false ? 2 : 4, S = q => ({ x: X(q), y: Y(q) }), only = o.only;
+  const pxcm = Math.hypot(X({ x: 1, y: 0 }) - X({ x: 0, y: 0 }), Y({ x: 1, y: 0 }) - Y({ x: 0, y: 0 }));   // Pixel je cm
+  for (let i = 0; i < n; i++) {
+    const wp = G.wallParts(r, pl, i);
+    for (const p of wp.parts) {
+      if (p.kind === 'W' || (only && p.op !== only)) continue;
+      const a = S(p.p0), b = S(p.p1);
+      g.strokeStyle = o.col('--bg'); g.lineWidth = lw + 3; g.lineCap = 'butt'; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();                 // Wand an der Öffnung freistellen
+      if (p.kind === 'F') { // Fenster: Rahmen in Wandtiefe mit Glaslinie
+        const q = G.winSym(p, wp.n, Math.max(10, 7 / pxcm)).map(S); g.fillStyle = o.col('--panel'); g.strokeStyle = o.col('--acc'); g.lineWidth = 1.4;
+        g.beginPath(); q.forEach((c, k) => k ? g.lineTo(c.x, c.y) : g.moveTo(c.x, c.y)); g.closePath(); g.fill(); g.stroke(); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
+      } else { // Tür: Laibungskanten, Türblatt und Viertelkreis
+        const col = o.col('--warn'); g.strokeStyle = col; g.lineWidth = 2;
+        for (const c of [p.p0, p.p1]) { const u = S({ x: c.x + wp.n.x * 5, y: c.y + wp.n.y * 5 }), v = S({ x: c.x - wp.n.x * 5, y: c.y - wp.n.y * 5 }); g.beginPath(); g.moveTo(u.x, u.y); g.lineTo(v.x, v.y); g.stroke(); }
+        if (o.allLeaf || !P.plan || G.drawLeaf(P.plan, r, p.op)) {
+          const d = G.doorSym(p, wp.n, p.op), h = S(d.hinge), t = S(d.tip), e = S(d.other), R = Math.hypot(t.x - h.x, t.y - h.y), a0 = Math.atan2(t.y - h.y, t.x - h.x), a1 = Math.atan2(e.y - h.y, e.x - h.x);
+          g.lineWidth = 2.2; g.beginPath(); g.moveTo(h.x, h.y); g.lineTo(t.x, t.y); g.stroke();
+          g.lineWidth = 1; g.setLineDash([3, 3]); g.beginPath(); g.arc(h.x, h.y, R, a0, a1, G.norm180((a1 - a0) * 180 / Math.PI) < 0); g.stroke(); g.setLineDash([]);
+        }
+      }
+      if (o.dims) { const m = { x: (p.p0.x + p.p1.x) / 2 + wp.n.x * (15 / pxcm), y: (p.p0.y + p.p1.y) / 2 + wp.n.y * (15 / pxcm) }, sm = S(m); g.font = `600 11px ${mono}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = p.kind === 'T' ? o.col('--warn') : o.col('--acc'); g.fillText(`${p.kind === 'T' ? 'T' : 'F'} ${Math.round(p.op.w)}`, sm.x, sm.y); }
+    }
   }
+}
+// Raumstempel in der Raummitte: (Name) · Fläche · Umfang · Raumhöhe
+function stamp(g, r, x, y, o) {
+  const s = roomSum(r), lines = []; if (o.name) lines.push([r.name, `700 ${o.size}px ${o.display}`, o.ink, o.size * 1.25]);
+  lines.push([fmtA(s.area), o.name ? `600 ${Math.max(11, o.size * 0.8)}px ${o.mono}` : `700 ${o.size}px ${o.display}`, o.ink, (o.name ? Math.max(11, o.size * 0.8) : o.size) * 1.3]);
+  lines.push([`U ${fmtM(s.perimeter)}${r.rh ? ` · Rh ${fmtM(r.rh)}` : ''}`, `${Math.max(10, o.size * 0.6)}px ${o.mono}`, o.mute, Math.max(10, o.size * 0.6) * 1.3]);
+  const fit = o.maxW ? lines.filter(l => { g.font = l[1]; return g.measureText(l[0]).width <= o.maxW; }) : lines; if (!fit.length) return; lines.length = 0; lines.push(...fit); // was nicht in den Raum passt, bleibt weg
+  let yy = y - lines.reduce((t, l) => t + l[3], 0) / 2; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const [t, f, c, h] of lines) { g.font = f; g.fillStyle = c; g.fillText(t, x, yy + h / 2); yy += h; }
 }
 // Ein Raum mit Wänden, Türen (Lücke) und Fenstern (Doppellinie)
 function paintRoom(g, r, pl, X, Y, o) {
@@ -305,7 +336,8 @@ function paintRoom(g, r, pl, X, Y, o) {
   paintOps(g, r, pl, X, Y, o);
   if (o.label) { const c = pl.reduce((s, q) => ({ x: s.x + X(q) / n, y: s.y + Y(q) / n }), { x: 0, y: 0 }); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = ink;
     const wpx = Math.max(...pl.map(q => X(q))) - Math.min(...pl.map(q => X(q))), fs = Math.min(o.big ? 15 : 10, (wpx - 8) / Math.max(3, r.name.length * 0.6)); if (fs < 6) return; // Name muss in den Raum passen
-    g.font = `700 ${fs}px ${o.css.getPropertyValue('--display') || 'sans-serif'}`; g.fillText(r.name, c.x, c.y - (o.big && fs > 10 ? 9 : 0)); if (o.big && fs > 10) { g.font = `12px ${mono}`; g.fillStyle = o.col('--mute'); g.fillText(fmtA(roomSum(r).area), c.x, c.y + 9); } }
+    if (o.big && fs > 10) stamp(g, r, c.x, c.y, { ink, mute: o.col('--mute'), display: o.css.getPropertyValue('--display') || 'sans-serif', mono, size: fs, name: true, maxW: wpx - 6 });
+    else { g.font = `700 ${fs}px ${o.css.getPropertyValue('--display') || 'sans-serif'}`; g.fillText(r.name, c.x, c.y); } }
 }
 function flatUi() {
   const { res, msgs } = flatInfo(), p = P.plan, n = p.rooms.filter(r => r.closed).length;
@@ -385,7 +417,8 @@ function draw() {
   const end = tr.pts[tr.pts.length - 1], hd = tr.heading * Math.PI / 180;
   const stub = Math.max(60, Math.min(...w.map(x => x.cm)) * 0.5);
   const opts = pending() ? [-90, 90].map(t => { const a = (tr.heading + t) * Math.PI / 180; return { t, x: end.x + stub * Math.cos(a), y: end.y + stub * Math.sin(a) }; }) : [];
-  const bb = [...all, ...opts].reduce((b, p) => ({ x0: Math.min(b.x0, p.x), y0: Math.min(b.y0, p.y), x1: Math.max(b.x1, p.x), y1: Math.max(b.y1, p.y) }), { x0: 0, y0: 0, x1: 0, y1: 0 });
+  const tips = []; if (r.closed) for (let i = 0; i < w.length; i++) { const wp = G.wallParts(r, pts, i); for (const p of wp.parts) if (p.kind === 'T') tips.push(G.doorSym(p, wp.n, p.op).tip); } // Türblätter sollen ins Bild passen
+  const bb = [...all, ...opts, ...tips].reduce((b, p) => ({ x0: Math.min(b.x0, p.x), y0: Math.min(b.y0, p.y), x1: Math.max(b.x1, p.x), y1: Math.max(b.y1, p.y) }), { x0: 0, y0: 0, x1: 0, y1: 0 });
   const pad = 46, sc = Math.min((W - 2 * pad) / Math.max(1, bb.x1 - bb.x0), (H - 2 * pad) / Math.max(1, bb.y1 - bb.y0));
   const ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc;
   const X = p => ox + p.x * sc, Y = p => oy + p.y * sc;
@@ -398,16 +431,17 @@ function draw() {
   const n = w.length;
   for (let i = 0; i < n; i++) {
     const a = pts[i], b = r.closed ? pts[(i + 1) % n] : pts[i + 1]; if (!b) continue;
-    const mx = (X(a) + X(b)) / 2, my = (Y(a) + Y(b)) / 2, dx = X(b) - X(a), dy = Y(b) - Y(a), L = Math.hypot(dx, dy) || 1;
+    let mxw = (a.x + b.x) / 2, myw = (a.y + b.y) / 2; if (r.closed && (r.ops || []).some(o => o.wall === i)) { const an = G.dimAnchor(G.wallParts(r, pts, i)); mxw = an.x; myw = an.y; } // nicht über eine Öffnung schreiben
+    const mx = X({ x: mxw, y: myw }), my = Y({ x: mxw, y: myw }), dx = X(b) - X(a), dy = Y(b) - Y(a), L = Math.hypot(dx, dy) || 1;
     const nx = dy / L, ny = -dx / L;                              // im Uhrzeigersinn gelaufen → links der Laufrichtung ist außen
     const t = `${Math.round(w[i].cm)}`, tw = g.measureText(t).width + 10;
     const lx = mx + nx * 16, ly = my + ny * 16;
     g.fillStyle = col('--panel'); g.fillRect(lx - tw / 2, ly - 10, tw, 20); g.fillStyle = w[i].calc ? mute : ink; g.fillText(t, lx, ly);
   }
   if (r.closed) { // Türen/Fenster einzeichnen (Wände stehen schon)
-    const o2 = { col, css, loose: false, label: false, big: true, dims: true }; const sv = g.fillStyle;
+    const o2 = { col, css, loose: false, label: false, big: true, dims: true, allLeaf: true }; const sv = g.fillStyle;
     g.save(); g.globalCompositeOperation = 'source-over';
-    for (const op of r.ops || []) { const fake = { ...r, ops: [op] }; paintOps(g, fake, pts, X, Y, o2); }
+    paintOps(g, r, pts, X, Y, o2);
     g.restore(); g.fillStyle = sv;
     if (P.op && P.op.wall != null) { const a = pts[P.op.wall], b = pts[(P.op.wall + 1) % n]; g.strokeStyle = col('--warn'); g.lineWidth = 6; g.beginPath(); g.moveTo(X(a), Y(a)); g.lineTo(X(b), Y(b)); g.stroke();
       g.fillStyle = col('--warn'); g.beginPath(); g.arc(X(a), Y(a), 9, 0, 7); g.fill(); }
@@ -427,7 +461,7 @@ function draw() {
     g.fillStyle = green; g.beginPath(); g.arc(e.x, e.y, 5, 0, 7); g.fill();
   } else {
     const c = pts.reduce((s, p) => ({ x: s.x + X(p) / n, y: s.y + Y(p) / n }), { x: 0, y: 0 });
-    g.fillStyle = ink; g.font = `700 20px ${css.getPropertyValue('--display') || 'sans-serif'}`; g.fillText(fmtA(roomSum(r).area), c.x, c.y);
+    stamp(g, r, c.x, c.y, { ink, mute, display: css.getPropertyValue('--display') || 'sans-serif', mono, size: 20 });
   }
 }
 window.addEventListener('resize', () => { if ($('#planRoom').classList.contains('on')) draw(); if ($('#planFlat').classList.contains('on')) drawFlat($('#grFlatCv'), true); });
@@ -446,7 +480,7 @@ window.__plan = {
   // Zurück: Raum → Grundriss → Startseite (Reiter Grundriss)
   back(cur, viaPop) {
     if (cur === 'planFlat') { renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
-    if (cur === 'planRoom') { P.room = null; P.hold = null; P.op = null; P.thInput = null; P.wantDiag = false; P.remeasure = null; renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
+    if (cur === 'planRoom') { P.room = null; P.hold = null; P.op = null; P.thInput = null; P.wantDiag = false; P.wantRh = false; P.remeasure = null; renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
     if (cur === 'plan') { P.plan = null; A().show('home', viaPop); setTab('gr'); return true; }
     return false;
   },
