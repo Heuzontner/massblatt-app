@@ -141,3 +141,48 @@ export const partnerOf = (plan, room, op) => op.to ? ((plan.rooms.find(r => r.id
 export const drawLeaf = (plan, room, op) => op.swing !== 'out' || !partnerOf(plan, room, op);
 // Wo das Wandmaß steht: in der Mitte des längsten massiven Wandstücks, damit es keine Öffnung überschreibt
 export function dimAnchor(wp) { let best = null, bl = -1; for (const p of wp.parts) if (p.kind === 'W') { const l = Math.hypot(p.p1.x - p.p0.x, p.p1.y - p.p0.y); if (l > bl) { bl = l; best = p; } } return best ? { x: (best.p0.x + best.p1.x) / 2, y: (best.p0.y + best.p1.y) / 2 } : wp.mid; }
+
+// ---------- Plan-Darstellung (3.15): Wände mit Stärke, Maßketten ----------
+// Vieleck um d nach außen versetzen (Gehrung an den Ecken)
+export function offsetPoly(poly, d) {
+  const n = poly.length, cw = signedArea(poly) > 0, out = [];
+  const nrm = i => { const a = poly[i], b = poly[(i + 1) % n], L = Math.hypot(b.x - a.x, b.y - a.y) || 1, dx = (b.x - a.x) / L, dy = (b.y - a.y) / L; return cw ? { x: dy, y: -dx } : { x: -dy, y: dx }; };
+  for (let i = 0; i < n; i++) { const n0 = nrm((i - 1 + n) % n), n1 = nrm(i), k = 1 + n0.x * n1.x + n0.y * n1.y, m = k < 0.05 ? n1 : { x: (n0.x + n1.x) / k, y: (n0.y + n1.y) / k }; out.push({ x: poly[i].x + m.x * d, y: poly[i].y + m.y * d }); }
+  return out;
+}
+// Wandtiefe an einer Öffnung: Tür mit Gegenstück = gemessene/Standard-Innenwand, sonst Außenwand
+export const opDepth = (plan, room, op) => { const pr = op.type === 'T' ? partnerOf(plan, room, op) : null; return pr ? (op.thick || pr.thick || plan.wall || 15) : (op.thick || plan.wallOut || 30); };
+// Alles, was für einen Raum zu zeichnen ist, als einfache Formen in cm (y nach unten). u = cm je Ausgabe-Einheit (Pixel/Punkt) für Abstände der Maßketten.
+export function gfx(plan, room, poly, o = {}) {
+  const n = poly.length, wOut = plan.wallOut || 30, u = o.u || 1, add = (p, v, k) => ({ x: p.x + v.x * k, y: p.y + v.y * k });
+  const out = { band: offsetPoly(poly, wOut), inner: poly, cuts: [], wins: [], doors: [], chains: [], ext: [] };
+  out.ext.push(...out.band);
+  for (let i = 0; i < n; i++) {
+    const wp = wallParts(room, poly, i), nn = wp.n;
+    for (const p of wp.parts) {
+      if (p.kind === 'W') continue; const dep = opDepth(plan, room, p.op), q0 = add(p.p0, nn, dep), q1 = add(p.p1, nn, dep);
+      out.cuts.push([p.p0, p.p1, q1, q0]);
+      if (p.kind === 'F') out.wins.push({ rect: [p.p0, p.p1, q1, q0], glass: [add(p.p0, nn, dep / 2), add(p.p1, nn, dep / 2)] });
+      else {
+        const d = { jambs: [[p.p0, q0], [p.p1, q1]], op: p.op };
+        if (o.allLeaf || drawLeaf(plan, room, p.op)) {
+          const hb = p.op.hinge === 'b', outw = p.op.swing === 'out', h0 = hb ? p.p1 : p.p0, e0 = hb ? p.p0 : p.p1, r = Math.hypot(e0.x - h0.x, e0.y - h0.y);
+          const hinge = outw ? add(h0, nn, dep) : h0, other = outw ? add(e0, nn, dep) : e0, tip = add(hinge, nn, outw ? r : -r);
+          d.leaf = [hinge, tip]; d.arc = { c: hinge, r, from: tip, to: other }; out.ext.push(tip);
+        }
+        out.doors.push(d);
+      }
+    }
+    const innerWall = (room.ops || []).some(q => q.wall === i && q.type === 'T' && partnerOf(plan, room, q));
+    if (o.chains && !(o.outerOnly && innerWall)) { // Maßkette außen: Teilmaße (Abstand – Öffnung – Rest) und darüber das Gesamtmaß
+      const cmL = room.walls[i].cm, k = wp.L / (cmL || wp.L), segs = wp.parts.map(p => ({ p0: p.p0, p1: p.p1, cm: p.kind === 'W' ? Math.hypot(p.p1.x - p.p0.x, p.p1.y - p.p0.y) / k : p.op.w }));
+      const a = poly[i], b = poly[(i + 1) % n], mk = (off, list) => { const line = [add(a, nn, off), add(b, nn, off)], ticks = [], labels = [];
+        for (const s of list) { ticks.push([add(s.p0, nn, off - 3 * u), add(s.p0, nn, off + 3 * u)]); labels.push({ p: add({ x: (s.p0.x + s.p1.x) / 2, y: (s.p0.y + s.p1.y) / 2 }, nn, off + 7 * u), t: String(Math.round(s.cm)), d: wp.d, len: Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) }); }
+        const last = list[list.length - 1]; ticks.push([add(last.p1, nn, off - 3 * u), add(last.p1, nn, off + 3 * u)]); out.ext.push(add(a, nn, off + 13 * u), add(b, nn, off + 13 * u)); return { line, ticks, labels }; };
+      let off = wOut + 10 * u; for (const d of out.doors) if (d.leaf && d.op.wall === i && d.op.swing === 'out') off = Math.max(off, opDepth(plan, room, d.op) + d.arc.r + 8 * u); // nach außen aufgehende Tür: Kette dahinter
+      if (segs.length > 1) { out.chains.push(mk(off, segs)); off += 17 * u; }
+      out.chains.push(mk(off, [{ p0: a, p1: b, cm: cmL }]));
+    }
+  }
+  return out;
+}

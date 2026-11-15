@@ -48,7 +48,7 @@ $('#grNew').onclick = async () => {
 };
 async function openPlan(id) {
   P.plan = await store.get(id); if (!P.plan) return; P.room = null;
-  $('#grStr').value = P.plan.name || ''; $('#grPlz').value = P.plan.plz || ''; $('#grOrt').value = P.plan.ortName || ''; $('#grKunde').value = P.plan.kunde || ''; $('#grWall').value = P.plan.wall || '';
+  $('#grStr').value = P.plan.name || ''; $('#grPlz').value = P.plan.plz || ''; $('#grOrt').value = P.plan.ortName || ''; $('#grKunde').value = P.plan.kunde || ''; $('#grWall').value = P.plan.wall || ''; $('#grWallOut').value = P.plan.wallOut || '';
   renderPlan(); A().show('plan'); A().keepAwake(true);
 }
 function renderPlan() {
@@ -280,69 +280,62 @@ function flatInfo() {
   for (const i of res.issues) msgs.push(`Zwischen „${name(i.a)}“ und „${name(i.b)}“ geht es nicht auf: ${Math.round(i.off)} cm Versatz – eine Türposition, Wandlänge oder Wandstärke stimmt nicht.`);
   return { res, msgs };
 }
-// Zeichnet alle fertigen Räume: verbundene an ihrem Platz, die übrigen daneben (gestrichelt)
+// ---------- Plan-Darstellung (3.15): Wände mit Stärke, Symbole, Maßketten ----------
+const bboxOf = pts => pts.reduce((b, q) => ({ x0: Math.min(b.x0, q.x), y0: Math.min(b.y0, q.y), x1: Math.max(b.x1, q.x), y1: Math.max(b.y1, q.y) }), { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 });
+function gfxBand(g, gf, X, Y, color) {   // Wand als gefüllter Ring zwischen Innenkante und Außenkante
+  g.beginPath(); gf.band.forEach((q, i) => i ? g.lineTo(X(q), Y(q)) : g.moveTo(X(q), Y(q))); g.closePath();
+  [...gf.inner].reverse().forEach((q, i) => i ? g.lineTo(X(q), Y(q)) : g.moveTo(X(q), Y(q))); g.closePath(); g.fillStyle = color; g.fill('evenodd');
+}
+function gfxRest(g, gf, X, Y, st) {      // Raumfläche, Öffnungen mit Symbolen, Maßketten
+  const path = pl => { g.beginPath(); pl.forEach((q, i) => i ? g.lineTo(X(q), Y(q)) : g.moveTo(X(q), Y(q))); g.closePath(); }, ln = (p, q) => { g.beginPath(); g.moveTo(X(p), Y(p)); g.lineTo(X(q), Y(q)); g.stroke(); };
+  path(gf.inner); g.fillStyle = st.fill; g.fill();
+  for (const c of gf.cuts) { path(c); g.fillStyle = st.cut; g.fill(); }
+  g.lineCap = 'butt'; g.lineJoin = 'miter';
+  for (const w of gf.wins) { path(w.rect); g.fillStyle = st.panel; g.fill(); g.strokeStyle = st.win; g.lineWidth = 1.4; g.stroke(); ln(w.glass[0], w.glass[1]); }
+  for (const d of gf.doors) {
+    g.strokeStyle = st.door; g.lineWidth = 2; for (const j of d.jambs) ln(j[0], j[1]);
+    if (d.leaf) { g.lineWidth = 2.4; ln(d.leaf[0], d.leaf[1]); const c = { x: X(d.arc.c), y: Y(d.arc.c) }, f = { x: X(d.arc.from), y: Y(d.arc.from) }, t = { x: X(d.arc.to), y: Y(d.arc.to) }, a0 = Math.atan2(f.y - c.y, f.x - c.x), a1 = Math.atan2(t.y - c.y, t.x - c.x);
+      g.lineWidth = 1; g.setLineDash([3, 3]); g.beginPath(); g.arc(c.x, c.y, Math.hypot(f.x - c.x, f.y - c.y), a0, a1, G.norm180((a1 - a0) * 180 / Math.PI) < 0); g.stroke(); g.setLineDash([]); }
+  }
+  if (gf.chains.length) { g.strokeStyle = st.dim; g.fillStyle = st.dim; g.lineWidth = 1; g.font = `600 12px ${st.mono}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const ch of gf.chains) { ln(ch.line[0], ch.line[1]); for (const t of ch.ticks) ln(t[0], t[1]);
+      for (const l of ch.labels) { let a = Math.atan2(l.d.y, l.d.x); if (a > Math.PI / 2 - 0.01 || a < -Math.PI / 2 - 0.01) a += Math.PI; g.save(); g.translate(X(l.p), Y(l.p)); g.rotate(a); g.fillText(l.t, 0, 0); g.restore(); } } }
+}
+function northArrow(g, x, y, deg, col, mono) {  // deg: wohin Norden im Bild zeigt (0 = oben, im Uhrzeigersinn)
+  g.save(); g.translate(x, y); g.rotate(deg * Math.PI / 180); g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 1.5;
+  g.beginPath(); g.arc(0, 0, 17, 0, 7); g.stroke(); g.beginPath(); g.moveTo(0, -15); g.lineTo(6, 8); g.lineTo(0, 3); g.lineTo(-6, 8); g.closePath(); g.fill();
+  g.font = `700 11px ${mono}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('N', 0, -26); g.restore();
+}
+// Zeichnet alle fertigen Räume: verbundene an ihrem Platz, die übrigen daneben (heller)
 function drawFlat(cv, big) {
   const p = P.plan; if (!p || !cv) return; const box = cv.parentElement.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
   const W = Math.max(50, box.width), H = Math.max(50, box.height); cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
   const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-  const { res } = flatInfo(); const items = []; let bb = null; const grow = q => { bb = bb ? { x0: Math.min(bb.x0, q.x), y0: Math.min(bb.y0, q.y), x1: Math.max(bb.x1, q.x), y1: Math.max(bb.y1, q.y) } : { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; };
-  for (const r of p.rooms) { const t = res.T.get(r.id); if (!t) continue; const pl = res.poly.get(r.id).map(q => G.applyT(t, q)); pl.forEach(grow); items.push({ r, pl, t, loose: false }); }
-  let x = bb ? bb.x1 + 120 : 0; const y0 = bb ? bb.y0 : 0;
-  for (const id of res.unplaced) { const r = p.rooms.find(q => q.id === id), raw = res.poly.get(id), mnx = Math.min(...raw.map(q => q.x)), mny = Math.min(...raw.map(q => q.y)), t = { c: 1, s: 0, x: x - mnx, y: y0 - mny }, pl = raw.map(q => G.applyT(t, q)); pl.forEach(grow); x = Math.max(...pl.map(q => q.x)) + 80; items.push({ r, pl, t, loose: true }); }
-  if (!items.length) return;
-  const pad = big ? 40 : 16, sc = Math.min((W - 2 * pad) / Math.max(1, bb.x1 - bb.x0), (H - 2 * pad) / Math.max(1, bb.y1 - bb.y0)), ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc;
-  const X = q => ox + q.x * sc, Y = q => oy + q.y * sc, css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim() || '#888';
-  for (const it of items) paintRoom(g, it.r, it.pl, X, Y, { col, css, loose: it.loose, label: true, big, dims: false });
+  const lay = G.layout(p.rooms, p.wall || 15); if (!lay.items.length) return;
+  const gfs = lay.items.map(it => ({ it, gf: G.gfx(p, it.room, it.poly, { chains: false }) })), bb = bboxOf(gfs.flatMap(x => x.gf.ext));
+  const pad = big ? 30 : 8, sc = Math.min((W - 2 * pad) / Math.max(1, bb.x1 - bb.x0), (H - 2 * pad) / Math.max(1, bb.y1 - bb.y0)), ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc;
+  const X = q => ox + q.x * sc, Y = q => oy + q.y * sc, css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim() || '#888', mono = css.getPropertyValue('--mono') || 'monospace', display = css.getPropertyValue('--display') || 'sans-serif';
+  for (const x of gfs) gfxBand(g, x.gf, X, Y, x.it.loose ? col('--mute') : col('--text'));
+  for (const x of gfs) gfxRest(g, x.gf, X, Y, { fill: col('--acc-soft'), cut: col('--bg'), panel: col('--panel'), win: col('--acc'), door: col('--warn'), dim: col('--mute'), mono });
+  for (const { it } of gfs) { const pl = it.poly, n = pl.length, c = pl.reduce((s, q) => ({ x: s.x + X(q) / n, y: s.y + Y(q) / n }), { x: 0, y: 0 }), wpx = (Math.max(...pl.map(q => q.x)) - Math.min(...pl.map(q => q.x))) * sc;
+    const fs = Math.min(big ? 15 : 10, (wpx - 8) / Math.max(3, it.room.name.length * 0.6)); if (fs < 6) continue; g.fillStyle = col('--text'); g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (big && fs > 10) stamp(g, it.room, c.x, c.y, { ink: col('--text'), mute: col('--mute'), display, mono, size: fs, name: true, maxW: wpx - 6 }); else { g.font = `700 ${fs}px ${display}`; g.fillText(it.room.name, c.x, c.y); } }
+  if (big && p.north != null) northArrow(g, W - 38, 46, p.north, col('--text'), mono);
 }
-function paintOps(g, r, pl, X, Y, o) {
-  const n = pl.length, mono = o.css.getPropertyValue('--mono') || 'monospace', lw = o.big === false ? 2 : 4, S = q => ({ x: X(q), y: Y(q) }), only = o.only;
-  const pxcm = Math.hypot(X({ x: 1, y: 0 }) - X({ x: 0, y: 0 }), Y({ x: 1, y: 0 }) - Y({ x: 0, y: 0 }));   // Pixel je cm
-  for (let i = 0; i < n; i++) {
-    const wp = G.wallParts(r, pl, i);
-    for (const p of wp.parts) {
-      if (p.kind === 'W' || (only && p.op !== only)) continue;
-      const a = S(p.p0), b = S(p.p1);
-      g.strokeStyle = o.col('--bg'); g.lineWidth = lw + 3; g.lineCap = 'butt'; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();                 // Wand an der Öffnung freistellen
-      if (p.kind === 'F') { // Fenster: Rahmen in Wandtiefe mit Glaslinie
-        const q = G.winSym(p, wp.n, Math.max(10, 7 / pxcm)).map(S); g.fillStyle = o.col('--panel'); g.strokeStyle = o.col('--acc'); g.lineWidth = 1.4;
-        g.beginPath(); q.forEach((c, k) => k ? g.lineTo(c.x, c.y) : g.moveTo(c.x, c.y)); g.closePath(); g.fill(); g.stroke(); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke();
-      } else { // Tür: Laibungskanten, Türblatt und Viertelkreis
-        const col = o.col('--warn'); g.strokeStyle = col; g.lineWidth = 2;
-        for (const c of [p.p0, p.p1]) { const u = S({ x: c.x + wp.n.x * 5, y: c.y + wp.n.y * 5 }), v = S({ x: c.x - wp.n.x * 5, y: c.y - wp.n.y * 5 }); g.beginPath(); g.moveTo(u.x, u.y); g.lineTo(v.x, v.y); g.stroke(); }
-        if (o.allLeaf || !P.plan || G.drawLeaf(P.plan, r, p.op)) {
-          const d = G.doorSym(p, wp.n, p.op), h = S(d.hinge), t = S(d.tip), e = S(d.other), R = Math.hypot(t.x - h.x, t.y - h.y), a0 = Math.atan2(t.y - h.y, t.x - h.x), a1 = Math.atan2(e.y - h.y, e.x - h.x);
-          g.lineWidth = 2.2; g.beginPath(); g.moveTo(h.x, h.y); g.lineTo(t.x, t.y); g.stroke();
-          g.lineWidth = 1; g.setLineDash([3, 3]); g.beginPath(); g.arc(h.x, h.y, R, a0, a1, G.norm180((a1 - a0) * 180 / Math.PI) < 0); g.stroke(); g.setLineDash([]);
-        }
-      }
-      if (o.dims) { const m = { x: (p.p0.x + p.p1.x) / 2 + wp.n.x * (15 / pxcm), y: (p.p0.y + p.p1.y) / 2 + wp.n.y * (15 / pxcm) }, sm = S(m); g.font = `600 11px ${mono}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = p.kind === 'T' ? o.col('--warn') : o.col('--acc'); g.fillText(`${p.kind === 'T' ? 'T' : 'F'} ${Math.round(p.op.w)}`, sm.x, sm.y); }
-    }
-  }
-}
-// Raumstempel in der Raummitte: (Name) · Fläche · Umfang · Raumhöhe
+// Raumstempel in der Raummitte: (Name) · Fläche · Umfang · Raumhöhe. Zu breite Zeilen werden kleiner gesetzt, unter 8 px entfallen sie.
 function stamp(g, r, x, y, o) {
-  const s = roomSum(r), lines = []; if (o.name) lines.push([r.name, `700 ${o.size}px ${o.display}`, o.ink, o.size * 1.25]);
-  lines.push([fmtA(s.area), o.name ? `600 ${Math.max(11, o.size * 0.8)}px ${o.mono}` : `700 ${o.size}px ${o.display}`, o.ink, (o.name ? Math.max(11, o.size * 0.8) : o.size) * 1.3]);
-  lines.push([`U ${fmtM(s.perimeter)}${r.rh ? ` · Rh ${fmtM(r.rh)}` : ''}`, `${Math.max(10, o.size * 0.6)}px ${o.mono}`, o.mute, Math.max(10, o.size * 0.6) * 1.3]);
-  const fit = o.maxW ? lines.filter(l => { g.font = l[1]; return g.measureText(l[0]).width <= o.maxW; }) : lines; if (!fit.length) return; lines.length = 0; lines.push(...fit); // was nicht in den Raum passt, bleibt weg
+  const s = roomSum(r), raw = []; if (o.name) raw.push([r.name, 700, o.size, o.display, o.ink]);
+  raw.push([fmtA(s.area), o.name ? 600 : 700, o.name ? Math.max(11, o.size * 0.8) : o.size, o.name ? o.mono : o.display, o.ink]);
+  raw.push([`U ${fmtM(s.perimeter)}${r.rh ? ` · Rh ${fmtM(r.rh)}` : ''}`, 400, Math.max(10, o.size * 0.6), o.mono, o.mute]);
+  const lines = [];
+  for (const [t, wgt, size, fam, c] of raw) { let fs = size; g.font = `${wgt} ${fs}px ${fam}`; const w = g.measureText(t).width; if (o.maxW && w > o.maxW) fs = fs * o.maxW / w; if (fs < 8) continue; lines.push([t, `${wgt} ${fs}px ${fam}`, c, fs * 1.3]); }
   let yy = y - lines.reduce((t, l) => t + l[3], 0) / 2; g.textAlign = 'center'; g.textBaseline = 'middle';
   for (const [t, f, c, h] of lines) { g.font = f; g.fillStyle = c; g.fillText(t, x, yy + h / 2); yy += h; }
-}
-// Ein Raum mit Wänden, Türen (Lücke) und Fenstern (Doppellinie)
-function paintRoom(g, r, pl, X, Y, o) {
-  const ink = o.col('--text'), n = pl.length, mono = o.css.getPropertyValue('--mono') || 'monospace', lw = o.big === false ? 2 : 4;
-  g.beginPath(); pl.forEach((q, i) => i ? g.lineTo(X(q), Y(q)) : g.moveTo(X(q), Y(q))); g.closePath(); g.fillStyle = o.col('--acc-soft'); g.fill();
-  g.lineJoin = 'round'; g.lineCap = 'butt'; g.lineWidth = lw; g.strokeStyle = o.loose ? o.col('--mute') : ink; g.setLineDash(o.loose ? [7, 6] : []); g.stroke(); g.setLineDash([]);
-  paintOps(g, r, pl, X, Y, o);
-  if (o.label) { const c = pl.reduce((s, q) => ({ x: s.x + X(q) / n, y: s.y + Y(q) / n }), { x: 0, y: 0 }); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = ink;
-    const wpx = Math.max(...pl.map(q => X(q))) - Math.min(...pl.map(q => X(q))), fs = Math.min(o.big ? 15 : 10, (wpx - 8) / Math.max(3, r.name.length * 0.6)); if (fs < 6) return; // Name muss in den Raum passen
-    if (o.big && fs > 10) stamp(g, r, c.x, c.y, { ink, mute: o.col('--mute'), display: o.css.getPropertyValue('--display') || 'sans-serif', mono, size: fs, name: true, maxW: wpx - 6 });
-    else { g.font = `700 ${fs}px ${o.css.getPropertyValue('--display') || 'sans-serif'}`; g.fillText(r.name, c.x, c.y); } }
 }
 function flatUi() {
   const { res, msgs } = flatInfo(), p = P.plan, n = p.rooms.filter(r => r.closed).length;
   $('#grFlatTitle').textContent = p.name || 'Wohnung';
-  $('#grFlatSum').textContent = `${res.T.size} von ${n} fertigen Räumen verbunden · ${fmtA(planArea(p))} · Wandstärke Standard ${p.wall || 15} cm`;
+  $('#grFlatSum').textContent = `${res.T.size} von ${n} fertigen Räumen verbunden · ${fmtA(planArea(p))} · Wände innen ${p.wall || 15} / außen ${p.wallOut || 30} cm`;
   const el = $('#grFlatMsgs'); el.innerHTML = '';
   if (!msgs.length && n > 1) el.innerHTML = '<p class="grok">✓ Alle Räume hängen zusammen und es geht auf.</p>';
   for (const m of msgs) { const d = document.createElement('p'); d.className = 'grwarn'; d.textContent = '⚠ ' + m; el.appendChild(d); }
@@ -350,6 +343,13 @@ function flatUi() {
 }
 $('#grFlatCard').onclick = () => { A().show('planFlat'); A().keepAwake(true); flatUi(); };
 $('#grFlatBack').onclick = () => A().goBack(false);
+// Nordpfeil: wohin zeigt Norden im Bild?
+$('#grNorth').onclick = () => {
+  const dirs = [[315, '↖'], [0, '↑'], [45, '↗'], [270, '←'], [null, '✕'], [90, '→'], [225, '↙'], [180, '↓'], [135, '↘']];
+  const bg = sheet('<h2>Wohin zeigt Norden im Bild?</h2><p class="mute" style="margin:-4px 0 10px;font-size:14px">Pfeil antippen. ✕ = kein Nordpfeil.</p><div class="grcompass" data-c></div><button class="ghost" data-close style="width:100%;margin-top:10px">Schließen</button>');
+  for (const [d, t] of dirs) { const b = document.createElement('button'); b.className = (P.plan.north == null ? d == null : P.plan.north === d) ? 'pri' : 'ghost'; b.textContent = t; b.dataset.n = d == null ? '' : d; b.onclick = async () => { if (d == null) delete P.plan.north; else P.plan.north = d; await save(); bg.remove(); flatUi(); }; bg.querySelector('[data-c]').appendChild(b); }
+};
+$('#grWallOut').addEventListener('input', () => { if (!P.plan) return; const v = parseFloat($('#grWallOut').value.replace(',', '.')); if (v > 0 && v < 200) P.plan.wallOut = v; else delete P.plan.wallOut; save(); renderPlan(); });
 $('#grWall').addEventListener('input', () => { if (!P.plan) return; const v = parseFloat($('#grWall').value.replace(',', '.')); if (v > 0 && v < 200) P.plan.wall = v; else delete P.plan.wall; save(); renderPlan(); });
 
 // ---------- Stufe 3: PDF + DXF, Dropbox ----------
@@ -403,6 +403,19 @@ function editWall(i) {
 }
 
 // ---------- Zeichnung ----------
+// Fertiger Raum: Wände mit Stärke, Tür-/Fenstersymbole, Maßketten, Raumstempel
+function drawClosed(g, r, pts, W, H, col, css) {
+  const mono = css.getPropertyValue('--mono') || 'monospace', n = pts.length, pad = 14; let u = 1, gf, bb, sc = 1;
+  for (let pass = 0; pass < 3; pass++) { gf = G.gfx(P.plan, r, pts, { chains: true, allLeaf: true, u }); bb = bboxOf(gf.ext); sc = Math.min((W - 2 * pad) / Math.max(1, bb.x1 - bb.x0), (H - 2 * pad) / Math.max(1, bb.y1 - bb.y0)); u = 1 / sc; } // Abstände der Maßketten hängen vom Maßstab ab
+  const ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc, X = p => ox + p.x * sc, Y = p => oy + p.y * sc;
+  P.view = { sc, pts: pts.map(p => ({ x: X(p), y: Y(p) })) };
+  gfxBand(g, gf, X, Y, col('--text'));
+  gfxRest(g, gf, X, Y, { fill: col('--acc-soft'), cut: col('--bg'), panel: col('--panel'), win: col('--acc'), door: col('--warn'), dim: col('--text'), mono });
+  if (P.op && P.op.wall != null) { const a = pts[P.op.wall], b = pts[(P.op.wall + 1) % n]; g.strokeStyle = col('--warn'); g.lineWidth = 6; g.beginPath(); g.moveTo(X(a), Y(a)); g.lineTo(X(b), Y(b)); g.stroke(); g.fillStyle = col('--warn'); g.beginPath(); g.arc(X(a), Y(a), 9, 0, 7); g.fill(); }
+  g.fillStyle = col('--acc'); g.beginPath(); g.arc(X(pts[0]), Y(pts[0]), 6, 0, 7); g.fill();
+  const c = pts.reduce((s, p) => ({ x: s.x + X(p) / n, y: s.y + Y(p) / n }), { x: 0, y: 0 }), wpx = (Math.max(...pts.map(q => q.x)) - Math.min(...pts.map(q => q.x))) * sc;
+  stamp(g, r, c.x, c.y, { ink: col('--text'), mute: col('--mute'), display: css.getPropertyValue('--display') || 'sans-serif', mono, size: Math.min(20, wpx / 8), maxW: wpx - 10 });
+}
 function draw() {
   const cv = $('#grCv'), r = P.room; if (!cv || !r) return;
   const box = cv.parentElement.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -412,6 +425,7 @@ function draw() {
   const ink = col('--text'), acc = col('--acc'), mute = col('--mute'), red = col('--red'), green = col('--green'), mono = css.getPropertyValue('--mono') || 'monospace';
   const w = r.walls; if (!w.length) { g.fillStyle = mute; g.font = `15px ${mono}`; g.textAlign = 'center'; g.fillText('Hier entsteht der Raum.', W / 2, H / 2); return; }
   const tr = G.trace(w); let pts = r.closed ? [...G.closedPoly(w)] : tr.pts;
+  if (r.closed) return drawClosed(g, r, pts, W, H, col, css);
   const all = r.closed ? pts : [...pts];
   // Vorschau-Stummel für links/rechts mit einrechnen, damit nichts aus dem Bild läuft
   const end = tr.pts[tr.pts.length - 1], hd = tr.heading * Math.PI / 180;
@@ -437,14 +451,6 @@ function draw() {
     const t = `${Math.round(w[i].cm)}`, tw = g.measureText(t).width + 10;
     const lx = mx + nx * 16, ly = my + ny * 16;
     g.fillStyle = col('--panel'); g.fillRect(lx - tw / 2, ly - 10, tw, 20); g.fillStyle = w[i].calc ? mute : ink; g.fillText(t, lx, ly);
-  }
-  if (r.closed) { // Türen/Fenster einzeichnen (Wände stehen schon)
-    const o2 = { col, css, loose: false, label: false, big: true, dims: true, allLeaf: true }; const sv = g.fillStyle;
-    g.save(); g.globalCompositeOperation = 'source-over';
-    paintOps(g, r, pts, X, Y, o2);
-    g.restore(); g.fillStyle = sv;
-    if (P.op && P.op.wall != null) { const a = pts[P.op.wall], b = pts[(P.op.wall + 1) % n]; g.strokeStyle = col('--warn'); g.lineWidth = 6; g.beginPath(); g.moveTo(X(a), Y(a)); g.lineTo(X(b), Y(b)); g.stroke();
-      g.fillStyle = col('--warn'); g.beginPath(); g.arc(X(a), Y(a), 9, 0, 7); g.fill(); }
   }
   // Startpunkt
   g.fillStyle = acc; g.beginPath(); g.arc(X(pts[0]), Y(pts[0]), 6, 0, 7); g.fill();

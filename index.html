@@ -440,6 +440,7 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
 .grmini-cv { width:120px; height:84px; position:relative; flex:none; border:1px solid var(--line); border-radius:4px; background:var(--bg); } .grmini-cv canvas { position:absolute; inset:0; }
 .grwarn { margin:4px 0; color:var(--warn); font-size:14px; } .grok { margin:4px 0; color:var(--green); font-size:14px; }
 #planFlat .grpanel { max-height:38vh; overflow:auto; }
+.grcompass { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; } .grcompass button { height:58px; font-size:24px; }
 </style>
 </head>
 <body>
@@ -483,6 +484,7 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
       <div class="row2"><div><label class="f">PLZ</label><input id="grPlz" inputmode="numeric" autocomplete="off"></div><div><label class="f">Ort</label><input id="grOrt" autocomplete="off"></div></div>
       <label class="f">Kunde</label><input id="grKunde" autocomplete="off">
       <label class="f">Standard-Wandstärke zwischen Räumen (cm)</label><input id="grWall" inputmode="decimal" placeholder="15" autocomplete="off">
+      <label class="f">Standard-Wandstärke außen (cm)</label><input id="grWallOut" inputmode="decimal" placeholder="30" autocomplete="off">
       <button class="danger" id="grDel" style="width:100%;margin-top:14px">Grundriss löschen</button>
     </details>
     <div class="card" id="grFlatCard" style="display:none"><div class="grmini-cv"><canvas id="grFlatMini"></canvas></div><b id="grFlatHint">Wohnung ansehen</b><span class="mute">›</span></div>
@@ -495,6 +497,7 @@ details.sadv > summary { padding:14px 0; font-weight:600; color:var(--mute); cur
   <header class="top">
     <button class="ghost" id="grFlatBack">‹</button>
     <h1 id="grFlatTitle">Wohnung</h1>
+    <button class="ghost" id="grNorth" aria-label="Norden setzen">🧭</button>
   </header>
   <div class="grstage"><canvas id="grFlatCv"></canvas></div>
   <div class="grpanel"><p class="mute" id="grFlatSum" style="margin:0 0 6px;font-family:var(--mono);font-size:13px"></p><div id="grFlatMsgs"></div></div>
