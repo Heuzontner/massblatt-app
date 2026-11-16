@@ -322,6 +322,14 @@ body:has(#undoBar.top.on) #toast { top:calc(env(safe-area-inset-top) + 124px); }
 #toast.on { display:block; }
 #toast.ok { background:#1f8a4c !important; color:#fff !important; border:2px solid #3cc47a; font-size:18px; font-weight:600; padding:16px 20px; width:min(92vw, 560px); box-shadow:0 8px 28px rgba(0,0,0,.45); }
 #toast.ok::before { content:'☁ '; }
+.grwiz-top { display:flex; align-items:center; justify-content:space-between; gap:8px; font:600 13px var(--mono); color:var(--mute); } .grwiz-top button { padding:6px 12px; min-width:44px; }
+.grwiz h2 { font-size:23px; line-height:1.2; margin:6px 0 4px; } .grwiz-hint { margin:0 0 8px; font-size:15px; color:var(--mute); min-height:2.6em; }
+.grwiz canvas { width:100%; display:block; border:1px solid var(--line); border-radius:6px; background:var(--bg); margin-bottom:10px; }
+.grwiz-wait { text-align:center; font-weight:600; font-size:17px; padding:10px; border:2px dashed #e8590c; border-radius:6px; color:#e8590c; }
+.grwiz-in { display:flex; gap:8px; align-items:center; margin-top:8px; } .grwiz-in span { font-size:14px; color:var(--mute); white-space:nowrap; } .grwiz-in input { flex:1; min-width:0; font-size:18px; } .grwiz-in button { padding:10px 16px; }
+.grwiz-chips { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; font-size:13px; color:var(--mute); } .grwiz-chips button { padding:8px 12px; }
+.grwiz .grgrid2 button, .grwiz .row2 button { min-height:52px; font-size:16px; } .grwiz-th { margin:10px 0 0; font-size:14px; color:var(--mute); }
+.grwiz-nav { display:flex; gap:8px; margin-top:12px; } .grwiz-nav button { height:56px; font-size:17px; } .grwiz-nav .ghost { flex:1; } .grwiz-nav .pri { flex:2; }
 #toast.warn, #toast.err { font-size:18px; font-weight:600; padding:16px 20px; width:min(92vw, 560px); box-shadow:0 8px 28px rgba(0,0,0,.45); }
 #toast.warn { background:#f5c400 !important; color:#16202a !important; border:2px solid #b38f00; } #toast.warn::before { content:'⚠ '; }
 #toast.err { background:#b3261e !important; color:#fff !important; border:2px solid #ff8a80; } #toast.err::before { content:'✕ '; }

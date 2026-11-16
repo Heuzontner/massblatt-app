@@ -200,6 +200,7 @@ async function setTurn(t, auto = false) {
 async function measure(cm) {
   const r = P.room; if (!r) return;
   if (fillInput(cm)) return;
+  if (wizOn()) { P.wiz.value(cm); return; }
   if (P.rect) return rectValue(cm);
   if (P.fan) return fanValue(cm);
   if (P.wantRh) { if (!(cm >= 150 && cm <= 700)) { A().toast(`${Math.round(cm)} cm passt nicht als Raumhöhe (150–700)`, 3000); A().beep(false); return; } P.wantRh = false; r.rh = cm; A().beep(true); await save(); roomUi(); A().toast(`Raumhöhe ${Math.round(cm)} cm ✓`, 2000); return; }
@@ -342,7 +343,113 @@ async function fanValue(cm) {
   t.forEach((v, i) => { r.walls[i].turn = v; delete r.walls[i].auto; }); r.diags = f.d; delete r.diag; r.adjust = 0; $('#grKey2').style.display = 'none'; await save(); roomUi();
   A().toast(`Winkel berechnet: ${t.map(v => Math.round((180 - Math.abs(v)) * 10) / 10 + '°').join(' · ')}`, 5000);
 }
-$('#grDoor').onclick = () => opStart('T'); $('#grWin').onclick = () => opStart('F'); $('#grOpCancel').onclick = () => { P.op = null; roomUi(); };
+$('#grDoor').onclick = () => opWizard('T'); $('#grWin').onclick = () => opWizard('F'); $('#grOpCancel').onclick = () => { P.op = null; roomUi(); };
+// ---------- Tür/Fenster einsetzen: ein Fenster, das Schritt für Schritt führt (Manuel 16.11.: „so einfach und verständlich wie möglich“) ----------
+// Bleibt offen, bis die Öffnung in der Wand sitzt. Jeder Schritt: großer Satz, was zu tun ist + Skizze, in der die Strecke markiert ist.
+// Der Laserwert landet immer im aktuellen Schritt; daneben kann man eintippen. Gespeichert wird erst bei „✓ Fertig“.
+const wizOn = () => !!(P.wiz && document.body.contains(P.wiz.bg));
+function opWizard(type) {
+  const r = P.room; if (!r || !r.closed) return;
+  P.op = null; P.wantDiag = false; P.wantRh = false;
+  const T = type === 'T', der = T ? 'die Tür' : 'das Fenster', Der = T ? 'Die Tür' : 'Das Fenster', zur = T ? 'zur Tür' : 'zum Fenster', others = P.plan.rooms.filter(x => x !== r), def = P.plan.wall || 15;
+  const steps = T ? ['wall', 'pos', 'w', ...(others.length ? ['to'] : []), 'how'] : ['wall', 'pos', 'w', 'done'];
+  const st = { step: 'wall', wall: null, from: 'a', d: null, w: null, to: null, hinge: 'a', swing: 'in', noLeaf: false, thick: null, touched: false, hints: [] };
+  const bg = sheet(`<div class="grwiz"><div class="grwiz-top"><span data-no></span><button class="ghost" data-x aria-label="Abbrechen">✕</button></div>
+    <h2 data-title></h2><p class="grwiz-hint" data-hint></p><canvas data-cv></canvas><div data-body></div>
+    <div class="grwiz-nav"><button class="ghost" data-prev>‹ Zurück</button><button class="pri" data-next>✓ Fertig</button></div></div>`);
+  const q = k => bg.querySelector(k), body = q('[data-body]'), L = () => r.walls[st.wall].cm, num = v => parseFloat(String(v).replace(',', '.'));
+  const pos = () => st.from === 'a' ? st.d : L() - st.d - (st.w || 0);   // gespeichert wird immer der Abstand vom Anfang der Wand
+  const close = () => { bg.remove(); P.wiz = null; roomUi(); };
+  const go = step => { st.step = step; const t = document.querySelector('#toast'); if (t) t.classList.remove('on'); paint(); }; // alte Warnung soll nicht über dem nächsten Schritt stehen bleiben
+  const next = () => go(steps[steps.indexOf(st.step) + 1]);
+  const fail = msg => { A().toast(msg, 4000, 'warn'); A().beep(false); };
+  const fromPartner = () => { if (st.touched) return; const x = P.plan.rooms.find(z => z.id === st.to), pr = x && (x.ops || []).find(z => z.type === 'T' && z.to === r.id && z.hinge); if (pr) { st.hinge = pr.hinge === 'a' ? 'b' : 'a'; st.swing = pr.swing === 'out' ? 'in' : 'out'; } };
+  // Zahl annehmen (Laser oder eingetippt)
+  const value = cm => {
+    if (st.step === 'wall') return fail('Erst die Wand antippen');
+    if (st.step === 'pos') { if (!(cm >= 0) || cm >= L() - 5) return fail(`Passt nicht: die Wand ist nur ${Math.round(L())} cm lang`); st.d = cm; A().beep(true); return next(); }
+    if (st.step === 'w') { if (!(cm > 5)) return fail('Breite zu klein'); if (st.d + cm > L() + 2) return fail(`Passt nicht: ${Math.round(st.d)} + ${Math.round(cm)} cm ist länger als die Wand (${Math.round(L())} cm)`); st.w = Math.min(cm, L() - st.d); A().beep(true); return next(); }
+    if (st.step === 'how') { if (cm > 0 && cm < 200) { st.thick = cm; A().beep(true); paint(); } return; }
+  };
+  const finish = async again => {
+    const o = { id: uid(), type, wall: st.wall, pos: Math.max(0, pos()), w: st.w, to: null };
+    if (T) { o.to = st.to; o.hinge = st.hinge; o.swing = st.swing; if (st.noLeaf) o.noLeaf = true; if (st.thick) o.thick = st.thick;
+      (r.ops = r.ops || []).push(o); const pr = G.partnerOf(P.plan, r, o); if (pr) { pr.hinge = o.hinge === 'a' ? 'b' : 'a'; pr.swing = o.swing === 'out' ? 'in' : 'out'; if (o.noLeaf) pr.noLeaf = true; else delete pr.noLeaf; } }
+    else (r.ops = r.ops || []).push(o);
+    A().beep(true); await save(); close(); A().toast(`${Der} sitzt in Wand ${o.wall + 1}`, 1800); if (again) opWizard(type);
+  };
+  const inputRow = ph => `<div class="grwiz-in"><span>oder eintippen:</span><input data-val inputmode="decimal" autocomplete="off" placeholder="${ph}"><button class="ghost" data-ok>OK</button></div>`;
+  const wireInput = () => { const i = q('[data-val]'); if (!i) return; const ok = () => { const v = num(i.value); if (isNaN(v)) return fail('Bitte eine Zahl in cm'); value(v); }; q('[data-ok]').onclick = ok; i.onkeydown = e => { if (e.key === 'Enter') ok(); }; };
+  function paint() {
+    const i = steps.indexOf(st.step); q('[data-no]').textContent = `${T ? 'Tür' : 'Fenster'} einsetzen · Schritt ${i + 1} von ${steps.length}`;
+    q('[data-prev]').style.visibility = i ? '' : 'hidden'; const nx = q('[data-next]'); nx.style.display = st.step === 'how' || st.step === 'done' ? '' : 'none';
+    let title = '', hint = '', html = '';
+    if (st.step === 'wall') { title = `An welcher Wand ist ${der}?`; hint = 'Die Wand im Bild antippen – oder unten.'; html = `<div class="grgrid2">${r.walls.map((w, k) => `<button class="ghost" data-w="${k}">Wand ${k + 1} · ${Math.round(w.cm)} cm</button>`).join('')}</div>`; }
+    else if (st.step === 'pos') { title = `Miss von der Ecke bis ${zur}`; hint = `Laser in die Ecke mit dem orangen Punkt halten und bis zur ersten Kante ${T ? 'der Tür' : 'des Fensters'} messen.`;
+      html = `<div class="grwiz-wait">📏 Warte auf den Laser …</div>${inputRow('cm')}<div class="row2" style="margin-top:8px"><button class="ghost" data-flip>⇄ Andere Ecke nehmen</button><button class="ghost" data-zero>Direkt an der Ecke</button></div>`; }
+    else if (st.step === 'w') { title = `Miss die Breite ${T ? 'der Tür' : 'des Fensters'}`; hint = `Von Kante zu Kante der Öffnung – im Bild orange. (Abstand ${Math.round(st.d)} cm ✓)`;
+      html = `<div class="grwiz-wait">📏 Warte auf den Laser …</div>${inputRow('cm')}${st.hints.length ? `<div class="grwiz-chips"><span>aus dem Massblatt:</span>${st.hints.map(v => `<button class="ghost" data-hint="${v}">${v} cm</button>`).join('')}</div>` : ''}`; }
+    else if (st.step === 'to') { title = 'Wohin führt die Tür?'; hint = 'Den Raum auf der anderen Seite antippen.'; html = `<div class="grgrid2">${others.map(x => `<button class="ghost" data-to="${x.id}">${esc(x.name)}</button>`).join('')}</div><button class="ghost" data-to="" style="width:100%;margin-top:8px">Nach außen / weiß ich noch nicht</button>`; }
+    else if (st.step === 'how') { title = 'Wie geht die Tür auf?'; hint = 'Antippen, bis das Bild so aussieht wie die echte Tür. Dann „✓ Fertig“.';
+      html = `<div class="row2"><button data-h="a">◧ Anschlag links</button><button data-h="b">Anschlag rechts ◨</button></div><div class="row2" style="margin-top:8px"><button data-sw="in">geht herein</button><button data-sw="out">geht hinaus</button></div>
+        <button data-noleaf style="width:100%;margin-top:8px">Durchgang ohne Türblatt</button><p class="grwiz-th">Wandstärke hier: <b>${st.thick ? Math.round(st.thick) : def} cm</b>${st.thick ? '' : ' (Standard)'} – anders? Einfach an der Laibung messen.</p>`; }
+    else { title = 'Passt das so?'; hint = `${Der} sitzt ${Math.round(st.d)} cm von der Ecke mit dem orangen Punkt und ist ${Math.round(st.w)} cm breit.`; html = `<button class="ghost" data-again style="width:100%">✓ Fertig und noch ein Fenster</button>`; }
+    q('[data-title]').textContent = title; q('[data-hint]').textContent = hint; body.innerHTML = html; wireInput();
+    body.querySelectorAll('[data-w]').forEach(b => { b.onclick = () => pickWall(+b.dataset.w); });
+    const f = q('[data-flip]'); if (f) f.onclick = () => { st.from = st.from === 'a' ? 'b' : 'a'; draw(); }; const z = q('[data-zero]'); if (z) z.onclick = () => value(0);
+    body.querySelectorAll('[data-hint]').forEach(b => { b.onclick = () => value(+b.dataset.hint); });
+    body.querySelectorAll('[data-to]').forEach(b => { b.onclick = () => { st.to = b.dataset.to || null; fromPartner(); next(); }; });
+    body.querySelectorAll('[data-h]').forEach(b => { b.className = b.dataset.h === st.hinge && !st.noLeaf ? 'pri' : 'ghost'; b.onclick = () => { st.hinge = b.dataset.h; st.noLeaf = false; st.touched = true; paint(); }; });
+    body.querySelectorAll('[data-sw]').forEach(b => { b.className = b.dataset.sw === st.swing && !st.noLeaf ? 'pri' : 'ghost'; b.onclick = () => { st.swing = b.dataset.sw; st.noLeaf = false; st.touched = true; paint(); }; });
+    const nl = q('[data-noleaf]'); if (nl) { nl.className = st.noLeaf ? 'pri' : 'ghost'; nl.onclick = () => { st.noLeaf = !st.noLeaf; paint(); }; }
+    const ag = q('[data-again]'); if (ag) ag.onclick = () => finish(true);
+    draw();
+  }
+  const pickWall = k => { st.wall = k; st.d = st.w = null; st.from = 'a'; next(); if (T) wizHints(); };
+  async function wizHints() { // Türbreiten aus dem übernommenen Massblatt-Projekt als Vorschlag
+    const p = P.plan; if (!p.fromMassblatt) return;
+    try { const names = await A().rooms(), key = (names.find(([k, t]) => (t || k) === r.name) || [r.name])[0], shots = await A().shotsOf(p.fromMassblatt);
+      st.hints = [...new Set(shots.filter(s => s.room === key || s.room === r.name).flatMap(s => s.arrows || []).filter(a => a.kind === 'B' && a.cm >= 55 && a.cm <= 110).map(a => Math.round(a.cm)))].sort((a, b) => a - b).slice(0, 4); } catch (e) { st.hints = []; }
+    if (wizOn() && st.step === 'w') paint();
+  }
+  // Skizze: Raum von oben, die gewählte Wand und die zu messende Strecke hervorgehoben
+  let view = null;
+  function draw() {
+    const cv = q('[data-cv]'), W = cv.clientWidth || 320, H = 210, dpr = window.devicePixelRatio || 1; cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim() || '#888', ink = col('--text'), warn = '#e8590c', acc = col('--acc'), mono = css.getPropertyValue('--mono') || 'monospace';
+    const pts = [...G.closedPoly(r.walls)], n = pts.length, bb = bboxOf(pts), pad = 34, sc = Math.min((W - 2 * pad) / Math.max(1, bb.x1 - bb.x0), (H - 2 * pad) / Math.max(1, bb.y1 - bb.y0));
+    const ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc, S = p => ({ x: ox + p.x * sc, y: oy + p.y * sc }), sp = pts.map(S); view = sp;
+    const line = (a, b, c, w, dash) => { g.strokeStyle = c; g.lineWidth = w; g.setLineDash(dash || []); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); g.setLineDash([]); };
+    const dot = (p, c, rad) => { g.fillStyle = c; g.beginPath(); g.arc(p.x, p.y, rad, 0, 7); g.fill(); };
+    g.lineCap = 'round'; g.beginPath(); sp.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath(); g.fillStyle = col('--acc-soft'); g.fill();
+    for (let i = 0; i < n; i++) line(sp[i], sp[(i + 1) % n], st.wall === i ? warn : ink, st.wall === i ? 7 : 5);
+    // vorhandene Türen/Fenster als helle Stücke, damit man sieht, was schon da ist
+    const along = (i, cm) => { const a = sp[i], b = sp[(i + 1) % n], t = cm / (r.walls[i].cm || 1); return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }; };
+    for (const o of r.ops || []) line(along(o.wall, o.pos), along(o.wall, o.pos + o.w), o.type === 'T' ? col('--panel') : acc, 5);
+    g.font = `600 13px ${mono}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (st.step === 'wall') { for (let i = 0; i < n; i++) { const m = along(i, r.walls[i].cm / 2); dot(m, col('--yellow') || '#f5c400', 13); g.fillStyle = '#16202a'; g.fillText(String(i + 1), m.x, m.y + 1); } return; }
+    const i = st.wall, Lw = L(), a = sp[i], b = sp[(i + 1) % n], dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1, inn = { x: -dy / len, y: dx / len }; // im Uhrzeigersinn gelaufen → rechts der Laufrichtung ist innen
+    const off = (p, k) => ({ x: p.x + inn.x * k, y: p.y + inn.y * k }), corner = st.from === 'a' ? a : b, A0 = cm => along(i, st.from === 'a' ? cm : Lw - cm);
+    const label = (p, t, c) => { const w = g.measureText(t).width + 10; g.fillStyle = col('--panel'); g.fillRect(p.x - w / 2, p.y - 10, w, 20); g.fillStyle = c; g.fillText(t, p.x, p.y + 1); };
+    if (st.step === 'pos') { const e = A0(Math.min(Lw * 0.38, Lw - 5)); line(off(corner, 14), off(e, 14), warn, 3, [7, 6]); dot(off(e, 14), warn, 4); dot(corner, warn, 10); label(off(A0(Lw * 0.19), 30), '? cm', warn); return; }
+    if (st.step === 'w') { const p0 = A0(st.d), p1 = A0(Math.min(Lw, st.d + Math.max(60, Lw * 0.25))); dot(corner, warn, 7); line(off(corner, 14), off(p0, 14), ink, 2); label(off(A0(st.d / 2), 30), `${Math.round(st.d)}`, ink);
+      line(p0, p1, col('--panel'), 7); line(off(p0, 14), off(p1, 14), warn, 3, [7, 6]); line(off(p0, 4), off(p0, 24), warn, 3); label(off(A0(st.d + Math.max(60, Lw * 0.25) / 2), 46), '? cm', warn); return; }
+    // fertig: Öffnung an ihrem Platz, Tür mit Blatt und Bogen
+    const p0 = along(i, Math.max(0, pos())), p1 = along(i, Math.max(0, pos()) + st.w);
+    dot(corner, warn, 7);
+    if (!T) { line(p0, p1, col('--panel'), 9); line(p0, p1, acc, 3); line(off(p0, -4), off(p0, 4), acc, 3); line(off(p1, -4), off(p1, 4), acc, 3); return; }
+    line(p0, p1, col('--panel'), 9); line(off(p0, -5), off(p0, 5), warn, 3); line(off(p1, -5), off(p1, 5), warn, 3); if (st.noLeaf) return;
+    const hp = st.hinge === 'a' ? p0 : p1, fp = st.hinge === 'a' ? p1 : p0, wpx = Math.hypot(fp.x - hp.x, fp.y - hp.y), sgn = st.swing === 'in' ? 1 : -1, tip = { x: hp.x + inn.x * wpx * sgn, y: hp.y + inn.y * wpx * sgn };
+    line(hp, tip, warn, 3); const a0 = Math.atan2(fp.y - hp.y, fp.x - hp.x), a1 = Math.atan2(tip.y - hp.y, tip.x - hp.x); let d = a1 - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+    g.strokeStyle = warn; g.lineWidth = 1.5; g.setLineDash([5, 4]); g.beginPath(); g.arc(hp.x, hp.y, wpx, a0, a1, d < 0); g.stroke(); g.setLineDash([]);
+  }
+  q('[data-cv]').addEventListener('click', e => { if (st.step !== 'wall' || !view) return; const b = e.currentTarget.getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top; let best = -1, bd = 40;
+    for (let i = 0; i < view.length; i++) { const a = view[i], c = view[(i + 1) % view.length], dx = c.x - a.x, dy = c.y - a.y, t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1))), d = Math.hypot(x - a.x - t * dx, y - a.y - t * dy); if (d < bd) { bd = d; best = i; } }
+    if (best >= 0) pickWall(best); });
+  q('[data-x]').onclick = close; q('[data-prev]').onclick = () => { const i = steps.indexOf(st.step); if (i > 0) go(steps[i - 1]); }; q('[data-next]').onclick = () => finish(false);
+  P.wiz = { bg, value, st }; paint();
+}
 // Tür: in welchen Raum führt sie, und wie dick ist die Wand dort (an der Laibung messen)?
 function doorTarget(o) {
   const others = P.plan.rooms.filter(x => x !== P.room), def = P.plan.wall || 15;
