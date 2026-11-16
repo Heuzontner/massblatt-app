@@ -10,9 +10,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.17.1';
+const VERSION = '3.18.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Dropbox-Upload geschafft: die Bestätigung erscheint jetzt groß auf grüner Fläche', 'Grundriss: Durchgang ohne Tür, Räume Wand an Wand, Kontrollmaß, Rechteck-Schnellstart, Diagonalen bei mehr als vier Wänden', 'Grundriss: Kopie/Spiegelkopie, Nische/Vorsprung, Säulen, Kamine, Schächte, Heizkörper, Sanitär, Treppe, Dachschräge', 'Grundriss: Raumliste und Wandflächen im PDF, schraffierte Wände im DXF, Bild in hoher Auflösung, Zoomen mit zwei Fingern', 'Grundriss: Suche und Archiv, aus Massblatt-Projekt oder Kalendertermin anlegen, Türbreiten aus dem Massblatt als Vorschlag', 'Grundriss-DXF: jede Wand ist nur noch einmal bemaßt', 'Grundriss-DXF: Wände verbundener Räume sind zu einer Wandfläche verschmolzen, Tür- und Fensteröffnungen gehen ganz durch die Wand', 'Grundriss: Wände mit Stärke, Maßketten, Nordpfeil; PDF mit Planrahmen, Schriftfeld und Maßstabsbalken', 'Grundriss: richtige Tür- und Fenstersymbole (Türblatt mit Aufschlag, Fensterrahmen), Raumhöhe je Raum, Raumstempel mit Fläche, Umfang und Rh – auch in PDF und DXF', 'Fotoliste: das erste Foto eines Raums heißt nur „Kz1“, erst das zweite „Kz1-2“', 'Grundriss Stufe 3: maßstäbliches PDF und DXF für BricsCAD, Ablage in der Dropbox unter Grundrisse/Kunde; Grundrisse sind jetzt in der Gesamt-Sicherung', 'Grundriss Stufe 2: Türen und Fenster auf die Wand setzen, Räume hängen sich über ihre Türen zur ganzen Wohnung zusammen (mit Kontrolle, ob es aufgeht)', 'Grundriss: Richtung nur noch per Tippen (links/rechts); „↶ Richtung ändern“ nimmt die letzte Richtung zurück', 'Neuer Reiter „Grundriss“: Raum für Raum mit dem Laser ablaufen, die App zeichnet mit und rechnet die Fläche (getrennt vom Massblatt)', 'Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
+const NEWS = ['Neuer Knopf „Netz“ im Projekt (neben „Laser“): zeigt, ob wirklich Internet da ist, merkt sich den Namen deines Hotspots und versucht am Android-Tablet die WLAN-Einstellungen zu öffnen. Ehrlich: selbst mit dem Hotspot verbinden darf keine Web-App – im Knopf stehen Tipps, damit das Tablet von selbst verbindet', 'Kommt das Netz zurück, laden wartende PDFs wie bisher von selbst in die Dropbox', 'Grundriss-Ansicht: Zwischenwände so dick wie eingestellt (nicht mehr doppelt), Tür- und Fensteröffnungen gehen ganz durch die Wand – wie schon im PDF und DXF', 'Dropbox-Upload geschafft: die Bestätigung erscheint jetzt groß auf grüner Fläche', 'Grundriss: Durchgang ohne Tür, Räume Wand an Wand, Kontrollmaß, Rechteck-Schnellstart, Diagonalen bei mehr als vier Wänden', 'Grundriss: Kopie/Spiegelkopie, Nische/Vorsprung, Säulen, Kamine, Schächte, Heizkörper, Sanitär, Treppe, Dachschräge', 'Grundriss: Raumliste und Wandflächen im PDF, schraffierte Wände im DXF, Bild in hoher Auflösung, Zoomen mit zwei Fingern', 'Grundriss: Suche und Archiv, aus Massblatt-Projekt oder Kalendertermin anlegen, Türbreiten aus dem Massblatt als Vorschlag', 'Grundriss-DXF: jede Wand ist nur noch einmal bemaßt', 'Grundriss-DXF: Wände verbundener Räume sind zu einer Wandfläche verschmolzen, Tür- und Fensteröffnungen gehen ganz durch die Wand', 'Grundriss: Wände mit Stärke, Maßketten, Nordpfeil; PDF mit Planrahmen, Schriftfeld und Maßstabsbalken', 'Grundriss: richtige Tür- und Fenstersymbole (Türblatt mit Aufschlag, Fensterrahmen), Raumhöhe je Raum, Raumstempel mit Fläche, Umfang und Rh – auch in PDF und DXF', 'Fotoliste: das erste Foto eines Raums heißt nur „Kz1“, erst das zweite „Kz1-2“', 'Grundriss Stufe 3: maßstäbliches PDF und DXF für BricsCAD, Ablage in der Dropbox unter Grundrisse/Kunde; Grundrisse sind jetzt in der Gesamt-Sicherung', 'Grundriss Stufe 2: Türen und Fenster auf die Wand setzen, Räume hängen sich über ihre Türen zur ganzen Wohnung zusammen (mit Kontrolle, ob es aufgeht)', 'Grundriss: Richtung nur noch per Tippen (links/rechts); „↶ Richtung ändern“ nimmt die letzte Richtung zurück', 'Neuer Reiter „Grundriss“: Raum für Raum mit dem Laser ablaufen, die App zeichnet mit und rechnet die Fläche (getrennt vom Massblatt)', 'Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -65,6 +65,7 @@ function show(id, viaPop = false) {
   $$('.screen').forEach(s => s.classList.toggle('on', s.id === id)); if (id !== 'cam') stopCam();
   keepAwake(id === 'proj' || id === 'cam' || id === 'ed');
   offlineUi();
+  if (id === 'proj') setTimeout(() => netCheck(), 300); // 3.18: Netz-Knopf im Projekt gleich aktuell
 }
 // Bildschirm wach halten (3.9): im Projekt, in der Kamera und im Foto. Der Browser gibt die Sperre frei, sobald die App
 // in den Hintergrund geht – beim Zurückkommen wird sie neu angefordert.
@@ -229,6 +230,71 @@ document.addEventListener('click', async e => {
     if (err.name !== 'NotFoundError') toast('Laser: ' + err.message, 4000);
   }
 });
+
+// ---------------- Netz / Hotspot (3.18, Manuel 16.11.) ----------------
+// Ehrlich: Eine Web-App darf sich NICHT selbst mit einem WLAN verbinden – das erlaubt kein Browser.
+// Der Knopf zeigt daher, ob wirklich Internet da ist (echter Test gegen den eigenen Server, nicht nur navigator.onLine),
+// versucht unter Android die WLAN-Einstellungen zu öffnen und merkt sich den Namen des Hotspots.
+// Kommt das Netz zurück, lädt die Warteschlange wie bisher von selbst in die Dropbox.
+const isAndroid = /Android/i.test(navigator.userAgent);
+const NET = { ok: null, busy: false, t: 0, last: 0 };
+async function netCheck() {
+  if (NET.busy) return NET.ok; NET.busy = true; const was = NET.ok; netUi();
+  let ok = false;
+  if (navigator.onLine !== false) {
+    const ac = new AbortController(), to = setTimeout(() => ac.abort(), 5000);
+    try { const r = await fetch('pin.json?net=' + Date.now(), { method: 'HEAD', cache: 'no-store', signal: ac.signal }); ok = r.ok || r.status > 0; } catch (e) { ok = false; }
+    clearTimeout(to);
+  }
+  NET.ok = ok; NET.busy = false; NET.last = Date.now(); netUi();
+  if (ok && was === false) { offlineUi(); setTimeout(processQueue, 800); toast('Wieder online', 2000); } // Netz zurück: Warteschlange wie bisher hochladen
+  return ok;
+}
+function netUi() {
+  const off = NET.ok === false;
+  $$('[data-net]').forEach(el => {
+    el.classList.toggle('ok', NET.ok === true); el.classList.toggle('off', off); el.classList.toggle('busy', NET.busy && NET.ok == null);
+    el.querySelector('span').textContent = NET.ok === true ? 'Netz ✓' : off ? 'Kein Netz' : 'Netz …';
+  });
+  const st = $('#netStat'); if (st) { st.className = 'netstat' + (NET.ok === true ? ' ok' : off ? ' off' : ''); st.textContent = NET.busy ? 'Prüfe Internet …' : NET.ok === true ? '✓ Internet ist da' : off ? '✗ Kein Internet' : '…'; }
+}
+// alle 20 s prüfen, solange ein Projekt offen ist; sofort nach Rückkehr in die App (z. B. aus den WLAN-Einstellungen)
+setInterval(() => { const scr = nav.stack[nav.stack.length - 1]; if (scr === 'proj' && !document.hidden) netCheck(); }, 20000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(netCheck, 600); });
+window.addEventListener('online', () => setTimeout(netCheck, 300));
+window.addEventListener('offline', () => { NET.ok = false; netUi(); });
+document.addEventListener('click', e => { if (e.target.closest('[data-net]')) netSheet(); });
+function netSheet() {
+  if ($('#netBox')) return;
+  const bg = document.createElement('div'); bg.className = 'sheet-bg on'; bg.id = 'netBox';
+  bg.innerHTML = `<div class="sheet"><h2>Netz / Hotspot</h2>
+    <div class="netstat" id="netStat">…</div>
+    <label class="f">Mein Hotspot (Name)</label><input data-name placeholder="z. B. Manuel-Handy" autocomplete="off">
+    ${isAndroid ? `<a data-wifi href="intent:#Intent;action=android.settings.WIFI_SETTINGS;end" style="display:block;margin-top:12px;text-decoration:none"><button class="pri" style="width:100%">WLAN-Einstellungen öffnen</button></a>` : ''}
+    <p class="nethint" data-hint></p>
+    <details style="margin-top:12px"><summary>Damit das Tablet von selbst verbindet</summary><ul class="news">
+      <li>Die App kann sich <b>nicht selbst</b> mit dem Hotspot verbinden – das erlaubt Android keiner Web-App.</li>
+      <li>Am <b>Handy</b>: Hotspot-Einstellungen → „Hotspot automatisch ausschalten“ (Zeitlimit) <b>aus</b>. Sonst schaltet sich der Hotspot ab, wenn kurz niemand surft.</li>
+      <li>Am <b>Tablet</b>: WLAN → Hotspot antippen → „Automatisch verbinden“ bzw. „Automatisch neu verbinden“ <b>ein</b>.</li>
+      <li>Samsung-Handy + Samsung-Tablet mit gleichem Samsung-Konto: „Auto Hotspot“ einschalten – dann verbindet das Tablet ganz von selbst.</li>
+      <li>Schnellweg: vom oberen Rand zweimal nach unten wischen → WLAN-Kachel <b>lange drücken</b> → Hotspot antippen.</li></ul></details>
+    <div style="display:flex;gap:8px;margin-top:12px"><button class="ghost" data-again style="flex:1">Nochmal prüfen</button><button class="ghost" data-close style="flex:1">Schließen</button></div></div>`;
+  const name = bg.querySelector('[data-name]'), hint = bg.querySelector('[data-hint]'), hs = () => (opt.hotspot || '').trim();
+  name.value = hs();
+  name.onchange = () => { opt.hotspot = name.value.trim(); saveOpt(); };
+  const quick = () => `Schnellweg: vom oberen Rand zweimal nach unten wischen → WLAN-Kachel lange drücken → ${hs() ? `„${hs()}“` : 'Hotspot'} antippen.`;
+  const wifi = bg.querySelector('[data-wifi]');
+  if (wifi) wifi.onclick = () => { // ob Android die Einstellungen öffnet, hängt vom Gerät ab – bleibt die App sichtbar, hat es nicht geklappt
+    hint.classList.remove('on'); let left = false; const onHide = () => { if (document.hidden) left = true; };
+    document.addEventListener('visibilitychange', onHide);
+    setTimeout(() => { document.removeEventListener('visibilitychange', onHide); if (!left) { hint.textContent = 'Dieses Gerät lässt das Öffnen aus der App nicht zu. ' + quick(); hint.classList.add('on'); } }, 1500);
+  };
+  if (!isAndroid) { hint.textContent = quick().replace('vom oberen Rand zweimal nach unten wischen → WLAN-Kachel lange drücken', 'Einstellungen → WLAN'); hint.classList.add('on'); }
+  bg.querySelector('[data-again]').onclick = () => netCheck();
+  bg.querySelector('[data-close]').onclick = () => { opt.hotspot = name.value.trim(); saveOpt(); bg.remove(); };
+  bg.addEventListener('click', e => { if (e.target === bg) bg.querySelector('[data-close]').click(); });
+  document.body.appendChild(bg); netUi(); netCheck();
+}
 
 // ---------------- Projekte ----------------
 // Projekte ohne Papierkorb (gelöschte bleiben 30 Tage als p.deleted liegen)

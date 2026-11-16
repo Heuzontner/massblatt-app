@@ -403,7 +403,15 @@ function drawFlat(cv, big, exp) {
   if (big && !exp && P.fv) { g.translate(W / 2 + P.fv.x, H / 2 + P.fv.y); g.scale(P.fv.z, P.fv.z); g.translate(-W / 2, -H / 2); }   // Zoomen und Verschieben mit den Fingern
   const pad = big ? 30 : 8, sc = Math.min((W - 2 * pad) / Math.max(1, bb.x1 - bb.x0), (H - 2 * pad) / Math.max(1, bb.y1 - bb.y0)), ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc;
   const X = q => ox + q.x * sc, Y = q => oy + q.y * sc, css = getComputedStyle(document.documentElement), col = n => (exp ? PRINT[n] : css.getPropertyValue(n).trim()) || '#888', mono = css.getPropertyValue('--mono') || 'monospace', display = css.getPropertyValue('--display') || 'sans-serif';
-  for (const x of gfs) gfxBand(g, x.gf, X, Y, x.it.loose ? col('--mute') : col('--text'));
+  // 3.18: Wände auf eigener Ebene zeichnen und die Rauminnenflächen + Öffnungen herausschneiden (wie im PDF/DXF).
+  // Sonst ragt die Außenwand eines Raums in den Nachbarraum, die Zwischenwand wirkt doppelt so dick und liegt quer über der Türöffnung.
+  // Bild-Ausgabe (weißer Grund, sehr groß): direkt weiß übermalen statt zweiter Riesen-Ebene (Speicher am Tablet)
+  const wl = exp ? null : document.createElement('canvas'); if (wl) { wl.width = cv.width; wl.height = cv.height; } const h = wl ? wl.getContext('2d') : g; if (wl) h.setTransform(g.getTransform());
+  for (const x of gfs) gfxBand(h, x.gf, X, Y, x.it.loose ? col('--mute') : col('--text'));
+  h.save(); if (wl) h.globalCompositeOperation = 'destination-out'; h.fillStyle = wl ? '#000' : '#ffffff';
+  const hp = pl => { h.beginPath(); pl.forEach((q, i) => i ? h.lineTo(X(q), Y(q)) : h.moveTo(X(q), Y(q))); h.closePath(); h.fill(); };
+  for (const x of gfs) { hp(x.gf.inner); for (const c of x.gf.cutsX) hp(c); }
+  h.restore(); if (wl) { g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(wl, 0, 0); g.restore(); }
   for (const x of gfs) gfxRest(g, x.gf, X, Y, { fill: col('--acc-soft'), cut: col('--bg'), panel: col('--panel'), win: col('--acc'), door: col('--warn'), dim: col('--mute'), wall: col('--text'), mono });
   for (const { it } of gfs) { const pl = it.poly, n = pl.length, c = pl.reduce((s, q) => ({ x: s.x + X(q) / n, y: s.y + Y(q) / n }), { x: 0, y: 0 }), wpx = (Math.max(...pl.map(q => q.x)) - Math.min(...pl.map(q => q.x))) * sc;
     const fs = Math.min(big ? 15 : 10, (wpx - 8) / Math.max(3, it.room.name.length * 0.6)); if (fs < 6) continue; g.fillStyle = col('--text'); g.textAlign = 'center'; g.textBaseline = 'middle';
