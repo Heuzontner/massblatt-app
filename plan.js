@@ -16,7 +16,7 @@ function odb() {
 const tx = async (mode, fn) => { const d = await odb(); return new Promise((res, rej) => { const t = d.transaction('plans', mode); const r = fn(t.objectStore('plans')); let out; if (r) r.onsuccess = () => { out = r.result; }; t.oncomplete = () => res(out); t.onerror = () => rej(t.error); }); };
 const store = { all: () => tx('readonly', s => s.getAll()), get: id => tx('readonly', s => s.get(id)), put: v => tx('readwrite', s => s.put(v)), del: id => tx('readwrite', s => s.delete(id)), clear: () => tx('readwrite', s => s.clear()) };
 
-const P = { plan: null, room: null, hold: null };
+const P = { plan: null, room: null, hold: null, fv: { z: 1, x: 0, y: 0 } };
 const save = async () => { if (!P.plan) return; P.plan.updated = Date.now(); await store.put(P.plan); };
 const fmtM = cm => (cm / 100).toFixed(2).replace('.', ',') + ' m';
 const fmtA = m2 => m2.toFixed(2).replace('.', ',') + ' m²';
@@ -31,14 +31,24 @@ function setTab(t) {
 }
 document.querySelectorAll('#homeTabs button').forEach(b => { b.onclick = () => setTab(b.dataset.tab); });
 
+let showArch = false;
 async function renderList() {
-  const el = $('#grList'); const all = (await store.all()).sort((a, b) => (b.updated || 0) - (a.updated || 0)); el.innerHTML = '';
-  if (!all.length) { el.innerHTML = '<p class="mute" style="text-align:center;margin:40px 12px">Noch kein Grundriss.<br>Unten auf „+ Neuer Grundriss“ tippen, dann Raum für Raum mit dem Laser ablaufen.</p>'; return; }
+  const el = $('#grList'), q = ($('#grSearch').value || '').trim().toLowerCase(), every = (await store.all()).sort((a, b) => (b.updated || 0) - (a.updated || 0)), nArch = every.filter(p => p.archived).length;
+  if (!nArch) showArch = false; $('#grArch').style.display = nArch ? '' : 'none'; $('#grArch').textContent = showArch ? '‹ Aktive Grundrisse' : `📦 Archiv (${nArch})`;
+  const all = every.filter(p => !!p.archived === showArch && (!q || [p.name, p.kunde, p.plz, p.ortName].some(v => String(v || '').toLowerCase().includes(q)))); el.innerHTML = '';
+  const evs = showArch ? [] : await A().planEvents().catch(() => []), open = evs.filter(e => !every.some(p => p.gcalId === e.id)); $('#grCal').style.display = open.length ? '' : 'none'; $('#grCal').textContent = `📅 Termine heute (${open.length})`; $('#grCal').onclick = () => calSheet(open);
+  if (!all.length) { el.innerHTML = `<p class="mute" style="text-align:center;margin:40px 12px">${q ? 'Nichts gefunden.' : showArch ? 'Das Archiv ist leer.' : 'Noch kein Grundriss.<br>Unten auf „+ Neuer Grundriss“ tippen, dann Raum für Raum mit dem Laser ablaufen.'}</p>`; return; }
   for (const p of all) {
     const c = document.createElement('div'); c.className = 'card'; const n = (p.rooms || []).length, done = (p.rooms || []).filter(r => r.closed).length;
     c.innerHTML = `<div class="t"><b>${esc(p.name || 'Ohne Adresse')}</b><small>${esc([p.kunde, [p.plz, p.ortName].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}${p.kunde || p.plz ? ' · ' : ''}${n} ${n === 1 ? 'Raum' : 'Räume'}${n ? ` (${done} fertig)` : ''}${planArea(p) ? ' · ' + fmtA(planArea(p)) : ''}</small></div><span class="mute">›</span>`;
     c.onclick = () => openPlan(p.id); el.appendChild(c);
   }
+}
+$('#grSearch').addEventListener('input', renderList); $('#grArch').onclick = () => { showArch = !showArch; renderList(); };
+function calSheet(evs) {
+  const bg = sheet('<h2>Grundriss aus Termin</h2><div data-list></div><button class="ghost" data-close style="width:100%;margin-top:8px">Abbrechen</button>');
+  for (const e of evs) { const b = document.createElement('button'); b.className = 'ghost grpick'; const t = new Date(e.start); b.innerHTML = `<b>${esc(e.name)}</b><small>${isNaN(t) ? '' : t.toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' }) + ' · '}${esc([e.kunde, [e.plz, e.ortName].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}</small>`;
+    b.onclick = async () => { bg.remove(); const p = { id: uid(), name: e.name, plz: e.plz, ortName: e.ortName, kunde: e.kunde, gcalId: e.id, rooms: [], created: Date.now(), updated: Date.now() }; await store.put(p); openPlan(p.id); }; bg.querySelector('[data-list]').appendChild(b); }
 }
 
 // ---------- Grundriss-Projekt ----------
@@ -49,6 +59,7 @@ $('#grNew').onclick = async () => {
 async function openPlan(id) {
   P.plan = await store.get(id); if (!P.plan) return; P.room = null;
   $('#grStr').value = P.plan.name || ''; $('#grPlz').value = P.plan.plz || ''; $('#grOrt').value = P.plan.ortName || ''; $('#grKunde').value = P.plan.kunde || ''; $('#grWall').value = P.plan.wall || ''; $('#grWallOut').value = P.plan.wallOut || '';
+  $('#grArchive').textContent = P.plan.archived ? '📤 Aus dem Archiv holen' : '📦 Archivieren';
   renderPlan(); A().show('plan'); A().keepAwake(true);
 }
 function renderPlan() {
@@ -61,12 +72,13 @@ function renderPlan() {
     c.onclick = () => openRoom(r.id); el.appendChild(c);
   }
   const nd = p.rooms.filter(r => r.closed).length; $('#grFlatCard').style.display = nd ? '' : 'none';
-  if (nd) { const { res, msgs } = flatInfo(); $('#grFlatHint').textContent = nd < 2 ? 'Wohnung ansehen' : msgs.length ? `Wohnung ansehen · ${msgs.length} ${msgs.length === 1 ? 'Hinweis' : 'Hinweise'}` : `Wohnung ansehen · ${res.T.size} Räume verbunden ✓`; requestAnimationFrame(() => drawFlat($('#grFlatMini'), false)); }
+  if (nd) { const { res, msgs } = flatInfo(); $('#grFlatHint').textContent = nd < 2 ? 'Wohnung ansehen' : msgs.length ? `Wohnung ansehen · ${msgs.length} ${msgs.length === 1 ? 'Hinweis' : 'Hinweise'}` : `Wohnung ansehen · ${res.main} Räume verbunden ✓`; requestAnimationFrame(() => drawFlat($('#grFlatMini'), false)); }
   const tot = planArea(p), ex = (p.exports || []).slice(-1)[0]; $('#grTotal').textContent = (tot ? `Gesamt: ${fmtA(tot)} (${p.rooms.filter(r => r.closed).length} von ${p.rooms.length} Räumen fertig)` : '') + (ex ? ` · zuletzt ${ex.how} ${new Date(ex.t).toLocaleDateString('de-AT')}` : '');
   $('#grExport').disabled = !nd;
 }
 for (const [id, key] of [['grStr', 'name'], ['grPlz', 'plz'], ['grOrt', 'ortName'], ['grKunde', 'kunde']]) $('#' + id).addEventListener('input', () => { if (!P.plan) return; P.plan[key] = $('#' + id).value.trim(); if (key === 'name') $('#grTitle').textContent = P.plan.name || 'Neuer Grundriss'; save(); });
 $('#grBack').onclick = () => A().goBack(false);
+$('#grArchive').onclick = async () => { if (!P.plan) return; P.plan.archived = !P.plan.archived; await save(); A().toast(P.plan.archived ? 'Ins Archiv verschoben' : 'Wieder aktiv', 2000); A().goBack(false); };
 $('#grDel').onclick = async () => {
   if (!P.plan || !await A().confirmBox('Grundriss löschen?', 'Löschen', 'Abbrechen', 'danger', 'Alle Räume dieses Grundrisses gehen verloren. Das Massblatt ist davon nicht betroffen.')) return;
   await store.del(P.plan.id); P.plan = null; A().goBack(false);
@@ -79,7 +91,12 @@ $('#grTake').onclick = async () => {
   for (const p of list) {
     const b = document.createElement('button'); b.className = 'ghost grpick'; b.innerHTML = `<b>${esc(p.name || p.str)}</b><small>${esc([p.firma, [p.plz, p.ortName].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}</small>`;
     b.onclick = () => { P.plan.name = (p.name || p.str || '').trim(); P.plan.plz = p.plz || ''; P.plan.ortName = p.ortName || ''; P.plan.kunde = p.firma || ''; P.plan.fromMassblatt = p.id;
-      $('#grStr').value = P.plan.name; $('#grPlz').value = P.plan.plz; $('#grOrt').value = P.plan.ortName; $('#grKunde').value = P.plan.kunde; save(); renderPlan(); bg.remove(); A().toast('Adresse und Kunde übernommen'); };
+      $('#grStr').value = P.plan.name; $('#grPlz').value = P.plan.plz; $('#grOrt').value = P.plan.ortName; $('#grKunde').value = P.plan.kunde; save(); renderPlan(); bg.remove(); A().toast('Adresse und Kunde übernommen');
+      (async () => { // dieselben Räume wie im Massblatt als leere Räume anlegen (nur Namen, reine Kopie)
+        const shots = await A().shotsOf(p.id).catch(() => []), names = await A().rooms(), ks = [...new Set(shots.map(x => x.room).filter(k => k && k !== 'Rh'))]; if (!ks.length) return;
+        const want = ks.map(k => { const hit = names.find(([kk]) => kk === k); return hit && hit[1] ? hit[1] : k; }).filter(nm => !P.plan.rooms.some(r => r.name === nm)); if (!want.length) return;
+        if (!await A().confirmBox(`Auch die ${want.length} ${want.length === 1 ? 'Raum' : 'Räume'} anlegen?`, 'Anlegen', 'Nein', 'pri', want.join(', '))) return;
+        for (const nm of want) P.plan.rooms.push({ id: uid(), name: nm, walls: [], closed: false }); await save(); renderPlan(); })(); };
     bg.querySelector('[data-list]').appendChild(b);
   }
 };
@@ -97,9 +114,33 @@ $('#grAddRoom').onclick = async () => {
   bg.querySelector('[data-own]').onclick = async () => { const v = await A().promptBox('Raumname', 'z. B. Abstellraum'); if (v && v.trim()) add(v.trim()); };
 };
 
+// Laserwert in das aktive Zahlenfeld eines offenen Dialogs; danach springt die Eingabe zum nächsten leeren Feld
+function fillInput(cm) {
+  const el = P.thInput; if (!el || !document.body.contains(el)) return false;
+  el.value = Math.round(cm * 10) / 10; el.dispatchEvent(new Event('input')); A().beep(true);
+  const nx = [...el.closest('.sheet').querySelectorAll('input[data-num]')].find(i => !i.value); if (nx) { P.thInput = nx; markInput(); }
+  return true;
+}
+function markInput() { document.querySelectorAll('input[data-num]').forEach(i => i.classList.toggle('gract', i === P.thInput)); }
+// Dialog mit Auswahlfeldern und Zahlenfeldern; gibt die Werte zurück (Zahlen in cm) oder null
+function formSheet(title, hint, rows, okText = 'Fertig') {
+  return new Promise(res => {
+    const bg = sheet(`<h2>${esc(title)}</h2>${hint ? `<p class="mute" style="margin:-4px 0 8px;font-size:14px">${esc(hint)}</p>` : ''}<div data-rows></div><div class="row2" style="margin-top:12px"><button class="ghost" data-no>Abbrechen</button><button class="pri" data-ok>${esc(okText)}</button></div>`), box = bg.querySelector('[data-rows]');
+    for (const r of rows) { const l = document.createElement('label'); l.className = 'f'; l.textContent = r.label; box.appendChild(l);
+      if (r.type === 'sel') { const e = document.createElement('select'); e.dataset.k = r.k; for (const [v, t] of r.opts) { const o = document.createElement('option'); o.value = v; o.textContent = t; e.appendChild(o); } if (r.val != null) e.value = r.val; if (r.onchange) e.onchange = () => r.onchange(e.value, bg); box.appendChild(e); }
+      else { const e = document.createElement('input'); e.dataset.k = r.k; e.dataset.num = '1'; e.inputMode = 'decimal'; e.autocomplete = 'off'; if (r.val != null && r.val !== '') e.value = r.val; e.placeholder = r.ph || ''; e.onfocus = () => { P.thInput = e; markInput(); }; box.appendChild(e); } }
+    P.thInput = [...box.querySelectorAll('input[data-num]')].find(i => !i.value) || null; markInput();
+    const done = v => { P.thInput = null; bg.remove(); res(v); };
+    bg.querySelector('[data-no]').onclick = e => { e.stopPropagation(); done(null); };
+    bg.addEventListener('click', e => { if (e.target === bg) { P.thInput = null; res(null); } });
+    bg.querySelector('[data-ok]').onclick = e => { e.stopPropagation(); const v = {}; box.querySelectorAll('[data-k]').forEach(el => { v[el.dataset.k] = el.dataset.num ? parseFloat(String(el.value).replace(',', '.')) : el.value; }); done(v); };
+  });
+}
+const wallOpts = r => r.walls.map((w, i) => [i, `Wand ${i + 1} (${Math.round(w.cm)} cm)`]);
+
 // ---------- Raum ablaufen ----------
 function openRoom(id) {
-  P.room = P.plan.rooms.find(r => r.id === id); if (!P.room) return; P.hold = null; P.op = null;
+  P.room = P.plan.rooms.find(r => r.id === id); if (!P.room) return; P.hold = null; P.op = null; P.rect = null; P.fan = null;
   A().show('planRoom'); A().keepAwake(true); roomUi();
 }
 const walls = () => P.room.walls;
@@ -111,7 +152,9 @@ function roomUi() {
   $('#grRoomTitle').textContent = r.name;
   let txt, sub = '';
   const op = r.closed ? P.op : null, kind = op && op.type === 'T' ? 'Tür' : 'Fenster';
-  if (op && op.step === 'wall') { txt = `${kind}: an welcher Wand?`; sub = 'Wand im Bild oder unten in der Leiste antippen.'; }
+  if (P.rect) { txt = P.rect.a ? 'Rechteck: zweite Seite messen' : 'Rechteck: erste Seite messen'; sub = P.rect.a ? `Erste Seite ${Math.round(P.rect.a)} cm ✓ – jetzt die Wand daneben (oder ⌨).` : 'Zwei Wände messen, die an einer Ecke zusammenstoßen (oder ⌨).'; }
+  else if (P.fan) { txt = `Diagonale ${P.fan.k - 1} von ${n - 3} messen`; sub = `Vom Startpunkt (●) zur Ecke nach Wand ${P.fan.k} – im Bild gestrichelt (oder ⌨).`; }
+  else if (op && op.step === 'wall') { txt = `${kind}: an welcher Wand?`; sub = 'Wand im Bild oder unten in der Leiste antippen.'; }
   else if (op && op.step === 'pos') { txt = `${kind} an Wand ${op.wall + 1}: Abstand von der Ecke`; sub = `Vom orangen Punkt bis zur ersten Kante der ${kind === 'Tür' ? 'Tür' : 'Fensteröffnung'} messen (oder ⌨). Wand: ${Math.round(r.walls[op.wall].cm)} cm.`; }
   else if (op && op.step === 'w') { txt = `${kind} an Wand ${op.wall + 1}: Breite`; sub = `Abstand ${Math.round(op.pos)} cm ✓ – jetzt die Breite messen (oder ⌨).`; }
   else if (r.closed) { txt = `✓ Raum fertig · ${fmtA(s.area)}`; sub = `${n} Wände · Umfang ${fmtM(s.perimeter)}${r.adjust ? ` · ${Math.round(r.adjust)} cm ausgeglichen` : ''}`; }
@@ -124,16 +167,19 @@ function roomUi() {
   $('#grTurnBar').style.display = turnMode ? 'flex' : 'none'; $('#grMeasBar').style.display = !r.closed && !turnMode ? 'flex' : 'none';
   $('#grDoneBar').style.display = r.closed && !op ? 'flex' : 'none'; $('#grMini').style.display = r.closed && !op ? 'flex' : 'none'; $('#grOpBar').style.display = op ? 'flex' : 'none';
   $('#grOpKey').style.display = op && op.step !== 'wall' ? '' : 'none';
-  $('#grUndo').disabled = !n; $('#grClose').disabled = n < 2;
+  const hb = $('#grHints'); hb.innerHTML = ''; if (op && op.step === 'w' && (P.hints || []).length) for (const v of P.hints) { const b = document.createElement('button'); b.className = 'ghost'; b.dataset.hint = v; b.textContent = `${v} cm`; b.title = 'aus dem Massblatt'; b.onclick = () => opValue(v); hb.appendChild(b); }
+  $('#grUndo').disabled = !n; $('#grClose').disabled = n < 2; $('#grRect').style.display = !n && !P.rect ? '' : 'none';
   $('#grUndo').textContent = n && lastW().turn != null ? '↶ Richtung ändern' : '↶ zurück'; $('#grUndo2').textContent = P.hold ? '↶ Wert weg' : '↶ Wand weg';
   $('#grRh').textContent = r.rh ? `Rh ${Math.round(r.rh)} cm` : '＋ Raumhöhe';
-  $('#grDiag').style.display = r.closed && n === 4 ? '' : 'none'; $('#grDiag').textContent = r.diag ? `Diagonale ${Math.round(r.diag)} cm` : '＋ Diagonale';
+  $('#grDiag').style.display = r.closed && n >= 4 ? '' : 'none'; $('#grDiag').textContent = r.diag ? `Diagonale ${Math.round(r.diag)} cm` : r.diags ? 'Diagonalen ✓' : n > 4 ? '＋ Diagonalen' : '＋ Diagonale';
   // Wand-Leiste
   const ch = $('#grWalls'); ch.innerHTML = '';
   r.walls.forEach((w, i) => { const b = document.createElement('button'); b.dataset.i = i; b.innerHTML = `<i>${i + 1}</i>${Math.round(w.cm)}<small>${turnIcon(w.turn)}</small>`; if (op && op.wall === i) b.classList.add('pick');
     b.onclick = () => (P.op && P.op.step === 'wall' ? opWall(i) : editWall(i)); ch.appendChild(b); });
   (r.ops || []).forEach(o => { const b = document.createElement('button'); b.className = 'op'; b.dataset.op = o.id; const to = o.to && P.plan.rooms.find(x => x.id === o.to);
     b.innerHTML = `<i>${o.type === 'T' ? 'Tür' : 'Fe'} W${o.wall + 1}</i>${Math.round(o.w)}${to ? `<small>→ ${esc(to.name)}</small>` : ''}`; b.onclick = () => editOp(o); ch.appendChild(b); });
+  (r.objs || []).forEach(o => { const b = document.createElement('button'); b.className = 'op'; b.dataset.obj = o.id; b.innerHTML = `<i>W${o.wall + 1}</i>${esc(G.OBJ[o.kind][0])}`; b.onclick = () => objEdit(o); ch.appendChild(b); });
+  (r.links || []).forEach(l => { const to = P.plan.rooms.find(x => x.id === l.to); const b = document.createElement('button'); b.className = 'op'; b.dataset.link = l.id; b.innerHTML = `<i>W${l.wall + 1}</i>↔ ${esc(to ? to.name : '?')}`; b.onclick = async () => { if (await A().confirmBox('Verbindung Wand an Wand löschen?', 'Löschen')) { r.links = r.links.filter(x => x !== l); await save(); roomUi(); } }; ch.appendChild(b); });
   if (!r.closed) ch.scrollLeft = ch.scrollWidth; draw();
 }
 const turnIcon = t => t == null ? '?' : Math.abs(Math.abs(t) - 90) < 0.5 ? (t > 0 ? '↱' : '↰') : (t > 0 ? '↱' : '↰') + Math.round(180 - Math.abs(t)) + '°'; // angezeigt wird der Innenwinkel der Ecke
@@ -151,7 +197,9 @@ async function setTurn(t, auto = false) {
 // Messwert vom Laser (oder von Hand): Ist die letzte Ecke noch offen, wird die Richtung aus der Drehung des Tablets genommen – sonst nachgefragt.
 async function measure(cm) {
   const r = P.room; if (!r) return;
-  if (P.thInput && document.body.contains(P.thInput)) { P.thInput.value = Math.round(cm * 10) / 10; A().beep(true); return; }
+  if (fillInput(cm)) return;
+  if (P.rect) return rectValue(cm);
+  if (P.fan) return fanValue(cm);
   if (P.wantRh) { if (!(cm >= 150 && cm <= 700)) { A().toast(`${Math.round(cm)} cm passt nicht als Raumhöhe (150–700)`, 3000); A().beep(false); return; } P.wantRh = false; r.rh = cm; A().beep(true); await save(); roomUi(); A().toast(`Raumhöhe ${Math.round(cm)} cm ✓`, 2000); return; }
   if (r.closed && P.op) return opValue(cm);
   if (r.closed) { if (P.wantDiag) { P.wantDiag = false; return applyDiag(cm); } A().toast('Raum ist fertig – „Wieder öffnen“, um weiterzumessen', 2600); A().beep(false); return; }
@@ -208,7 +256,7 @@ $('#grRoomOk').onclick = $('#grRoomBack').onclick = () => A().goBack(false);
 $('#grRoomDel').onclick = async () => { if (!await A().confirmBox(`Raum „${P.room.name}“ löschen?`, 'Löschen')) return; const gone = P.room.id; P.plan.rooms = P.plan.rooms.filter(r => r !== P.room); for (const x of P.plan.rooms) for (const o of x.ops || []) if (o.to === gone) o.to = null; P.room = null; await save(); A().goBack(false); };
 $('#grRoomTitle').onclick = async () => { const v = await A().promptBox('Raumname', '', P.room.name); if (v && v.trim()) { P.room.name = v.trim(); await save(); roomUi(); } };
 // Diagonale von Ecke 1 zu Ecke 3 (Anfang der 1. Wand → Ende der 2. Wand): echte Winkel statt 90°
-$('#grDiag').onclick = () => { P.wantDiag = true; A().toast('Diagonale messen: vom Startpunkt (●) zur gegenüberliegenden Ecke – oder ⌨', 4000); $('#grKey2').style.display = ''; };
+$('#grDiag').onclick = () => { if (P.room.walls.length > 4) { P.fan = { k: 2, d: {} }; P.wantRh = false; $('#grKey2').style.display = ''; roomUi(); return; } P.wantDiag = true; A().toast('Diagonale messen: vom Startpunkt (●) zur gegenüberliegenden Ecke – oder ⌨', 4000); $('#grKey2').style.display = ''; };
 async function applyDiag(cm) {
   const r = P.room, w = r.walls; const sign = (w[0].turn || 90) > 0 ? 1 : -1;
   const t = G.quadTurns(w[0].cm, w[1].cm, w[2].cm, w[3].cm, cm, sign);
@@ -219,7 +267,14 @@ async function applyDiag(cm) {
 // ---------- Stufe 2: Türen und Fenster ----------
 // Ablauf: Wand antippen → Abstand von der Ecke (Beginn der Wand in Laufrichtung) → Breite → bei Türen: wohin + Wandstärke
 function opStart(type) { if (!P.room.closed) return; P.op = { type, step: 'wall', wall: null }; P.wantDiag = false; P.wantRh = false; roomUi(); }
-function opWall(i) { if (!P.op) return; P.op.wall = i; P.op.step = 'pos'; roomUi(); }
+function opWall(i) { if (!P.op) return; P.op.wall = i; P.op.step = 'pos'; roomUi(); doorHints(); }
+// Breiten aus dem Massblatt-Projekt, aus dem die Adresse übernommen wurde (gleicher Raum, Breiten-Pfeile 55–110 cm) – nur als Vorschlag
+async function doorHints() {
+  P.hints = []; const p = P.plan, r = P.room; if (!P.op || P.op.type !== 'T' || !p.fromMassblatt) return;
+  try { const names = await A().rooms(), key = (names.find(([k, t]) => (t || k) === r.name) || [r.name])[0], shots = await A().shotsOf(p.fromMassblatt);
+    P.hints = [...new Set(shots.filter(s => s.room === key || s.room === r.name).flatMap(s => s.arrows || []).filter(a => a.kind === 'B' && a.cm >= 55 && a.cm <= 110).map(a => Math.round(a.cm)))].sort((a, b) => a - b).slice(0, 4); } catch (e) { P.hints = []; }
+  if (P.op) roomUi();
+}
 async function opValue(cm) {
   const r = P.room, op = P.op; if (!op) return;
   if (op.step === 'wall') { A().toast('Erst die Wand antippen'); A().beep(false); return; }
@@ -231,6 +286,22 @@ async function opValue(cm) {
   if (o.type === 'T') doorTarget(o);
 }
 $('#grRh').onclick = () => { P.wantRh = true; P.wantDiag = false; A().toast('Raumhöhe messen (Boden → Decke) – oder ⌨', 4000); $('#grKey2').style.display = ''; };
+// Schnellstart Rechteck: zwei Seiten messen → vier Wände, Raum fertig
+$('#grRect').onclick = () => { P.rect = {}; roomUi(); };
+async function rectValue(cm) {
+  const r = P.room; if (r.walls.length || r.closed) { P.rect = null; return measure(cm); }
+  if (!P.rect.a) { P.rect.a = cm; A().beep(true); roomUi(); return; }
+  const a = P.rect.a; P.rect = null; r.walls = [a, cm, a, cm].map(v => ({ cm: v, turn: 90 })); r.closed = true; r.adjust = 0; A().beep(true); await save(); roomUi();
+}
+// Diagonalen bei mehr als vier Wänden: vom Startpunkt zu jeder Ecke, die nicht an Wand 1 oder der letzten Wand hängt
+async function fanValue(cm) {
+  const r = P.room, n = r.walls.length, f = P.fan; f.d[f.k] = cm; A().beep(true);
+  if (f.k < n - 2) { f.k++; roomUi(); return; }
+  P.fan = null; const t = G.fanTurns(r.walls, f.d);
+  if (!t) { A().toast('Diese Diagonalen passen nicht zu den Wandlängen – bitte nachmessen', 4500); A().beep(false); roomUi(); return; }
+  t.forEach((v, i) => { r.walls[i].turn = v; delete r.walls[i].auto; }); r.diags = f.d; delete r.diag; r.adjust = 0; $('#grKey2').style.display = 'none'; await save(); roomUi();
+  A().toast(`Winkel berechnet: ${t.map(v => Math.round((180 - Math.abs(v)) * 10) / 10 + '°').join(' · ')}`, 5000);
+}
 $('#grDoor').onclick = () => opStart('T'); $('#grWin').onclick = () => opStart('F'); $('#grOpCancel').onclick = () => { P.op = null; roomUi(); };
 // Tür: in welchen Raum führt sie, und wie dick ist die Wand dort (an der Laibung messen)?
 function doorTarget(o) {
@@ -238,6 +309,7 @@ function doorTarget(o) {
   const bg = sheet(`<h2>Wohin führt die Tür?</h2><div class="grgrid2" data-list></div><button class="ghost" data-none style="width:100%;margin-top:8px">Nach außen / noch offen</button>
     <label class="f">Anschlag (von diesem Raum aus gesehen)</label><div class="row2"><button class="ghost" data-h="a">◧ links</button><button class="ghost" data-h="b">rechts ◨</button></div>
     <label class="f">Die Tür geht auf</label><div class="row2"><button class="ghost" data-sw="in">in diesen Raum</button><button class="ghost" data-sw="out">hinaus</button></div>
+    <label style="display:flex;gap:10px;align-items:center;margin:10px 0 0"><input type="checkbox" data-noleaf style="width:auto"> Durchgang ohne Tür (kein Türblatt)</label>
     <label class="f">Wandstärke an dieser Tür (cm)</label><div style="display:flex;gap:8px;align-items:center"><input data-th inputmode="decimal" value="${o.thick || ''}" placeholder="${def} (Standard)" style="flex:1"><span class="mute" style="font-size:13px;flex:2">An der Laibung messen – der Laserwert landet hier.</span></div>
     <button class="pri" data-ok style="width:100%;margin-top:12px">Fertig</button>`);
   P.thInput = bg.querySelector('[data-th]'); let to = o.to, hinge = o.hinge || 'a', swing = o.swing || 'in', touched = !!o.hinge;
@@ -245,12 +317,13 @@ function doorTarget(o) {
   const fromPartner = () => { if (touched) return; const x = P.plan.rooms.find(q => q.id === to), pr = x && (x.ops || []).find(q => q.type === 'T' && q.to === P.room.id && q.hinge); if (pr) { hinge = pr.hinge === 'a' ? 'b' : 'a'; swing = pr.swing === 'out' ? 'in' : 'out'; } };
   const paint = () => { bg.querySelectorAll('[data-to]').forEach(b => b.classList.toggle('pri', b.dataset.to === to)); bg.querySelector('[data-none]').classList.toggle('pri', !to);
     bg.querySelectorAll('[data-h]').forEach(b => { b.classList.toggle('pri', b.dataset.h === hinge); b.classList.toggle('ghost', b.dataset.h !== hinge); }); bg.querySelectorAll('[data-sw]').forEach(b => { b.classList.toggle('pri', b.dataset.sw === swing); b.classList.toggle('ghost', b.dataset.sw !== swing); }); };
+  bg.querySelector('[data-noleaf]').checked = !!o.noLeaf;
   bg.querySelectorAll('[data-h]').forEach(b => { b.onclick = () => { hinge = b.dataset.h; touched = true; paint(); }; }); bg.querySelectorAll('[data-sw]').forEach(b => { b.onclick = () => { swing = b.dataset.sw; touched = true; paint(); }; });
   for (const x of others) { const b = document.createElement('button'); b.className = 'ghost'; b.dataset.to = x.id; b.textContent = x.name; b.onclick = () => { to = x.id; fromPartner(); paint(); }; bg.querySelector('[data-list]').appendChild(b); }
   if (!others.length) bg.querySelector('[data-list]').innerHTML = '<p class="mute" style="margin:0 0 6px;font-size:14px">Noch kein anderer Raum angelegt – das Ziel kannst du später über die Tür unten in der Leiste setzen.</p>';
   bg.querySelector('[data-none]').onclick = () => { to = null; paint(); }; fromPartner(); paint();
-  bg.querySelector('[data-ok]').onclick = async () => { const th = parseFloat(String(P.thInput.value).replace(',', '.')); o.to = to; o.hinge = hinge; o.swing = swing; if (th > 0 && th < 200) o.thick = th; else delete o.thick;
-    const pr = G.partnerOf(P.plan, P.room, o); if (pr) { pr.hinge = hinge === 'a' ? 'b' : 'a'; pr.swing = swing === 'out' ? 'in' : 'out'; } // Gegenstück mitziehen, damit das Türblatt nur einmal und richtig herum erscheint
+  bg.querySelector('[data-ok]').onclick = async () => { const th = parseFloat(String(P.thInput.value).replace(',', '.')); o.to = to; o.hinge = hinge; o.swing = swing; if (bg.querySelector('[data-noleaf]').checked) o.noLeaf = true; else delete o.noLeaf; if (th > 0 && th < 200) o.thick = th; else delete o.thick;
+    const pr = G.partnerOf(P.plan, P.room, o); if (pr) { pr.hinge = hinge === 'a' ? 'b' : 'a'; pr.swing = swing === 'out' ? 'in' : 'out'; if (o.noLeaf) pr.noLeaf = true; else delete pr.noLeaf; } // Gegenstück mitziehen, damit das Türblatt nur einmal und richtig herum erscheint
     P.thInput = null; bg.remove(); await save(); roomUi(); };
 }
 function editOp(o) {
@@ -276,9 +349,14 @@ $('#grCv').addEventListener('click', e => {
 function flatInfo() {
   const p = P.plan, res = G.placeRooms(p.rooms, p.wall || 15), name = id => (p.rooms.find(r => r.id === id) || {}).name || '?', msgs = [];
   for (const m of res.missing) msgs.push(m.why === 'offen' ? `„${name(m.to)}“ ist noch nicht fertig gemessen (Tür von „${name(m.from)}“ führt dorthin).` : `In „${name(m.to)}“ fehlt die Tür zu „${name(m.from)}“.`);
-  for (const id of res.unplaced) if (!res.missing.some(m => m.to === id || m.from === id)) msgs.push(`„${name(id)}“ hängt noch an keiner Tür.`);
+  for (let gi = 1; gi < (res.groups || 0); gi++) { const ids = p.rooms.filter(r => res.T.has(r.id) && res.T.get(r.id).g === gi).map(r => r.id);
+    if (ids.length > 1) msgs.push(`${ids.map(i => `„${name(i)}“`).join(' und ')} hängen zusammen, aber noch nicht an der übrigen Wohnung.`);
+    else if (!res.missing.some(m => m.to === ids[0] || m.from === ids[0])) msgs.push(`„${name(ids[0])}“ hängt noch an keiner Tür.`); }
   for (const i of res.issues) msgs.push(`Zwischen „${name(i.a)}“ und „${name(i.b)}“ geht es nicht auf: ${Math.round(i.off)} cm Versatz – eine Türposition, Wandlänge oder Wandstärke stimmt nicht.`);
-  return { res, msgs };
+  const oks = []; if ((p.checks || []).length) { const lay = G.layout(p.rooms, p.wall || 15);
+    for (const c of p.checks) { const d = G.checkDist(lay, c.a, c.wa, c.b, c.wb), nm = `Kontrollmaß ${name(c.a)} W${c.wa + 1} – ${name(c.b)} W${c.wb + 1}`;
+      if (d == null) msgs.push(`${nm}: Räume sind noch nicht verbunden.`); else if (Math.abs(d - c.cm) > 3) msgs.push(`${nm}: gemessen ${Math.round(c.cm)} cm, im Plan ${Math.round(d)} cm – ${Math.round(Math.abs(d - c.cm))} cm Abweichung.`); else oks.push(`${nm}: ${Math.round(c.cm)} cm stimmt.`); } }
+  return { res, msgs, oks };
 }
 // ---------- Plan-Darstellung (3.15): Wände mit Stärke, Symbole, Maßketten ----------
 const bboxOf = pts => pts.reduce((b, q) => ({ x0: Math.min(b.x0, q.x), y0: Math.min(b.y0, q.y), x1: Math.max(b.x1, q.x), y1: Math.max(b.y1, q.y) }), { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 });
@@ -297,6 +375,11 @@ function gfxRest(g, gf, X, Y, st) {      // Raumfläche, Öffnungen mit Symbolen
     if (d.leaf) { g.lineWidth = 2.4; ln(d.leaf[0], d.leaf[1]); const c = { x: X(d.arc.c), y: Y(d.arc.c) }, f = { x: X(d.arc.from), y: Y(d.arc.from) }, t = { x: X(d.arc.to), y: Y(d.arc.to) }, a0 = Math.atan2(f.y - c.y, f.x - c.x), a1 = Math.atan2(t.y - c.y, t.x - c.x);
       g.lineWidth = 1; g.setLineDash([3, 3]); g.beginPath(); g.arc(c.x, c.y, Math.hypot(f.x - c.x, f.y - c.y), a0, a1, G.norm180((a1 - a0) * 180 / Math.PI) < 0); g.stroke(); g.setLineDash([]); }
   }
+  for (const ob of gf.objs || []) { g.strokeStyle = st.dim; g.lineWidth = 1.2;
+    if (ob.quad) { path(ob.quad); g.fillStyle = ob.solid ? st.wall || st.dim : st.panel; g.fill(); g.stroke(); }
+    if (ob.dashed) g.setLineDash([7, 5]); if (ob.solid) g.strokeStyle = st.panel;
+    for (const l of ob.lines) { g.beginPath(); l.forEach((q, i) => i ? g.lineTo(X(q), Y(q)) : g.moveTo(X(q), Y(q))); g.stroke(); } g.setLineDash([]);
+    if (ob.label) { let a = Math.atan2(ob.label.d.y, ob.label.d.x); if (a > Math.PI / 2 - 0.01 || a < -Math.PI / 2 - 0.01) a += Math.PI; g.fillStyle = st.dim; g.font = `11px ${st.mono}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.save(); g.translate(X(ob.label.p), Y(ob.label.p)); g.rotate(a); g.fillText(ob.label.t, 0, 0); g.restore(); } }
   if (gf.chains.length) { g.strokeStyle = st.dim; g.fillStyle = st.dim; g.lineWidth = 1; g.font = `600 12px ${st.mono}`; g.textAlign = 'center'; g.textBaseline = 'middle';
     for (const ch of gf.chains) { ln(ch.line[0], ch.line[1]); for (const t of ch.ticks) ln(t[0], t[1]);
       for (const l of ch.labels) { let a = Math.atan2(l.d.y, l.d.x); if (a > Math.PI / 2 - 0.01 || a < -Math.PI / 2 - 0.01) a += Math.PI; g.save(); g.translate(X(l.p), Y(l.p)); g.rotate(a); g.fillText(l.t, 0, 0); g.restore(); } } }
@@ -307,20 +390,26 @@ function northArrow(g, x, y, deg, col, mono) {  // deg: wohin Norden im Bild zei
   g.font = `700 11px ${mono}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('N', 0, -26); g.restore();
 }
 // Zeichnet alle fertigen Räume: verbundene an ihrem Platz, die übrigen daneben (heller)
-function drawFlat(cv, big) {
-  const p = P.plan; if (!p || !cv) return; const box = cv.parentElement.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
-  const W = Math.max(50, box.width), H = Math.max(50, box.height); cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px';
-  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-  const lay = G.layout(p.rooms, p.wall || 15); if (!lay.items.length) return;
+const PRINT = { '--text': '#16202a', '--mute': '#6b7780', '--acc-soft': '#eef4f8', '--bg': '#ffffff', '--panel': '#ffffff', '--acc': '#0b7fc0', '--warn': '#b7791f' };
+// exp = { px } zeichnet für die Bild-Ausgabe: weißer Grund, Druckfarben, lange Seite px Pixel
+function drawFlat(cv, big, exp) {
+  const p = P.plan; if (!p || !cv) return;
+  const lay = G.layout(p.rooms, p.wall || 15); if (!lay.items.length && !exp) { const g0 = cv.getContext('2d'); g0.clearRect(0, 0, cv.width, cv.height); return; }
   const gfs = lay.items.map(it => ({ it, gf: G.gfx(p, it.room, it.poly, { chains: false }) })), bb = bboxOf(gfs.flatMap(x => x.gf.ext));
+  let W, H, dpr;
+  if (exp) { const ar = Math.max(0.2, Math.min(5, (bb.x1 - bb.x0) / Math.max(1, bb.y1 - bb.y0))); W = ar >= 1 ? 1600 : 1600 * ar; H = ar >= 1 ? 1600 / ar : 1600; W += 80; H += 80; dpr = Math.min(exp.px / Math.max(W, H), Math.sqrt(16e6 / (W * H))); cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  else { const box = cv.parentElement.getBoundingClientRect(); dpr = Math.min(2, window.devicePixelRatio || 1); W = Math.max(50, box.width); H = Math.max(50, box.height); cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px'; }
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H); if (exp) { g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H); }
+  if (big && !exp && P.fv) { g.translate(W / 2 + P.fv.x, H / 2 + P.fv.y); g.scale(P.fv.z, P.fv.z); g.translate(-W / 2, -H / 2); }   // Zoomen und Verschieben mit den Fingern
   const pad = big ? 30 : 8, sc = Math.min((W - 2 * pad) / Math.max(1, bb.x1 - bb.x0), (H - 2 * pad) / Math.max(1, bb.y1 - bb.y0)), ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc;
-  const X = q => ox + q.x * sc, Y = q => oy + q.y * sc, css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim() || '#888', mono = css.getPropertyValue('--mono') || 'monospace', display = css.getPropertyValue('--display') || 'sans-serif';
+  const X = q => ox + q.x * sc, Y = q => oy + q.y * sc, css = getComputedStyle(document.documentElement), col = n => (exp ? PRINT[n] : css.getPropertyValue(n).trim()) || '#888', mono = css.getPropertyValue('--mono') || 'monospace', display = css.getPropertyValue('--display') || 'sans-serif';
   for (const x of gfs) gfxBand(g, x.gf, X, Y, x.it.loose ? col('--mute') : col('--text'));
-  for (const x of gfs) gfxRest(g, x.gf, X, Y, { fill: col('--acc-soft'), cut: col('--bg'), panel: col('--panel'), win: col('--acc'), door: col('--warn'), dim: col('--mute'), mono });
+  for (const x of gfs) gfxRest(g, x.gf, X, Y, { fill: col('--acc-soft'), cut: col('--bg'), panel: col('--panel'), win: col('--acc'), door: col('--warn'), dim: col('--mute'), wall: col('--text'), mono });
   for (const { it } of gfs) { const pl = it.poly, n = pl.length, c = pl.reduce((s, q) => ({ x: s.x + X(q) / n, y: s.y + Y(q) / n }), { x: 0, y: 0 }), wpx = (Math.max(...pl.map(q => q.x)) - Math.min(...pl.map(q => q.x))) * sc;
     const fs = Math.min(big ? 15 : 10, (wpx - 8) / Math.max(3, it.room.name.length * 0.6)); if (fs < 6) continue; g.fillStyle = col('--text'); g.textAlign = 'center'; g.textBaseline = 'middle';
     if (big && fs > 10) stamp(g, it.room, c.x, c.y, { ink: col('--text'), mute: col('--mute'), display, mono, size: fs, name: true, maxW: wpx - 6 }); else { g.font = `700 ${fs}px ${display}`; g.fillText(it.room.name, c.x, c.y); } }
-  if (big && p.north != null) northArrow(g, W - 38, 46, p.north, col('--text'), mono);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (big && p.north != null) northArrow(g, W - 52, 60, p.north, col('--text'), mono);
 }
 // Raumstempel in der Raummitte: (Name) · Fläche · Umfang · Raumhöhe. Zu breite Zeilen werden kleiner gesetzt, unter 8 px entfallen sie.
 function stamp(g, r, x, y, o) {
@@ -335,14 +424,27 @@ function stamp(g, r, x, y, o) {
 function flatUi() {
   const { res, msgs } = flatInfo(), p = P.plan, n = p.rooms.filter(r => r.closed).length;
   $('#grFlatTitle').textContent = p.name || 'Wohnung';
-  $('#grFlatSum').textContent = `${res.T.size} von ${n} fertigen Räumen verbunden · ${fmtA(planArea(p))} · Wände innen ${p.wall || 15} / außen ${p.wallOut || 30} cm`;
+  $('#grFlatSum').textContent = `${res.main} von ${n} fertigen Räumen verbunden · ${fmtA(planArea(p))} · Wände innen ${p.wall || 15} / außen ${p.wallOut || 30} cm`;
   const el = $('#grFlatMsgs'); el.innerHTML = '';
   if (!msgs.length && n > 1) el.innerHTML = '<p class="grok">✓ Alle Räume hängen zusammen und es geht auf.</p>';
+  for (const m of flatInfo().oks) { const d = document.createElement('p'); d.className = 'grok'; d.textContent = '✓ ' + m; el.appendChild(d); }
   for (const m of msgs) { const d = document.createElement('p'); d.className = 'grwarn'; d.textContent = '⚠ ' + m; el.appendChild(d); }
+  if ((p.checks || []).length) { const b = document.createElement('button'); b.className = 'ghost'; b.id = 'grCheckDel'; b.style.cssText = 'margin-top:6px;padding:7px 10px;font-size:13px'; b.textContent = `Kontrollmaße löschen (${p.checks.length})`;
+    b.onclick = async () => { if (await A().confirmBox('Alle Kontrollmaße löschen?', 'Löschen')) { delete p.checks; await save(); flatUi(); } }; el.appendChild(b); }
   drawFlat($('#grFlatCv'), true);
 }
-$('#grFlatCard').onclick = () => { A().show('planFlat'); A().keepAwake(true); flatUi(); };
+$('#grFlatCard').onclick = () => { P.fv = { z: 1, x: 0, y: 0 }; A().show('planFlat'); A().keepAwake(true); flatUi(); };
 $('#grFlatBack').onclick = () => A().goBack(false);
+{ // zwei Finger = zoomen, ein Finger = verschieben, Doppeltipp = zurücksetzen
+  const cv = $('#grFlatCv'), pt = new Map(); let last = 0, d0 = 0, z0 = 1;
+  const redraw = () => drawFlat(cv, true), dist = () => { const [a, b] = [...pt.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  cv.addEventListener('pointerdown', e => { pt.set(e.pointerId, { x: e.clientX, y: e.clientY }); try { cv.setPointerCapture(e.pointerId); } catch (x) { } if (pt.size === 2) { d0 = dist(); z0 = P.fv.z; }
+    if (pt.size === 1) { const t = Date.now(); if (t - last < 320) { P.fv = { z: 1, x: 0, y: 0 }; redraw(); } last = t; } });
+  cv.addEventListener('pointermove', e => { const q = pt.get(e.pointerId); if (!q) return; const dx = e.clientX - q.x, dy = e.clientY - q.y; q.x = e.clientX; q.y = e.clientY;
+    if (pt.size === 1) { P.fv.x += dx; P.fv.y += dy; } else if (pt.size === 2 && d0 > 0) P.fv.z = Math.max(1, Math.min(10, z0 * dist() / d0)); if (P.fv.z === 1 && pt.size === 2) { P.fv.x = 0; P.fv.y = 0; } redraw(); });
+  for (const ev of ['pointerup', 'pointercancel']) cv.addEventListener(ev, e => { pt.delete(e.pointerId); d0 = 0; });
+  cv.addEventListener('wheel', e => { e.preventDefault(); P.fv.z = Math.max(1, Math.min(10, P.fv.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); if (P.fv.z === 1) { P.fv.x = 0; P.fv.y = 0; } redraw(); }, { passive: false });
+}
 // Nordpfeil: wohin zeigt Norden im Bild?
 $('#grNorth').onclick = () => {
   const dirs = [[315, '↖'], [0, '↑'], [45, '↗'], [270, '←'], [null, '✕'], [90, '→'], [225, '↙'], [180, '↓'], [135, '↘']];
@@ -352,12 +454,62 @@ $('#grNorth').onclick = () => {
 $('#grWallOut').addEventListener('input', () => { if (!P.plan) return; const v = parseFloat($('#grWallOut').value.replace(',', '.')); if (v > 0 && v < 200) P.plan.wallOut = v; else delete P.plan.wallOut; save(); renderPlan(); });
 $('#grWall').addEventListener('input', () => { if (!P.plan) return; const v = parseFloat($('#grWall').value.replace(',', '.')); if (v > 0 && v < 200) P.plan.wall = v; else delete P.plan.wall; save(); renderPlan(); });
 
+// ---------- 3.17: Objekte, Nachbarraum Wand an Wand, Kopie, Nische, Kontrollmaß ----------
+$('#grMore').onclick = () => {
+  const bg = sheet('<h2>Mehr im Raum</h2><label class="f">Einbauten und Ausstattung</label><div class="grgrid" data-objs></div><label class="f">Raum</label><button class="ghost grpick" data-link><b>↔ Nachbarraum Wand an Wand</b><small>Räume ohne Tür dazwischen aneinanderhängen</small></button><button class="ghost grpick" data-niche><b>⊓ Nische oder Vorsprung</b><small>nachträglich in eine Wand einfügen</small></button><div class="row2"><button class="ghost" data-copy>⧉ Kopie</button><button class="ghost" data-mirror>⧉ Spiegelkopie</button></div><button class="ghost" data-close style="width:100%;margin-top:10px">Schließen</button>');
+  for (const [k, v] of Object.entries(G.OBJ)) { const b = document.createElement('button'); b.className = 'ghost'; b.dataset.kind = k; b.innerHTML = `<b style="font-size:14px">${esc(v[0])}</b>`; b.onclick = () => { bg.remove(); objAdd(k); }; bg.querySelector('[data-objs]').appendChild(b); }
+  bg.querySelector('[data-link]').onclick = () => { bg.remove(); linkAdd(); }; bg.querySelector('[data-niche]').onclick = () => { bg.remove(); nicheAdd(); };
+  const cp = async m => { bg.remove(); const c = G.copyRoom(P.room, m, uid); let nm = P.room.name + (m ? ' (gespiegelt)' : ' 2'), i = 2; while (P.plan.rooms.some(x => x.name === nm)) nm = `${P.room.name} ${++i}`; c.name = nm; P.plan.rooms.push(c); await save(); A().toast(`„${nm}“ angelegt`, 2500); openRoom(c.id); };
+  bg.querySelector('[data-copy]').onclick = () => cp(false); bg.querySelector('[data-mirror]').onclick = () => cp(true);
+};
+async function objAdd(kind, old) {
+  const r = P.room, def = G.OBJ[kind], ds = kind === 'DS', o = old || { id: uid(), kind, wall: 0, pos: 0, w: def[1], d: def[2], gap: 0 };
+  const rows = [{ k: 'wall', label: 'An welcher Wand?', type: 'sel', opts: wallOpts(r), val: o.wall }];
+  if (ds) rows.push({ k: 'knee', label: 'Kniestockhöhe (cm)', val: o.knee || '' }, { k: 'd', label: 'Abstand von der Wand bis zur vollen Raumhöhe (cm)', val: old ? o.d : '' });
+  else rows.push({ k: 'pos', label: 'Abstand von der Ecke (cm)', val: old ? o.pos : '' }, { k: 'w', label: 'Breite entlang der Wand (cm)', val: o.w, ph: String(def[1]) }, { k: 'd', label: 'Tiefe in den Raum (cm)', val: o.d, ph: String(def[2]) }, { k: 'gap', label: 'Abstand von der Wand (cm)', val: o.gap || 0 });
+  const v = await formSheet(def[0], ds ? 'Die Schräge wird als gestrichelte Linie eingezeichnet.' : 'Die Ecke ist der Beginn der Wand in Laufrichtung. Der Laserwert landet im markierten Feld.', rows); if (!v) return;
+  const wl = r.walls[+v.wall].cm; o.wall = +v.wall;
+  if (ds) { if (!(v.d > 0)) { A().toast('Bitte den Abstand eingeben'); return; } o.d = v.d; if (v.knee > 0) o.knee = v.knee; else delete o.knee; o.pos = 0; o.w = wl; }
+  else { if (!(v.pos >= 0) || !(v.w > 0) || !(v.d > 0)) { A().toast('Bitte Abstand, Breite und Tiefe eingeben'); return; } if (v.pos + v.w > wl + 2) { A().toast(`Passt nicht: die Wand ist nur ${Math.round(wl)} cm lang`, 3500); return; } o.pos = v.pos; o.w = v.w; o.d = v.d; o.gap = v.gap > 0 ? v.gap : 0; }
+  if (!old) (r.objs = r.objs || []).push(o); await save(); roomUi();
+}
+function objEdit(o) {
+  const bg = sheet(`<h2>${esc(G.OBJ[o.kind][0])} an Wand ${o.wall + 1}</h2><div class="row2"><button class="ghost" data-ed>✎ Ändern</button><button class="danger" data-del>Löschen</button></div><button class="ghost" data-close style="width:100%;margin-top:8px">Schließen</button>`);
+  bg.querySelector('[data-ed]').onclick = () => { bg.remove(); objAdd(o.kind, o); }; bg.querySelector('[data-del]').onclick = async () => { bg.remove(); P.room.objs = P.room.objs.filter(x => x !== o); await save(); roomUi(); };
+}
+async function linkAdd() {
+  const r = P.room, others = P.plan.rooms.filter(x => x !== r && x.closed); if (!others.length) { A().toast('Dafür muss ein zweiter Raum fertig gemessen sein'); return; }
+  const v = await formSheet('Nachbarraum Wand an Wand', 'Die beiden Wände liegen Rücken an Rücken. Versatz 0 = der Beginn deiner Wand liegt genau gegenüber dem Ende der Nachbarwand.', [
+    { k: 'wall', label: 'Meine Wand', type: 'sel', opts: wallOpts(r) }, { k: 'to', label: 'Nachbarraum', type: 'sel', opts: others.map(x => [x.id, x.name]), onchange: (id, bg) => { const e = bg.querySelector('[data-k="toWall"]'); e.innerHTML = ''; for (const [i, t] of wallOpts(P.plan.rooms.find(x => x.id === id))) { const o = document.createElement('option'); o.value = i; o.textContent = t; e.appendChild(o); } } },
+    { k: 'toWall', label: 'Seine Wand', type: 'sel', opts: wallOpts(others[0]) }, { k: 'off', label: 'Versatz entlang der Wand (cm)', val: 0 }, { k: 'thick', label: 'Wandstärke dazwischen (cm)', ph: `${P.plan.wall || 15} (Standard)` }]);
+  if (!v) return; const l = { id: uid(), wall: +v.wall, to: v.to, toWall: +v.toWall, off: v.off || 0 }; if (v.thick > 0 && v.thick < 200) l.thick = v.thick;
+  (r.links = r.links || []).push(l); await save(); roomUi(); A().toast('Verbunden – in „Wohnung ansehen“ siehst du, ob es passt', 3000);
+}
+async function nicheAdd() {
+  const r = P.room; const v = await formSheet('Nische oder Vorsprung', 'Nische: der Raum wird dort größer. Vorsprung: er wird kleiner (z. B. Kaminvorbau).', [
+    { k: 'wall', label: 'In welcher Wand?', type: 'sel', opts: wallOpts(r) }, { k: 'kind', label: 'Art', type: 'sel', opts: [['n', 'Nische'], ['v', 'Vorsprung']] }, { k: 'a', label: 'Abstand von der Ecke (cm)' }, { k: 'b', label: 'Breite (cm)' }, { k: 't', label: 'Tiefe (cm)' }]);
+  if (!v) return; const i = +v.wall;
+  if ((r.ops || []).some(o => o.wall === i) || (r.objs || []).some(o => o.wall === i) || (r.links || []).some(o => o.wall === i)) { A().toast('An dieser Wand hängt schon etwas (Tür, Fenster, Objekt) – bitte zuerst entfernen', 4500); return; }
+  if (!G.insertNiche(r, i, v.a, v.b, v.t, v.kind === 'v')) { A().toast('Passt nicht: Abstand + Breite müssen kürzer als die Wand sein', 4000); return; }
+  delete r.diag; delete r.diags; r.adjust = 0; await save(); roomUi();
+}
+// Kontrollmaß quer durch die Wohnung: gemessener Abstand zweier gegenüberliegender Wände gegen den Plan
+$('#grCheck').onclick = async () => {
+  const p = P.plan, rs = p.rooms.filter(x => x.closed); if (!rs.length) return;
+  const sw = (k, bg, id) => { const e = bg.querySelector(`[data-k="${k}"]`); e.innerHTML = ''; for (const [i, t] of wallOpts(p.rooms.find(x => x.id === id))) { const o = document.createElement('option'); o.value = i; o.textContent = t; e.appendChild(o); } };
+  const v = await formSheet('Kontrollmaß', 'Ein langes Maß von einer Wand zur gegenüberliegenden, auch durch mehrere Räume. Die App vergleicht es mit dem Plan.', [
+    { k: 'a', label: 'Von Raum', type: 'sel', opts: rs.map(x => [x.id, x.name]), onchange: (id, bg) => sw('wa', bg, id) }, { k: 'wa', label: 'Wand', type: 'sel', opts: wallOpts(rs[0]) },
+    { k: 'b', label: 'Bis Raum', type: 'sel', opts: rs.map(x => [x.id, x.name]), onchange: (id, bg) => sw('wb', bg, id) }, { k: 'wb', label: 'Wand', type: 'sel', opts: wallOpts(rs[0]) }, { k: 'cm', label: 'Gemessen (cm)' }]);
+  if (!v || !(v.cm > 0)) return; (p.checks = p.checks || []).push({ id: uid(), a: v.a, wa: +v.wa, b: v.b, wb: +v.wb, cm: v.cm }); await save(); flatUi();
+};
+
 // ---------- Stufe 3: PDF + DXF, Dropbox ----------
 let fontBytes = null;
 async function planFiles() {
   if (!fontBytes) fontBytes = new Uint8Array(await (await fetch('vendor/NotoSans.woff')).arrayBuffer());
   const base = O.fileBase(P.plan), pdf = await O.buildPlanPdf(window.PDFLib, window.fontkit, fontBytes, P.plan, flatInfo().msgs), dxf = O.buildDxf(P.plan);
-  return { pdf: new File([pdf], base + '.pdf', { type: 'application/pdf' }), dxf: new File([dxf.text], base + '.dxf', { type: 'application/dxf' }) };
+  const cv = document.createElement('canvas'); drawFlat(cv, true, { px: 6400 }); const png = await new Promise(r => cv.toBlob(r, 'image/png'));   // höchste Auflösung, die Geräte sicher schaffen (max. 16 Mio. Bildpunkte)
+  return { pdf: new File([pdf], base + '.pdf', { type: 'application/pdf' }), dxf: new File([dxf.text], base + '.dxf', { type: 'application/dxf' }), png: png ? new File([png], base + '.png', { type: 'image/png' }) : null, pngSize: [cv.width, cv.height] };
 }
 const planSub = () => 'Grundrisse' + ((P.plan.kunde || '').trim() ? '/' + P.plan.kunde.trim().replace(/[\\/:*?"<>|]+/g, ' ') : '');
 function saveLocal(file) { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); }
@@ -370,23 +522,24 @@ $('#grExport').onclick = async () => {
   if (!n) { A().toast('Erst mindestens einen Raum fertig messen'); return; }
   const open = p.rooms.length - n, dbx = A().dropbox.connected;
   const bg = sheet(`<h2>Grundriss ausgeben</h2><p class="mute" style="margin:-4px 0 10px;font-size:14px">${n} ${n === 1 ? 'Raum' : 'Räume'} fertig${open ? ` · ${open} noch offen (${open === 1 ? 'fehlt' : 'fehlen'} in der Ausgabe)` : ''} · PDF maßstäblich, DXF in cm für BricsCAD</p>
-    <button class="pri" data-dbx style="width:100%">☁ PDF + DXF in die Dropbox</button><p class="mute" data-where style="margin:4px 0 10px;font-size:13px"></p>
-    <div class="row2"><button class="ghost" data-pdf>PDF speichern</button><button class="ghost" data-dxf>DXF speichern</button></div>
+    <button class="pri" data-dbx style="width:100%">☁ PDF + DXF + Bild in die Dropbox</button><p class="mute" data-where style="margin:4px 0 10px;font-size:13px"></p>
+    <div class="row2"><button class="ghost" data-pdf>PDF speichern</button><button class="ghost" data-dxf>DXF speichern</button></div><button class="ghost" data-png style="width:100%;margin-top:8px">Bild (PNG) speichern</button>
     <button class="ghost" data-share style="width:100%;margin-top:8px">Teilen …</button><button class="ghost" data-close style="width:100%;margin-top:8px">Schließen</button>`);
   bg.querySelector('[data-where]').textContent = dbx ? 'Ordner: ' + A().dropbox.pathFor(planSub()) : 'Dropbox ist nicht verbunden (⚙ → Dropbox).';
   bg.querySelector('[data-dbx]').disabled = !dbx;
   const make = async () => { A().toast('Grundriss wird erstellt …', 8000); return planFiles(); };
   bg.querySelector('[data-pdf]').onclick = async () => { const f = await make(); saveLocal(f.pdf); A().toast('PDF gespeichert: ' + f.pdf.name, 3000); };
   bg.querySelector('[data-dxf]').onclick = async () => { const f = await make(); saveLocal(f.dxf); A().toast('DXF gespeichert: ' + f.dxf.name, 3000); };
-  bg.querySelector('[data-share]').onclick = async () => { const f = await make(); if (!await shareFiles([f.pdf, f.dxf])) { saveLocal(f.pdf); saveLocal(f.dxf); A().toast('Teilen geht hier nicht – beide Dateien wurden gespeichert', 3500); } };
+  bg.querySelector('[data-png]').onclick = async () => { const f = await make(); if (!f.png) { A().toast('Das Bild konnte nicht erzeugt werden'); return; } saveLocal(f.png); A().toast(`Bild gespeichert: ${f.pngSize[0]} × ${f.pngSize[1]} Bildpunkte`, 3500); };
+  bg.querySelector('[data-share]').onclick = async () => { const f = await make(); if (!await shareFiles([f.pdf, f.dxf, f.png].filter(Boolean))) { saveLocal(f.pdf); saveLocal(f.dxf); if (f.png) saveLocal(f.png); A().toast('Teilen geht hier nicht – beide Dateien wurden gespeichert', 3500); } };
   bg.querySelector('[data-dbx]').onclick = async () => {
     const bt = bg.querySelector('[data-dbx]'); bt.disabled = true; bt.textContent = 'Wird hochgeladen …';
     try {
       const f = await planFiles(), sub = planSub();
-      if (!navigator.onLine) { await A().queueAdd(f.pdf, sub); await A().queueAdd(f.dxf, sub); p.exports = [...(p.exports || []), { t: Date.now(), how: 'wartet auf Netz' }]; await save(); bg.remove(); A().toast('Kein Netz – PDF und DXF werden hochgeladen, sobald wieder Netz da ist', 4500); renderPlan(); return; }
-      const a = await A().dbxUpload(f.pdf, sub), b = await A().dbxUpload(f.dxf, sub);
+      if (!navigator.onLine) { await A().queueAdd(f.pdf, sub); await A().queueAdd(f.dxf, sub); if (f.png) await A().queueAdd(f.png, sub); p.exports = [...(p.exports || []), { t: Date.now(), how: 'wartet auf Netz' }]; await save(); bg.remove(); A().toast('Kein Netz – PDF und DXF werden hochgeladen, sobald wieder Netz da ist', 4500); renderPlan(); return; }
+      const a = await A().dbxUpload(f.pdf, sub), b = await A().dbxUpload(f.dxf, sub); if (f.png) await A().dbxUpload(f.png, sub);
       p.exports = [...(p.exports || []), { t: Date.now(), how: 'in Dropbox', path: a.path, dxf: b.path }].slice(-20); await save(); bg.remove(); A().beep(true); A().toast('In Dropbox: ' + a.path.split('/').slice(-3).join('/') + ' + DXF', 5000); renderPlan();
-    } catch (e) { bt.disabled = false; bt.textContent = '☁ PDF + DXF in die Dropbox'; A().toast('Hochladen fehlgeschlagen: ' + e.message, 6000); }
+    } catch (e) { bt.disabled = false; bt.textContent = '☁ PDF + DXF + Bild in die Dropbox'; A().toast('Hochladen fehlgeschlagen: ' + e.message, 6000); }
   };
 };
 
@@ -410,8 +563,9 @@ function drawClosed(g, r, pts, W, H, col, css) {
   const ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc, X = p => ox + p.x * sc, Y = p => oy + p.y * sc;
   P.view = { sc, pts: pts.map(p => ({ x: X(p), y: Y(p) })) };
   gfxBand(g, gf, X, Y, col('--text'));
-  gfxRest(g, gf, X, Y, { fill: col('--acc-soft'), cut: col('--bg'), panel: col('--panel'), win: col('--acc'), door: col('--warn'), dim: col('--text'), mono });
+  gfxRest(g, gf, X, Y, { fill: col('--acc-soft'), cut: col('--bg'), panel: col('--panel'), win: col('--acc'), door: col('--warn'), dim: col('--text'), wall: col('--text'), mono });
   if (P.op && P.op.wall != null) { const a = pts[P.op.wall], b = pts[(P.op.wall + 1) % n]; g.strokeStyle = col('--warn'); g.lineWidth = 6; g.beginPath(); g.moveTo(X(a), Y(a)); g.lineTo(X(b), Y(b)); g.stroke(); g.fillStyle = col('--warn'); g.beginPath(); g.arc(X(a), Y(a), 9, 0, 7); g.fill(); }
+  if (P.fan && pts[P.fan.k]) { const q = pts[P.fan.k]; g.strokeStyle = col('--warn'); g.lineWidth = 2; g.setLineDash([6, 5]); g.beginPath(); g.moveTo(X(pts[0]), Y(pts[0])); g.lineTo(X(q), Y(q)); g.stroke(); g.setLineDash([]); g.fillStyle = col('--warn'); g.beginPath(); g.arc(X(q), Y(q), 8, 0, 7); g.fill(); }
   g.fillStyle = col('--acc'); g.beginPath(); g.arc(X(pts[0]), Y(pts[0]), 6, 0, 7); g.fill();
   const c = pts.reduce((s, p) => ({ x: s.x + X(p) / n, y: s.y + Y(p) / n }), { x: 0, y: 0 }), wpx = (Math.max(...pts.map(q => q.x)) - Math.min(...pts.map(q => q.x))) * sc;
   stamp(g, r, c.x, c.y, { ink: col('--text'), mute: col('--mute'), display: css.getPropertyValue('--display') || 'sans-serif', mono, size: Math.min(20, wpx / 8), maxW: wpx - 10 });
@@ -480,13 +634,14 @@ window.__plan = {
       if (P.remeasure != null && P.room.walls[P.remeasure]) { const w = P.room.walls[P.remeasure]; w.cm = cm; delete w.calc; P.remeasure = null; if (P.room.closed) { const g = G.gap(P.room.walls); P.room.adjust = g.len > 0.5 ? g.len : 0; delete P.room.diag; } A().beep(true); save().then(roomUi); return true; }
       measure(cm); return true;
     }
+    if ($('#planFlat').classList.contains('on')) { if (!fillInput(cm)) { A().toast(`${Math.round(cm)} cm gemessen – für ein Kontrollmaß oben 📏 antippen`, 2500); A().beep(false); } return true; }
     if ($('#plan').classList.contains('on')) { A().toast(`${Math.round(cm)} cm gemessen – erst einen Raum öffnen`, 2000); A().beep(false); return true; }
     return false;
   },
   // Zurück: Raum → Grundriss → Startseite (Reiter Grundriss)
   back(cur, viaPop) {
     if (cur === 'planFlat') { renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
-    if (cur === 'planRoom') { P.room = null; P.hold = null; P.op = null; P.thInput = null; P.wantDiag = false; P.wantRh = false; P.remeasure = null; renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
+    if (cur === 'planRoom') { P.room = null; P.hold = null; P.op = null; P.thInput = null; P.rect = null; P.fan = null; P.wantDiag = false; P.wantRh = false; P.remeasure = null; renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
     if (cur === 'plan') { P.plan = null; A().show('home', viaPop); setTab('gr'); return true; }
     return false;
   },

@@ -2,6 +2,9 @@
 import * as G from './plan-geo.js';
 const fmtA = m2 => m2.toFixed(2).replace('.', ',') + ' m²';
 const fmtM = cm => (cm / 100).toFixed(2).replace('.', ',') + ' m';
+// Wandfläche eines Raums: Umfang × Raumhöhe; abzüglich Öffnungen mit angenommenen Höhen (Tür 2,00 m, Fenster 1,30 m), solange keine Höhen gemessen werden
+export const DOOR_H = 200, WIN_H = 130;
+export function wallArea(r) { if (!r.rh) return null; const s = G.summary(r), gross = s.perimeter * r.rh / 10000, minus = (r.ops || []).reduce((t, op) => t + op.w * Math.min(r.rh, op.type === 'T' ? DOOR_H : WIN_H), 0) / 10000; return { gross, net: Math.max(0, gross - minus) }; }
 const areaOf = r => G.summary(r).area;
 const inner = t => Math.round((180 - Math.abs(t)) * 10) / 10;          // Innenwinkel der Ecke
 export const fileBase = plan => ('Grundriss ' + (plan.name || 'ohne Adresse')).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -11,21 +14,20 @@ const asc = s => String(s).replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü
 // Wandflächen wie im fertigen Plan: Wandbänder aller verbundenen Räume zu einer Fläche verschmolzen,
 // Raumflächen und Öffnungen (ganz durch die Wand) herausgeschnitten. Ergebnis: geschlossene Umrisse in cm.
 export function wallOutlines(plan, lay, PC) {
-  const ring = pl => [pl.map(q => [q.x, q.y])], out = [];
+  const ring = pl => [pl.map(q => [q.x, q.y])], out = []; out.groups = [];
   const build = (items, loose) => {
     if (!items.length) return; const gfs = items.map(it => G.gfx(plan, it.room, it.poly, { chains: false }));
     let reg = PC.union(...gfs.map(g => ring(g.band)));
     reg = PC.difference(reg, ...gfs.map(g => ring(g.inner)), ...gfs.flatMap(g => g.cutsX.map(ring)));
-    for (const poly of reg) for (const r of poly) { const pts = r.slice(0, -1).map(([x, y]) => ({ x, y })); if (pts.length >= 3) out.push({ pts, loose }); }
+    const grp = []; for (const poly of reg) for (const r of poly) { const pts = r.slice(0, -1).map(([x, y]) => ({ x, y })); if (pts.length >= 3) { out.push({ pts, loose }); grp.push(pts); } } out.groups.push(grp);
   };
-  build(lay.items.filter(i => !i.loose), false);
-  for (const it of lay.items.filter(i => i.loose)) build([it], true);
+  for (const gi of [...new Set(lay.items.map(i => i.g))]) build(lay.items.filter(i => i.g === gi), gi > 0);   // je zusammenhängender Gruppe eine Wandfläche
   return out;
 }
 export function buildDxf(plan, PC = globalThis.polygonClipping) {
   const done = plan.rooms.filter(r => r.closed && r.walls.length >= 3), lay = G.layout(plan.rooms, plan.wall || 15), o = [];
   const w = (...a) => { for (let i = 0; i < a.length; i += 2) o.push(String(a[i]), String(a[i + 1])); }, f = v => (Math.round(v * 1000) / 1000).toString();
-  const LAYERS = [['WAND', 7], ['TUER', 2], ['FENSTER', 5], ['RAUMTEXT', 3], ['MASSE', 8], ['MASSKETTE', 8], ['LOSE', 9]];
+  const LAYERS = [['WAND', 7], ['WAND_SCHRAFFUR', 8], ['EINRICHTUNG', 4], ['TUER', 2], ['FENSTER', 5], ['RAUMTEXT', 3], ['MASSE', 8], ['MASSKETTE', 8], ['LOSE', 9]];
   w(0, 'SECTION', 2, 'HEADER', 9, '$ACADVER', 1, 'AC1009', 9, '$INSUNITS', 70, 5, 0, 'ENDSEC');
   w(0, 'SECTION', 2, 'TABLES', 0, 'TABLE', 2, 'LTYPE', 70, 1, 0, 'LTYPE', 2, 'CONTINUOUS', 70, 64, 3, 'Solid line', 72, 65, 73, 0, 40, 0.0, 0, 'ENDTAB');
   w(0, 'TABLE', 2, 'LAYER', 70, LAYERS.length); for (const [n, c] of LAYERS) w(0, 'LAYER', 2, n, 70, 64, 62, c, 6, 'CONTINUOUS'); w(0, 'ENDTAB', 0, 'ENDSEC');
@@ -38,6 +40,7 @@ export function buildDxf(plan, PC = globalThis.polygonClipping) {
   let merged = null; try { if (PC) merged = wallOutlines(plan, lay, PC); } catch (e) { merged = null; }
   const poly = (L, pts) => { w(0, 'POLYLINE', 8, L, 66, 1, 70, 1); for (const q of pts) w(0, 'VERTEX', 8, L, 10, f(q.x), 20, f(-q.y), 30, 0); w(0, 'SEQEND', 8, L); };
   if (merged) for (const m of merged) poly(m.loose ? 'LOSE' : 'WAND', m.pts);
+  if (merged) for (const rings of merged.groups) { try { for (const [p, q] of G.hatchLines(rings, 8)) line('WAND_SCHRAFFUR', p, q); } catch (e) { } }   // Schraffur je zusammenhängender Wandfläche
   for (const it of lay.items) {
     const r = it.room, pl = it.poly, n = pl.length, WL = it.loose ? 'LOSE' : 'WAND', gf = G.gfx(plan, r, pl, { chains: true, outerOnly: true, u: 1 }); // Maßketten nur an Wänden ohne Verbindungstür, sonst liegen sie im Nachbarraum
     for (let i = 0; i < n; i++) { // Wandmaß innen nur dort, wo außen keine Maßkette steht (Wand mit Verbindungstür)
@@ -47,6 +50,7 @@ export function buildDxf(plan, PC = globalThis.polygonClipping) {
     for (const wn of gf.wins) { for (let k = 0; k < 4; k++) line('FENSTER', wn.rect[k], wn.rect[(k + 1) % 4]); line('FENSTER', wn.glass[0], wn.glass[1]); }
     for (const dr of gf.doors) { if (!merged) for (const j of dr.jambs) line('TUER', j[0], j[1]); if (dr.leaf) // Laibungen sind Teil des Wandumrisses
       { line('TUER', dr.leaf[0], dr.leaf[1]); arc('TUER', dr.arc.c, dr.arc.r, dr.arc.from, dr.arc.to); } }
+    for (const ob of gf.objs || []) { if (ob.quad) for (let k = 0; k < 4; k++) line('EINRICHTUNG', ob.quad[k], ob.quad[(k + 1) % 4]); for (const l of ob.lines) for (let k = 0; k + 1 < l.length; k++) line('EINRICHTUNG', l[k], l[k + 1]); if (ob.label) text('EINRICHTUNG', ob.label.p, 7, ob.label.t, rotOf(ob.label.d)); }
     for (const ch of gf.chains) { line('MASSKETTE', ch.line[0], ch.line[1]); for (const t of ch.ticks) line('MASSKETTE', t[0], t[1]); for (const l of ch.labels) text('MASSKETTE', l.p, 7, l.t, rotOf(l.d)); }
     const c = pl.reduce((s2, q) => ({ x: s2.x + q.x / n, y: s2.y + q.y / n }), { x: 0, y: 0 });
     text('RAUMTEXT', { x: c.x, y: c.y - 18 }, 14, r.name); text('RAUMTEXT', { x: c.x, y: c.y + 2 }, 10, fmtA(areaOf(r))); text('RAUMTEXT', { x: c.x, y: c.y + 18 }, 7, `U ${fmtM(G.summary(r).perimeter)}${r.rh ? ` / Rh ${fmtM(r.rh)}` : ''}`);
@@ -64,7 +68,7 @@ export async function buildPlanPdf(PDFLib, fontkit, fontBytes, plan, msgs = []) 
   const { PDFDocument, rgb, degrees } = PDFLib, doc = await PDFDocument.create(); doc.registerFontkit(fontkit);
   const font = await doc.embedFont(fontBytes, { subset: true });
   const ink = rgb(0.09, 0.13, 0.16), grey = rgb(0.45, 0.5, 0.54), blue = rgb(0.04, 0.5, 0.75), gold = rgb(0.75, 0.55, 0.05), fill = rgb(0.93, 0.96, 0.98), red = rgb(0.72, 0.2, 0.15), white = rgb(1, 1, 1), wallC = rgb(0.16, 0.2, 0.24), looseC = rgb(0.6, 0.64, 0.67);
-  const W = 841.89, H = 595.28, F = 20, SB = 66, TBW = 272, done = plan.rooms.filter(r => r.closed && r.walls.length >= 3), pages = Math.max(1, done.length ? done.length + 1 : 1);
+  const W = 841.89, H = 595.28, F = 20, SB = 66, TBW = 272, done = plan.rooms.filter(r => r.closed && r.walls.length >= 3), pages = Math.max(1, done.length ? done.length + 2 : 1);
   doc.setTitle(fileBase(plan)); doc.setCreator('Floorplan AI Massblatt');
   const d = new Date(), date = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
   const wOf = (t, size) => font.widthOfTextAtSize(String(t), size);
@@ -98,6 +102,12 @@ export async function buildPlanPdf(PDFLib, fontkit, fontBytes, plan, msgs = []) 
       for (const j of dr.jambs) L(pg, P(j[0]), P(j[1]), 0.8, gold);
       if (dr.leaf) { L(pg, P(dr.leaf[0]), P(dr.leaf[1]), 1, gold); const a0 = Math.atan2(dr.arc.from.y - dr.arc.c.y, dr.arc.from.x - dr.arc.c.x), a1 = Math.atan2(dr.arc.to.y - dr.arc.c.y, dr.arc.to.x - dr.arc.c.x), sweep = G.norm180((a1 - a0) * 180 / Math.PI) > 0 ? 1 : 0, c2 = q => `${(q.x * k).toFixed(2)} ${(q.y * k).toFixed(2)}`;
         pg.drawSvgPath(`M ${c2(dr.arc.from)} A ${(dr.arc.r * k).toFixed(2)} ${(dr.arc.r * k).toFixed(2)} 0 0 ${sweep} ${c2(dr.arc.to)}`, { x: ox, y: oy, borderColor: gold, borderWidth: 0.45, borderDashArray: [1.5, 1.5] }); }
+    }
+    for (const ob of gf.objs || []) {
+      if (ob.quad) pg.drawSvgPath(pth(ob.quad), { x: ox, y: oy, color: ob.solid ? wallC : white, borderColor: ink, borderWidth: 0.45 });
+      for (const l of ob.lines) for (let i = 0; i + 1 < l.length; i++) L(pg, P(l[i]), P(l[i + 1]), 0.4, ob.solid ? white : ink, ob.dashed ? [4, 3] : undefined);
+      if (ob.label) { let a = Math.atan2(ob.label.d.y, ob.label.d.x); if (a > Math.PI / 2 - 0.01 || a < -Math.PI / 2 - 0.01) a += Math.PI; const A = -a, c = P(ob.label.p), size = 6, w = wOf(ob.label.t, size), dx = Math.cos(A), dy = Math.sin(A);
+        pg.drawText(ob.label.t, { x: c.x - dx * w / 2 + dy * size * 0.33, y: c.y - dy * w / 2 - dx * size * 0.33, size, font, color: grey, rotate: degrees(A * 180 / Math.PI) }); }
     }
     for (const ch of gf.chains) { L(pg, P(ch.line[0]), P(ch.line[1]), 0.4); for (const t of ch.ticks) L(pg, P(t[0]), P(t[1]), 0.5);
       for (const l of ch.labels) { let a = Math.atan2(l.d.y, l.d.x); if (a > Math.PI / 2 - 0.01 || a < -Math.PI / 2 - 0.01) a += Math.PI; const A = -a, c = P(l.p), size = 7, w = wOf(l.t, size), dx = Math.cos(A), dy = Math.sin(A);
@@ -145,6 +155,7 @@ export async function buildPlanPdf(PDFLib, fontkit, fontBytes, plan, msgs = []) 
     let x = W - F - tw, y = H - F - 24; const s2 = G.summary(r), row = (a, b, c = '', col = ink) => { T(pg, a, x, y, 9, col); T(pg, b, x + 50, y, 9, col); T(pg, c, x + 138, y, 9, col); y -= 13; };
     T(pg, r.name, x, y, 14); y -= 19; T(pg, `Fläche ${fmtA(s2.area)}`, x, y, 11.5); y -= 14;
     T(pg, `${r.rh ? `Raumhöhe ${fmtM(r.rh)}  ·  ` : ''}Umfang ${fmtM(s2.perimeter)}`, x, y, 8.5, grey); y -= 11;
+    const wa = wallArea(r); if (wa) { T(pg, `Wandfläche ${fmtA(wa.net)} (ohne Abzug ${fmtA(wa.gross)})`, x, y, 8.5, grey); y -= 11; }
     if (r.adjust || r.diag) { T(pg, [r.adjust ? `${Math.round(r.adjust)} cm ausgeglichen` : '', r.diag ? `Diagonale ${Math.round(r.diag)} cm` : ''].filter(Boolean).join('  ·  '), x, y, 8.5, grey); y -= 11; }
     y -= 9; row('Wand', 'Länge', 'Ecke danach', grey);
     r.walls.forEach((w, i) => { if (y > F + SB + 40) row(String(i + 1), `${Math.round(w.cm * 10) / 10} cm${w.calc ? ' *' : ''}`, `${inner(w.turn)}° ${w.turn > 0 ? 'rechts' : 'links'}`); });
@@ -156,6 +167,18 @@ export async function buildPlanPdf(PDFLib, fontkit, fontBytes, plan, msgs = []) 
         for (const e of extra) { T(pg, fitText(e, 7.5, tw - 54), x + 50, y + 2, 7.5, grey); y -= 9.5; } y -= 1; } }
     T(pg, 'Blauer Punkt = Start, Wände im Uhrzeigersinn nummeriert', F + 12, F + SB - 13, 7.5, grey);
   });
+  // Letztes Blatt: Raumliste
+  if (done.length) {
+    const pg = doc.addPage([W, H]); sheet(pg, `${plan.name || 'Ohne Adresse'} – Raumliste`, 0, pages);
+    const cols = [['Raum', F + 30, 0], ['Fläche', F + 300, 1], ['Umfang', F + 400, 1], ['Raumhöhe', F + 500, 1], ['Wandfläche', F + 620, 1], ['ohne Abzug', F + 740, 1]], cell = (t, c, y, size = 10, col = ink) => T(pg, t, c[2] ? c[1] - wOf(t, size) : c[1], y, size, col);
+    let y = H - F - 50; T(pg, 'Raumliste', F + 30, H - F - 30, 15); cols.forEach(c => cell(c[0], c, y, 8.5, grey)); y -= 6; L(pg, { x: F + 24, y }, { x: W - F - 24, y }, 0.5, grey); y -= 15;
+    let tA = 0, tW = 0, tG = 0, anyW = false;
+    for (const r of done) { if (y < F + SB + 40) break; const s2 = G.summary(r), wa = wallArea(r); tA += s2.area; if (wa) { tW += wa.net; tG += wa.gross; anyW = true; }
+      cell(fitText(r.name, 10, 250), cols[0], y); cell(fmtA(s2.area), cols[1], y); cell(fmtM(s2.perimeter), cols[2], y); cell(r.rh ? fmtM(r.rh) : '–', cols[3], y); cell(wa ? fmtA(wa.net) : '–', cols[4], y); cell(wa ? fmtA(wa.gross) : '–', cols[5], y); y -= 15; }
+    y += 6; L(pg, { x: F + 24, y }, { x: W - F - 24, y }, 0.5, grey); y -= 15; cell('Gesamt', cols[0], y, 10.5); cell(fmtA(tA), cols[1], y, 10.5); if (anyW) { cell(fmtA(tW), cols[4], y, 10.5); cell(fmtA(tG), cols[5], y, 10.5); }
+    T(pg, `Wandfläche = Umfang × Raumhöhe, abzüglich Öffnungen mit angenommener Höhe (Tür ${fmtM(DOOR_H)}, Fenster ${fmtM(WIN_H)}).`, F + 12, F + SB - 13, 7.5, grey);
+    T(pg, 'Säulen, Kamine und Schächte sind von der Raumfläche abgezogen.', F + 12, F + SB - 23, 7.5, grey);
+  }
   if (!done.length) { const pg = doc.addPage([W, H]); sheet(pg, plan.name || 'Ohne Adresse', 0, 1); T(pg, 'Noch kein Raum fertig gemessen.', F + 30, H / 2, 12, grey); }
   return doc.save();
 }

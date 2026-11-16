@@ -44,7 +44,7 @@ export const isRect = walls => walls.every(w => w.turn == null || Math.abs(Math.
 export function summary(room) {
   const walls = room.walls || []; const g = gap(walls);
   const out = { n: walls.length, gap: g.len, off: g.off, perimeter: g.perimeter, area: 0 };
-  if (room.closed && walls.length >= 3) out.area = area(closedPoly(walls)) / 10000; // m²
+  if (room.closed && walls.length >= 3) out.area = (area(closedPoly(walls)) - objArea(room)) / 10000; // m², ohne Säulen/Kamine/Schächte
   return out;
 }
 
@@ -78,8 +78,11 @@ export function placeRooms(rooms, defThick = 15) {
     if (!ob) { missing.push({ from: A.id, to: B.id, why: 'gegenstueck' }); continue; }
     used.add(oa.id); used.add(ob.id); pairs.push({ A, B, oa, ob, thick: oa.thick || ob.thick || defThick });
   }
+  // Wand an Wand (ohne Öffnung): Anfang der eigenen Wand + Versatz liegt dem Ende der Nachbarwand gegenüber
+  for (const A of done) for (const l of A.links || []) { const B = done.find(r => r.id === l.to); if (!B || !(l.toWall < B.walls.length) || !(l.wall < A.walls.length)) continue;
+    pairs.push({ A, B, oa: { wall: l.wall, pos: l.off || 0, w: 0 }, ob: { wall: l.toWall, pos: B.walls[l.toWall].cm, w: 0 }, thick: l.thick || defThick }); }
   const T = new Map(), issues = [];
-  if (!done.length) return { T, unplaced: [], missing, issues, pairs };
+  if (!done.length) return { T, unplaced: [], main: 0, groups: 0, missing, issues, pairs };
   const solve = (ta, from, to, of, ot, thick) => {       // Lage von „to“, wenn „from“ bei ta liegt
     const gf = opGeo(from, poly.get(from.id), of), gt = opGeo(to, poly.get(to.id), ot);
     const nf = rotV(ta, gf.n), cf = applyT(ta, gf.c);
@@ -87,21 +90,27 @@ export function placeRooms(rooms, defThick = 15) {
     const target = { x: cf.x + nf.x * thick, y: cf.y + nf.y * thick };
     return { c, s, x: target.x - (c * gt.c.x - s * gt.c.y), y: target.y - (s * gt.c.x + c * gt.c.y) };
   };
-  T.set(done[0].id, { c: 1, s: 0, x: 0, y: 0 }); const queue = [done[0]], usedPair = new Set();
-  while (queue.length) {
-    const R = queue.shift();
-    for (const p of pairs) {
-      if (usedPair.has(p)) continue; const isA = p.A === R, isB = p.B === R; if (!isA && !isB) continue; usedPair.add(p);
-      const from = R, to = isA ? p.B : p.A, of = isA ? p.oa : p.ob, ot = isA ? p.ob : p.oa;
-      const t = solve(T.get(R.id), from, to, of, ot, p.thick);
-      if (!T.has(to.id)) { T.set(to.id, t); queue.push(to); }
-      else { // Ringschluss: der Raum liegt schon – wie weit weicht diese Tür davon ab?
-        const have = T.get(to.id), gt = opGeo(to, poly.get(to.id), ot), a = applyT(have, gt.c), b = applyT(t, gt.c), off = Math.hypot(a.x - b.x, a.y - b.y);
-        if (off > 3) issues.push({ a: from.id, b: to.id, off });
+  // Jede zusammenhängende Gruppe wird für sich aufgebaut (g = Gruppennummer; Gruppe 0 beginnt beim ersten fertigen Raum)
+  const usedPair = new Set(); let grp = -1;
+  for (const seed of done) {
+    if (T.has(seed.id)) continue; grp++; T.set(seed.id, { c: 1, s: 0, x: 0, y: 0, g: grp }); const queue = [seed];
+    while (queue.length) {
+      const R = queue.shift();
+      for (const p of pairs) {
+        if (usedPair.has(p)) continue; const isA = p.A === R, isB = p.B === R; if (!isA && !isB) continue; usedPair.add(p);
+        const from = R, to = isA ? p.B : p.A, of = isA ? p.oa : p.ob, ot = isA ? p.ob : p.oa;
+        const t = solve(T.get(R.id), from, to, of, ot, p.thick); t.g = grp;
+        if (!T.has(to.id)) { T.set(to.id, t); queue.push(to); }
+        else { // Ringschluss: der Raum liegt schon – wie weit weicht diese Verbindung davon ab?
+          const have = T.get(to.id), gt = opGeo(to, poly.get(to.id), ot), a = applyT(have, gt.c), b = applyT(t, gt.c), off = Math.hypot(a.x - b.x, a.y - b.y);
+          if (off > 3) issues.push({ a: from.id, b: to.id, off });
+        }
       }
     }
   }
-  return { T, unplaced: done.filter(r => !T.has(r.id)).map(r => r.id), missing, issues, pairs, poly };
+  const unplaced = done.filter(r => T.get(r.id).g > 0).map(r => r.id);
+  return { T, unplaced, main: done.length - unplaced.length, groups: grp + 1, missing, issues, pairs, poly };
+
 }
 
 // ---------- Stufe 3: Lage aller fertigen Räume für die Ausgabe ----------
@@ -109,11 +118,10 @@ export function placeRooms(rooms, defThick = 15) {
 export function layout(rooms, defThick = 15) {
   const res = placeRooms(rooms, defThick), items = []; let bb = null;
   const grow = q => { bb = bb ? { x0: Math.min(bb.x0, q.x), y0: Math.min(bb.y0, q.y), x1: Math.max(bb.x1, q.x), y1: Math.max(bb.y1, q.y) } : { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; };
-  for (const r of rooms) { const t = res.T.get(r.id); if (!t) continue; const poly = res.poly.get(r.id).map(q => applyT(t, q)); poly.forEach(grow); items.push({ room: r, poly, loose: false }); }
-  let x = bb ? bb.x1 + 150 : 0; const y0 = bb ? bb.y0 : 0;
-  for (const id of res.unplaced) {
-    const r = rooms.find(q => q.id === id), raw = res.poly.get(id), mnx = Math.min(...raw.map(q => q.x)), mny = Math.min(...raw.map(q => q.y));
-    const poly = raw.map(q => ({ x: q.x - mnx + x, y: q.y - mny + y0 })); poly.forEach(grow); x = Math.max(...poly.map(q => q.x)) + 100; items.push({ room: r, poly, loose: true });
+  for (let gi = 0; gi < (res.groups || 0); gi++) { // Gruppe 0 an ihrem Platz, jede weitere als Block rechts daneben
+    const part = rooms.filter(r => res.T.has(r.id) && res.T.get(r.id).g === gi).map(r => ({ room: r, poly: res.poly.get(r.id).map(q => applyT(res.T.get(r.id), q)), loose: gi > 0, g: gi }));
+    if (gi > 0 && bb) { const all = part.flatMap(i => i.poly), mnx = Math.min(...all.map(q => q.x)), mny = Math.min(...all.map(q => q.y)), dx = bb.x1 + 150 - mnx, dy = bb.y0 - mny; for (const i of part) i.poly = i.poly.map(q => ({ x: q.x + dx, y: q.y + dy })); }
+    for (const i of part) { i.poly.forEach(grow); items.push(i); }
   }
   return { items, bb: bb || { x0: 0, y0: 0, x1: 1, y1: 1 }, res };
 }
@@ -138,7 +146,7 @@ export function winSym(part, nOut, depth) {
 }
 // Ein Türblatt wird nur einmal gezeichnet: in dem Raum, in den die Tür aufgeht – oder hier, wenn es kein Gegenstück gibt
 export const partnerOf = (plan, room, op) => op.to ? ((plan.rooms.find(r => r.id === op.to) || {}).ops || []).find(o => o.type === 'T' && o.to === room.id) : null;
-export const drawLeaf = (plan, room, op) => op.swing !== 'out' || !partnerOf(plan, room, op);
+export const drawLeaf = (plan, room, op) => !op.noLeaf && (op.swing !== 'out' || !partnerOf(plan, room, op)); // Durchgang: kein Türblatt
 // Wo das Wandmaß steht: in der Mitte des längsten massiven Wandstücks, damit es keine Öffnung überschreibt
 export function dimAnchor(wp) { let best = null, bl = -1; for (const p of wp.parts) if (p.kind === 'W') { const l = Math.hypot(p.p1.x - p.p0.x, p.p1.y - p.p0.y); if (l > bl) { bl = l; best = p; } } return best ? { x: (best.p0.x + best.p1.x) / 2, y: (best.p0.y + best.p1.y) / 2 } : wp.mid; }
 
@@ -157,6 +165,7 @@ export function gfx(plan, room, poly, o = {}) {
   const n = poly.length, wOut = plan.wallOut || 30, u = o.u || 1, add = (p, v, k) => ({ x: p.x + v.x * k, y: p.y + v.y * k });
   const out = { band: offsetPoly(poly, wOut), inner: poly, cuts: [], cutsX: [], wins: [], doors: [], chains: [], chained: new Set(), ext: [] };
   out.ext.push(...out.band);
+  out.objs = (room.objs || []).filter(q => q.wall < n).map(q => objGfx(room, poly, q));
   for (let i = 0; i < n; i++) {
     const wp = wallParts(room, poly, i), nn = wp.n;
     for (const p of wp.parts) {
@@ -166,7 +175,7 @@ export function gfx(plan, room, poly, o = {}) {
       if (p.kind === 'F') out.wins.push({ rect: [p.p0, p.p1, q1, q0], glass: [add(p.p0, nn, dep / 2), add(p.p1, nn, dep / 2)] });
       else {
         const d = { jambs: [[p.p0, q0], [p.p1, q1]], op: p.op };
-        if (o.allLeaf || drawLeaf(plan, room, p.op)) {
+        if (!p.op.noLeaf && (o.allLeaf || drawLeaf(plan, room, p.op))) {
           const hb = p.op.hinge === 'b', outw = p.op.swing === 'out', h0 = hb ? p.p1 : p.p0, e0 = hb ? p.p0 : p.p1, r = Math.hypot(e0.x - h0.x, e0.y - h0.y);
           const hinge = outw ? add(h0, nn, dep) : h0, other = outw ? add(e0, nn, dep) : e0, tip = add(hinge, nn, outw ? r : -r);
           d.leaf = [hinge, tip]; d.arc = { c: hinge, r, from: tip, to: other }; out.ext.push(tip);
@@ -184,6 +193,72 @@ export function gfx(plan, room, poly, o = {}) {
       if (segs.length > 1) { out.chains.push(mk(off, segs)); off += 17 * u; }
       out.chains.push(mk(off, [{ p0: a, p1: b, cm: cmL }])); out.chained.add(i);
     }
+  }
+  return out;
+}
+
+// ---------- 3.17: Durchgang, Wand an Wand, Kontrollmaß, Diagonalen-Fächer, Nische, Objekte, Schraffur ----------
+// Kontrollmaß: Abstand zwischen zwei (gegenüberliegenden) Wänden im zusammengehängten Plan, in cm
+export function checkDist(lay, a, wa, b, wb) {
+  const ia = lay.items.find(i => i.room.id === a), ib = lay.items.find(i => i.room.id === b); if (!ia || !ib || ia.g !== ib.g) return null; // nur innerhalb einer zusammenhängenden Gruppe
+  const ga = wallGeo(ia.poly, wa), gb = wallGeo(ib.poly, wb), m = { x: (gb.a.x + gb.b.x) / 2, y: (gb.a.y + gb.b.y) / 2 };
+  return Math.abs((m.x - ga.a.x) * ga.n.x + (m.y - ga.a.y) * ga.n.y);
+}
+// Diagonalen vom Startpunkt zu den Ecken 2 … n−2 legen die Form eindeutig fest (Fächer aus Dreiecken). diags[k] = Abstand Startpunkt → Ecke k.
+// Auf welcher Seite jedes Dreieck liegt, kommt aus der bisher getippten Form. Gibt die Drehungen je Wand zurück oder null.
+export function fanTurns(walls, diags) {
+  const n = walls.length, L = walls.map(w => w.cm), cur = closedPoly(walls), c = [{ x: 0, y: 0 }, { x: L[0], y: 0 }]; let sgn = 1;
+  for (let k = 2; k < n; k++) {
+    const B = c[k - 1], dAB = Math.hypot(B.x, B.y), side = L[k - 1], dAK = k === n - 1 ? L[n - 1] : diags[k]; if (!(dAK > 0) || !(dAB > 0)) return null;
+    const cs = (dAB * dAB + dAK * dAK - side * side) / (2 * dAB * dAK); if (cs < -1.0001 || cs > 1.0001) return null;
+    const cr = (cur[k - 1].x - cur[0].x) * (cur[k].y - cur[0].y) - (cur[k - 1].y - cur[0].y) * (cur[k].x - cur[0].x); if (Math.abs(cr) > 1e-6) sgn = cr > 0 ? 1 : -1;
+    const ang = Math.atan2(B.y, B.x) + sgn * Math.acos(Math.max(-1, Math.min(1, cs))); c.push({ x: dAK * Math.cos(ang), y: dAK * Math.sin(ang) });
+  }
+  const dir = i => { const a = c[i], b = c[(i + 1) % n], l = Math.hypot(b.x - a.x, b.y - a.y) || 1; return { x: (b.x - a.x) / l, y: (b.y - a.y) / l }; };
+  return L.map((_, i) => { const d1 = dir(i), d2 = dir((i + 1) % n); return Math.atan2(d1.x * d2.y - d1.y * d2.x, d1.x * d2.x + d1.y * d2.y) / RAD; });
+}
+// Nische (Raum wird an dieser Stelle größer) oder Vorsprung (kleiner) in Wand i einfügen: Abstand a, Breite b, Tiefe t. Verschiebt die Wandnummern dahinter.
+export function insertNiche(room, i, a, b, t, inward) {
+  const w = room.walls[i], rest = w.cm - a - b; if (!(a > 0 && b > 0 && t > 0 && rest > 0)) return false;
+  const cw = room.walls.reduce((s, x) => s + (x.turn || 0), 0) > 0, X = (cw ? -90 : 90) * (inward ? -1 : 1);
+  room.walls.splice(i, 1, { cm: a, turn: X }, { cm: t, turn: -X }, { cm: b, turn: -X }, { cm: t, turn: X }, { cm: rest, turn: w.turn });
+  for (const list of [room.ops, room.objs, room.links]) for (const o of list || []) if (o.wall > i) o.wall += 4;
+  return true;
+}
+// Kopie eines Raums, auf Wunsch gespiegelt (Drehungen und Türanschläge umgekehrt); Verbindungen werden nicht mitkopiert
+export function copyRoom(room, mirror, uid) {
+  const r = JSON.parse(JSON.stringify(room)); r.id = uid(); delete r.links;
+  for (const w of r.walls) if (mirror && w.turn != null) w.turn = -w.turn;
+  for (const o of r.ops || []) { o.id = uid(); o.to = null; if (mirror && o.hinge) o.hinge = o.hinge === 'a' ? 'b' : 'a'; }
+  for (const o of r.objs || []) o.id = uid();
+  return r;
+}
+// Objekte an einer Wand: Säule, Kamin, Schacht, Heizkörper, Sanitär, Treppe, Dachschräge
+export const OBJ = { S: ['Säule', 30, 30, 1], K: ['Kamin', 40, 40, 1], C: ['Schacht', 60, 30, 1], H: ['Heizkörper', 100, 12, 0], WC: ['WC', 40, 65, 0], WB: ['Waschbecken', 60, 45, 0], DU: ['Dusche', 90, 90, 0], WA: ['Wanne', 170, 75, 0], TR: ['Treppe', 100, 250, 0], DS: ['Dachschräge', 0, 100, 0] };
+export const objArea = room => (room.objs || []).reduce((s, o) => s + ((OBJ[o.kind] || [])[3] ? o.w * o.d : 0), 0);   // Säule, Kamin, Schacht zählen nicht zur Fläche
+export function objGfx(room, poly, o) {
+  const g = wallGeo(poly, o.wall), k = g.L / (room.walls[o.wall].cm || g.L), W = (o.kind === 'DS' ? room.walls[o.wall].cm : o.w) * k, D = o.d, pos = (o.kind === 'DS' ? 0 : o.pos) * k, gap = o.gap || 0;
+  const f = (u, v) => ({ x: g.a.x + g.d.x * (pos + u * W) - g.n.x * (gap + v * D), y: g.a.y + g.d.y * (pos + u * W) - g.n.y * (gap + v * D) });
+  const rect = (u0, v0, u1, v1) => [f(u0, v0), f(u1, v0), f(u1, v1), f(u0, v1), f(u0, v0)], ell = (cu, cv, ru, rv) => Array.from({ length: 21 }, (_, i) => f(cu + ru * Math.cos(i * Math.PI / 10), cv + rv * Math.sin(i * Math.PI / 10)));
+  const out = { kind: o.kind, quad: [f(0, 0), f(1, 0), f(1, 1), f(0, 1)], solid: !!(OBJ[o.kind] || [])[3], lines: [], dashed: false, label: null, c: f(0.5, 0.5) };
+  if (o.kind === 'K') out.lines.push([f(0, 0), f(1, 1)], [f(1, 0), f(0, 1)]);
+  else if (o.kind === 'C') out.lines.push([f(0, 0), f(1, 1)]);
+  else if (o.kind === 'H') for (let i = 1; i < 8; i++) out.lines.push([f(i / 8, 0), f(i / 8, 1)]);
+  else if (o.kind === 'WC') out.lines.push(rect(0.05, 0, 0.95, 0.28), ell(0.5, 0.64, 0.42, 0.34));
+  else if (o.kind === 'WB') out.lines.push(ell(0.5, 0.52, 0.36, 0.34), [f(0.5, 0.06), f(0.5, 0.2)]);
+  else if (o.kind === 'DU') out.lines.push([f(0, 0), f(1, 1)], [f(1, 0), f(0, 1)], ell(0.5, 0.5, 0.06, 0.06));
+  else if (o.kind === 'WA') out.lines.push(rect(0.06, 0.1, 0.94, 0.9), ell(0.14, 0.5, 0.03, 0.06));
+  else if (o.kind === 'TR') { const n = Math.max(3, Math.round(D / 27)); for (let i = 1; i < n; i++) out.lines.push([f(0, i / n), f(1, i / n)]); out.lines.push([f(0.5, 0.04), f(0.5, 0.96)], [f(0.38, 0.86), f(0.5, 0.96), f(0.62, 0.86)]); }
+  else if (o.kind === 'DS') { out.quad = null; out.dashed = true; out.lines.push([f(0, 1), f(1, 1)]); out.label = { p: f(0.5, 0.5), t: `Schräge${o.knee ? ', Kniestock ' + Math.round(o.knee) : ''}`, d: g.d }; }
+  return out;
+}
+// Schraffur: schräge Linien im Abstand „step“, auf die Wandflächen zugeschnitten (rings = geschlossene Umrisse, innen/außen nach Gerade-Ungerade-Regel)
+export function hatchLines(rings, step = 8) {
+  const c = Math.SQRT1_2, R = p => ({ x: (p.x + p.y) * c, y: (p.y - p.x) * c }), B = p => ({ x: (p.x - p.y) * c, y: (p.x + p.y) * c }), rs = rings.map(r => r.map(R)), out = [];
+  const ys = rs.flat().map(p => p.y); if (!ys.length) return out;
+  for (let y = Math.ceil(Math.min(...ys) / step) * step + step / 2; y < Math.max(...ys); y += step) {
+    const xs = []; for (const r of rs) for (let i = 0; i < r.length; i++) { const a = r[i], b = r[(i + 1) % r.length]; if ((a.y <= y) !== (b.y <= y)) xs.push(a.x + (y - a.y) * (b.x - a.x) / (b.y - a.y)); }
+    xs.sort((p, q) => p - q); for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i + 1] - xs[i] > 0.5) out.push([B({ x: xs[i], y }), B({ x: xs[i + 1], y })]);
   }
   return out;
 }
