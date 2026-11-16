@@ -314,6 +314,8 @@ body:has(#undoBar.top.on) #toast { top:calc(env(safe-area-inset-top) + 124px); }
 .locked #btnShoot, .locked .shot .del { opacity:.4; }
 #toast { pointer-events:none; position:fixed; left:50%; top:calc(env(safe-area-inset-top) + 64px); transform:translateX(-50%); background:#000d; color:#fff; padding:10px 16px; border-radius:var(--radius); font-size:15px; z-index:80; display:none; max-width:90vw; text-align:center; }
 #toast.on { display:block; }
+#toast.ok { background:#1f8a4c !important; color:#fff !important; border:2px solid #3cc47a; font-size:18px; font-weight:600; padding:16px 20px; width:min(92vw, 560px); box-shadow:0 8px 28px rgba(0,0,0,.45); }
+#toast.ok::before { content:'☁ '; }
 .mute { color:var(--mute); font-size:13px; }
 pre.log { font-size:11px; white-space:pre-wrap; background:#000; color:#ddd; padding:8px; border-radius:var(--radius); max-height:200px; overflow:auto; }
 .empty { text-align:center; color:var(--mute); padding:40px 20px; }

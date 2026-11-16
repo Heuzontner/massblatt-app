@@ -538,7 +538,7 @@ $('#grExport').onclick = async () => {
       const f = await planFiles(), sub = planSub();
       if (!navigator.onLine) { await A().queueAdd(f.pdf, sub); await A().queueAdd(f.dxf, sub); if (f.png) await A().queueAdd(f.png, sub); p.exports = [...(p.exports || []), { t: Date.now(), how: 'wartet auf Netz' }]; await save(); bg.remove(); A().toast('Kein Netz – PDF und DXF werden hochgeladen, sobald wieder Netz da ist', 4500); renderPlan(); return; }
       const a = await A().dbxUpload(f.pdf, sub), b = await A().dbxUpload(f.dxf, sub); if (f.png) await A().dbxUpload(f.png, sub);
-      p.exports = [...(p.exports || []), { t: Date.now(), how: 'in Dropbox', path: a.path, dxf: b.path }].slice(-20); await save(); bg.remove(); A().beep(true); A().toast('In Dropbox: ' + a.path.split('/').slice(-3).join('/') + ' + DXF', 5000); renderPlan();
+      p.exports = [...(p.exports || []), { t: Date.now(), how: 'in Dropbox', path: a.path, dxf: b.path }].slice(-20); await save(); bg.remove(); A().beep(true); A().toast('In Dropbox gespeichert ✓ ' + a.path.split('/').slice(-3).join('/') + ' + DXF + Bild', 5000, 'ok'); renderPlan();
     } catch (e) { bt.disabled = false; bt.textContent = '☁ PDF + DXF + Bild in die Dropbox'; A().toast('Hochladen fehlgeschlagen: ' + e.message, 6000); }
   };
 };

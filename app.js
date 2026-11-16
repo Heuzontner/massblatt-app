@@ -10,9 +10,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.17.0';
+const VERSION = '3.17.1';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Grundriss: Durchgang ohne Tür, Räume Wand an Wand, Kontrollmaß, Rechteck-Schnellstart, Diagonalen bei mehr als vier Wänden', 'Grundriss: Kopie/Spiegelkopie, Nische/Vorsprung, Säulen, Kamine, Schächte, Heizkörper, Sanitär, Treppe, Dachschräge', 'Grundriss: Raumliste und Wandflächen im PDF, schraffierte Wände im DXF, Bild in hoher Auflösung, Zoomen mit zwei Fingern', 'Grundriss: Suche und Archiv, aus Massblatt-Projekt oder Kalendertermin anlegen, Türbreiten aus dem Massblatt als Vorschlag', 'Grundriss-DXF: jede Wand ist nur noch einmal bemaßt', 'Grundriss-DXF: Wände verbundener Räume sind zu einer Wandfläche verschmolzen, Tür- und Fensteröffnungen gehen ganz durch die Wand', 'Grundriss: Wände mit Stärke, Maßketten, Nordpfeil; PDF mit Planrahmen, Schriftfeld und Maßstabsbalken', 'Grundriss: richtige Tür- und Fenstersymbole (Türblatt mit Aufschlag, Fensterrahmen), Raumhöhe je Raum, Raumstempel mit Fläche, Umfang und Rh – auch in PDF und DXF', 'Fotoliste: das erste Foto eines Raums heißt nur „Kz1“, erst das zweite „Kz1-2“', 'Grundriss Stufe 3: maßstäbliches PDF und DXF für BricsCAD, Ablage in der Dropbox unter Grundrisse/Kunde; Grundrisse sind jetzt in der Gesamt-Sicherung', 'Grundriss Stufe 2: Türen und Fenster auf die Wand setzen, Räume hängen sich über ihre Türen zur ganzen Wohnung zusammen (mit Kontrolle, ob es aufgeht)', 'Grundriss: Richtung nur noch per Tippen (links/rechts); „↶ Richtung ändern“ nimmt die letzte Richtung zurück', 'Neuer Reiter „Grundriss“: Raum für Raum mit dem Laser ablaufen, die App zeichnet mit und rechnet die Fläche (getrennt vom Massblatt)', 'Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
+const NEWS = ['Dropbox-Upload geschafft: die Bestätigung erscheint jetzt groß auf grüner Fläche', 'Grundriss: Durchgang ohne Tür, Räume Wand an Wand, Kontrollmaß, Rechteck-Schnellstart, Diagonalen bei mehr als vier Wänden', 'Grundriss: Kopie/Spiegelkopie, Nische/Vorsprung, Säulen, Kamine, Schächte, Heizkörper, Sanitär, Treppe, Dachschräge', 'Grundriss: Raumliste und Wandflächen im PDF, schraffierte Wände im DXF, Bild in hoher Auflösung, Zoomen mit zwei Fingern', 'Grundriss: Suche und Archiv, aus Massblatt-Projekt oder Kalendertermin anlegen, Türbreiten aus dem Massblatt als Vorschlag', 'Grundriss-DXF: jede Wand ist nur noch einmal bemaßt', 'Grundriss-DXF: Wände verbundener Räume sind zu einer Wandfläche verschmolzen, Tür- und Fensteröffnungen gehen ganz durch die Wand', 'Grundriss: Wände mit Stärke, Maßketten, Nordpfeil; PDF mit Planrahmen, Schriftfeld und Maßstabsbalken', 'Grundriss: richtige Tür- und Fenstersymbole (Türblatt mit Aufschlag, Fensterrahmen), Raumhöhe je Raum, Raumstempel mit Fläche, Umfang und Rh – auch in PDF und DXF', 'Fotoliste: das erste Foto eines Raums heißt nur „Kz1“, erst das zweite „Kz1-2“', 'Grundriss Stufe 3: maßstäbliches PDF und DXF für BricsCAD, Ablage in der Dropbox unter Grundrisse/Kunde; Grundrisse sind jetzt in der Gesamt-Sicherung', 'Grundriss Stufe 2: Türen und Fenster auf die Wand setzen, Räume hängen sich über ihre Türen zur ganzen Wohnung zusammen (mit Kontrolle, ob es aufgeht)', 'Grundriss: Richtung nur noch per Tippen (links/rechts); „↶ Richtung ändern“ nimmt die letzte Richtung zurück', 'Neuer Reiter „Grundriss“: Raum für Raum mit dem Laser ablaufen, die App zeichnet mit und rechnet die Fläche (getrennt vom Massblatt)', 'Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -37,8 +37,9 @@ const urlCache = new WeakMap();
 const blobUrl = b => { let u = urlCache.get(b); if (!u) { u = URL.createObjectURL(b); urlCache.set(b, u); } return u; };
 
 // ---------------- Hilfen ----------------
-function toast(msg, ms = 1800) {
-  const t = $('#toast'); t.textContent = msg; t.classList.add('on');
+// kind 'ok' = grüne, große Bestätigung (Dropbox-Upload geschafft) – bleibt mindestens 5 s stehen, damit man sie nicht übersieht (Manuel 16.11.)
+function toast(msg, ms = 1800, kind = '') {
+  const t = $('#toast'); t.textContent = msg; t.classList.add('on'); t.classList.toggle('ok', kind === 'ok'); if (kind === 'ok') ms = Math.max(ms, 5000);
   clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove('on'), ms);
 }
 // ---------------- Zurück-Taste (Android) / Browser-Verlauf ----------------
@@ -306,7 +307,7 @@ $('#selDbx').onclick = async () => {
   if (ok) parts.push(`${ok} PDF${ok === 1 ? '' : 's'} in Dropbox ✓ (${[...byCust].map(([k, n]) => `${k}: ${n}`).join(', ')})`);
   if (queued) parts.push(`${queued} wartet auf Netz`);
   if (failed.length) await confirmBox(`${failed.length} nicht hochgeladen`, 'OK', '', 'ghost', failed.join('\n'));
-  if (parts.length) { toast(parts.join(' · '), 5000); if (ok) beep(true); }
+  if (parts.length) { toast(parts.join(' · '), 5000, ok ? 'ok' : ''); if (ok) beep(true); }
 };
 $('#selPdf').onclick = async () => {
   if (!selIds.size) return;
@@ -1867,7 +1868,8 @@ async function flatDone() {
     if ($('#cam').classList.contains('on') || $('#ed').classList.contains('on')) { try { stopCam(); } catch (e) { } }
     if (S.wake) { S.wake.release().catch(() => { }); S.wake = null; }
     const nx = await nextAppointment(p).catch(() => null);
-    if (nx) toast(msg + ' · Nächster Termin: ' + nx, 5500); else { await $('#btnNewProj').onclick(); toast(msg, 4500); }
+    const okK = msg.startsWith('Abgeschlossen ✓') ? 'ok' : '';
+    if (nx) toast(msg + ' · Nächster Termin: ' + nx, 5500, okK); else { await $('#btnNewProj').onclick(); toast(msg, 4500, okK); }
   } finally { flatBusy = false; }
 }
 holdButton($('#edDone'), HOLD_MS(), flatDone, () => finishShot(false));
@@ -2413,7 +2415,7 @@ async function processQueue() {
     } catch (e) { rest.push(it); }
   }
   await db.setting('dbxQueue', rest); queueBusy = false;
-  if (ok) toast(`${ok} wartende PDF${ok > 1 ? 's' : ''} in Dropbox hochgeladen ✓`, 3500);
+  if (ok) toast(`${ok} wartende Datei${ok > 1 ? 'en' : ''} in Dropbox hochgeladen ✓`, 3500, 'ok');
 }
 window.addEventListener('online', () => setTimeout(processQueue, 1500));
 $('#btnDbx').onclick = async () => {
@@ -2429,7 +2431,7 @@ $('#btnDbx').onclick = async () => {
     file = await makePdfFile();
     if (!navigator.onLine) throw new TypeError('offline');
     toast('Lade in Dropbox hoch …', 10000);
-    const r = await dbxUpload(file, sub, { projectId: S.project.id, photos }); toast('In Dropbox gespeichert ✓ ' + r.path, 3500); beep(true);
+    const r = await dbxUpload(file, sub, { projectId: S.project.id, photos }); toast('In Dropbox gespeichert ✓ ' + r.path, 3500, 'ok'); beep(true);
     await lockProject('in Dropbox', { path: r.path, size: file.size, fotos: r.fotos });
   } catch (e) {
     if (!(e instanceof TypeError)) console.error(e);
@@ -2576,7 +2578,7 @@ async function dbxLogSheet() {
           noteExport(p, 'in Dropbox', { path: r.path, size: file.size, fotos: r.fotos }); await db.put('projects', p);
           if (S.project && S.project.id === p.id) { S.project.exports = p.exports; expUi(); }
           const l2 = (await db.setting('dbxLog')) || []; const old = l2.find(x => x.t === e.t); if (old) { old.redone = Date.now(); await db.setting('dbxLog', l2); }
-          toast('Hochgeladen ✓ ' + r.path, 3500); bg.remove(); dbxLogSheet(); dbxUi();
+          toast('Hochgeladen ✓ ' + r.path, 3500, 'ok'); bg.remove(); dbxLogSheet(); dbxUi();
         } catch (err) { toast('Fehler: ' + err.message, 5000); b.disabled = false; b.textContent = 'nochmal'; }
       };
       row.appendChild(b);
@@ -2699,7 +2701,7 @@ async function sharePdf(file, opts = {}) {
     try {
       if (!navigator.onLine) throw new TypeError('offline');
       const r = await dbxUpload(file, sub, meta);
-      toast('In Dropbox gespeichert ✓ ' + r.path, 3500); beep(true); await onLock('in Dropbox', { path: r.path, size: file.size, fotos: r.fotos }); bg.remove();
+      toast('In Dropbox gespeichert ✓ ' + r.path, 3500, 'ok'); beep(true); await onLock('in Dropbox', { path: r.path, size: file.size, fotos: r.fotos }); bg.remove();
     } catch (e) {
       if (e instanceof TypeError || !navigator.onLine) { await queueAdd(file, sub, meta); await onLock('in Dropbox (wartet auf Netz)', { size: file.size }); toast('Kein Netz – wird automatisch hochgeladen, sobald wieder Netz da ist', 4500); bg.remove(); }
       else { toast('Dropbox-Fehler: ' + e.message, 6000); dbx.disabled = false; dbx.textContent = 'In Dropbox speichern'; }
@@ -3001,7 +3003,7 @@ async function autoBackup(force = false) {
       const old = l.files.filter(f => /^massblatt-sicherung_/.test(f.name)).sort((a, b) => b.name.localeCompare(a.name)).slice(4);
       for (const f of old) await dropbox.api('files/delete_v2', { path: f.path });
     } catch (e) { log('Sicherung aufräumen', e.message); }
-    log('Auto-Sicherung', path, file.size); toast(`Sicherung in Dropbox abgelegt (${fmtSize(file.size)})`, 3500); backupBar();
+    log('Auto-Sicherung', path, file.size); toast(`Sicherung in Dropbox abgelegt (${fmtSize(file.size)})`, 3500, 'ok'); backupBar();
   } catch (e) { log('Auto-Sicherung fehlgeschlagen', e.message); if (force) toast('Sicherung in Dropbox fehlgeschlagen: ' + e.message, 5000); }
   autoBkBusy = false;
 }
