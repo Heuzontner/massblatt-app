@@ -140,7 +140,7 @@ const wallOpts = r => r.walls.map((w, i) => [i, `Wand ${i + 1} (${Math.round(w.c
 
 // ---------- Raum ablaufen ----------
 function openRoom(id) {
-  P.room = P.plan.rooms.find(r => r.id === id); if (!P.room) return; P.hold = null; P.op = null; P.rect = null; P.fan = null;
+  P.room = P.plan.rooms.find(r => r.id === id); if (!P.room) return; P.trash = []; P.hold = null; P.op = null; P.rect = null; P.fan = null;
   A().show('planRoom'); A().keepAwake(true); roomUi();
 }
 const walls = () => P.room.walls;
@@ -170,6 +170,8 @@ function roomUi() {
   const hb = $('#grHints'); hb.innerHTML = ''; if (op && op.step === 'w' && (P.hints || []).length) for (const v of P.hints) { const b = document.createElement('button'); b.className = 'ghost'; b.dataset.hint = v; b.textContent = `${v} cm`; b.title = 'aus dem Massblatt'; b.onclick = () => opValue(v); hb.appendChild(b); }
   $('#grUndo').disabled = !n; $('#grClose').disabled = n < 2; $('#grRect').style.display = !n && !P.rect ? '' : 'none';
   $('#grUndo').textContent = n && lastW().turn != null ? '↶ Richtung ändern' : '↶ zurück'; $('#grUndo2').textContent = P.hold ? '↶ Wert weg' : '↶ Wand weg';
+  if ((P.trash || []).length && P.trash[P.trash.length - 1].after !== sig(r)) P.trash = []; // seither etwas anderes geändert → Wiederholen verfällt
+  document.querySelectorAll('.grRedo').forEach(b => { b.style.display = (P.trash || []).length && !op ? '' : 'none'; });
   $('#grRh').textContent = r.rh ? `Rh ${Math.round(r.rh)} cm` : '＋ Raumhöhe';
   $('#grDiag').style.display = r.closed && n >= 4 ? '' : 'none'; $('#grDiag').textContent = r.diag ? `Diagonale ${Math.round(r.diag)} cm` : r.diags ? 'Diagonalen ✓' : n > 4 ? '＋ Diagonalen' : '＋ Diagonale';
   // Wand-Leiste
@@ -223,12 +225,50 @@ $('#grOpKey').onclick = async () => {
   const cm = parseFloat(String(v).replace(',', '.')); if (!(cm >= 0 && cm < 10000)) { A().toast('Bitte eine Länge in cm eingeben'); return; } opValue(cm);
 };
 $('#grKey2').onclick = () => $('#grKey').onclick();
-$('#grUndo').onclick = $('#grUndo2').onclick = async () => {
+// ---------- Wände löschen, zurück und wiederholen (Manuel 16.11.) ----------
+// Vor jedem Löschen wird der Raum gemerkt (nur solange der Raum offen ist, nicht gespeichert). „↷“ holt den letzten Stand zurück –
+// aber nur, solange seither nichts anderes geändert wurde (Vergleich über sig), sonst würde es neue Arbeit überschreiben.
+const KEEP = ['walls', 'closed', 'diag', 'diags', 'adjust', 'ops', 'objs', 'links'];
+const clone = v => JSON.parse(JSON.stringify(v));
+const sig = r => JSON.stringify(KEEP.map(k => r[k] ?? null));
+function snap() {
+  const r = P.room, o = { room: {}, others: {}, checks: P.plan.checks ? clone(P.plan.checks) : null };
+  for (const k of KEEP) if (r[k] !== undefined) o.room[k] = clone(r[k]);
+  for (const x of P.plan.rooms) if (x !== r && (x.links || []).some(l => l.to === r.id)) o.others[x.id] = clone(x.links);
+  return o;
+}
+function pushTrash(o) { (P.trash = P.trash || []).push(o); if (P.trash.length > 30) P.trash.shift(); o.after = sig(P.room); }
+// Wand i entfernen: was an ihr hängt, geht mit; alles an späteren Wänden rückt eine Nummer vor. Der Raum ist danach wieder offen.
+function cutWall(i) {
+  const r = P.room, fix = (list, key = 'wall') => (list || []).filter(o => o[key] !== i).map(o => (o[key] > i && o[key]--, o));
+  r.walls.splice(i, 1);
+  if (r.ops) r.ops = fix(r.ops); if (r.objs) r.objs = fix(r.objs); if (r.links) r.links = fix(r.links);
+  for (const x of P.plan.rooms) if (x !== r && x.links) x.links = x.links.filter(l => !(l.to === r.id && l.toWall === i)).map(l => (l.to === r.id && l.toWall > i && l.toWall--, l));
+  if (P.plan.checks) { P.plan.checks = P.plan.checks.filter(c => !((c.a === r.id && c.wa === i) || (c.b === r.id && c.wb === i))); for (const c of P.plan.checks) { if (c.a === r.id && c.wa > i) c.wa--; if (c.b === r.id && c.wb > i) c.wb--; } if (!P.plan.checks.length) delete P.plan.checks; }
+  r.closed = false; delete r.diag; delete r.diags; delete r.adjust; P.op = null; P.fan = null; P.remeasure = null;
+}
+const hangsOn = i => { const r = P.room, c = k => (r[k] || []).filter(o => o.wall === i).length; const t = c('ops'), o = c('objs'), l = c('links'); return t + o + l ? [t && `${t} Tür/Fenster`, o && `${o} Objekt${o > 1 ? 'e' : ''}`, l && `${l} Verbindung${l > 1 ? 'en' : ''}`].filter(Boolean).join(', ') : ''; };
+async function deleteWall(i) {
+  const r = P.room; if (!r.walls[i]) return;
+  const h = hangsOn(i); if (h && !await A().confirmBox(`Wand ${i + 1} löschen?`, 'Löschen', 'Abbrechen', 'danger', `An dieser Wand hängt: ${h}. Das wird mit gelöscht.`)) return;
+  const o = snap(); P.hold = null; cutWall(i); pushTrash(o); await save(); roomUi();
+}
+async function undoStep() {
   const r = P.room; if (P.hold) { P.hold = null; roomUi(); return; }
   if (!r.walls.length) return;
-  const w = lastW(); if (w.turn != null && !r.closed) { w.turn = null; delete w.auto; } else { r.walls.pop(); if (r.ops) r.ops = r.ops.filter(o => o.wall < r.walls.length); }
-  r.closed = false; delete r.diag; delete r.adjust; await save(); roomUi();
-};
+  const w = lastW(), i = r.walls.length - 1;
+  if (w.turn != null && !r.closed) { const o = snap(); w.turn = null; delete w.auto; pushTrash(o); await save(); roomUi(); return; }
+  await deleteWall(i);
+}
+async function redoStep() {
+  const o = (P.trash || []).pop(); if (!o) return;
+  const r = P.room; for (const k of KEEP) { if (o.room[k] === undefined) delete r[k]; else r[k] = o.room[k]; }
+  for (const x of P.plan.rooms) if (o.others[x.id]) x.links = o.others[x.id];
+  if (o.checks) P.plan.checks = o.checks; else delete P.plan.checks;
+  P.hold = null; P.op = null; P.fan = null; await save(); roomUi(); A().toast('Wieder da', 1200);
+}
+$('#grUndo').onclick = $('#grUndo2').onclick = $('#grUndo3').onclick = undoStep;
+document.querySelectorAll('.grRedo').forEach(b => { b.onclick = redoStep; });
 // Raum schließen: geht er auf (≤ 5 cm) → fertig. Liegt die Lücke in Laufrichtung → das ist die fehlende letzte Wand. Sonst: Lücke zeigen.
 $('#grClose').onclick = async () => {
   const r = P.room; if (r.walls.length < 2) return;
@@ -338,11 +378,12 @@ function editOp(o) {
   if (o.type === 'T') bg.querySelector('[data-to]').onclick = () => { bg.remove(); doorTarget(o); };
   bg.querySelector('[data-del]').onclick = async () => { bg.remove(); r.ops = r.ops.filter(x => x !== o); await save(); roomUi(); };
 }
-// Wand im Bild antippen (nur während „an welcher Wand?“)
+// Wand im Bild antippen: während „an welcher Wand?“ wählt es die Wand für Tür/Fenster, sonst öffnet es das Wand-Menü (ändern, neu messen, löschen)
 $('#grCv').addEventListener('click', e => {
-  if (!P.op || P.op.step !== 'wall' || !P.view) return; const b = $('#grCv').getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top, pts = P.view.pts; let best = -1, bd = 44;
-  for (let i = 0; i < pts.length; i++) { const a = pts[i], c = pts[(i + 1) % pts.length], dx = c.x - a.x, dy = c.y - a.y, t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1))), d = Math.hypot(x - a.x - t * dx, y - a.y - t * dy); if (d < bd) { bd = d; best = i; } }
-  if (best >= 0) opWall(best);
+  if (!P.room || !P.view || P.rect || P.fan || (P.op && P.op.step !== 'wall')) return;
+  const b = $('#grCv').getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top, pts = P.view.pts, n = Math.min(P.room.walls.length, pts.length); let best = -1, bd = P.op ? 44 : 30;
+  for (let i = 0; i < n; i++) { const a = pts[i], c = pts[(i + 1) % pts.length], dx = c.x - a.x, dy = c.y - a.y, t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1))), d = Math.hypot(x - a.x - t * dx, y - a.y - t * dy); if (d < bd) { bd = d; best = i; } }
+  if (best < 0) return; if (P.op) opWall(best); else editWall(best);
 });
 
 // ---------- Stufe 2: ganze Wohnung ----------
@@ -556,9 +597,11 @@ function editWall(i) {
   const r = P.room, w = r.walls[i];
   const bg = sheet(`<h2>Wand ${i + 1}: ${Math.round(w.cm)} cm</h2><div class="row2"><button class="ghost" data-len>✎ Länge ändern</button><button class="ghost" data-re>📏 Neu messen</button></div>
     <label class="f">Ecke nach dieser Wand</label><div class="row2"><button class="${w.turn != null && w.turn < 0 ? 'pri' : 'ghost'}" data-t="-90">↰ links</button><button class="${w.turn > 0 ? 'pri' : 'ghost'}" data-t="90">↱ rechts</button></div>
+    <button class="danger" data-delw style="width:100%;margin-top:14px">🗑 Wand löschen</button>
     <button class="ghost" data-close style="width:100%;margin-top:10px">Schließen</button>`);
   const reclose = async () => { if (r.closed) { const g = G.gap(r.walls); r.adjust = g.len > 0.5 ? g.len : 0; delete r.diag; } await save(); roomUi(); };
   bg.querySelector('[data-len]').onclick = async () => { bg.remove(); const v = await A().promptBox(`Wand ${i + 1} in cm`, '', String(Math.round(w.cm))); if (v == null) return; const cm = parseFloat(String(v).replace(',', '.')); if (!(cm > 0 && cm < 10000)) return; w.cm = cm; delete w.calc; reclose(); };
+  bg.querySelector('[data-delw]').onclick = () => { bg.remove(); deleteWall(i); };
   bg.querySelector('[data-re]').onclick = () => { bg.remove(); P.remeasure = i; A().toast(`Wand ${i + 1} neu messen …`, 3000); };
   bg.querySelectorAll('[data-t]').forEach(b => { b.onclick = () => { bg.remove(); w.turn = +b.dataset.t; delete w.auto; reclose(); }; });
 }
@@ -649,7 +692,7 @@ window.__plan = {
   // Zurück: Raum → Grundriss → Startseite (Reiter Grundriss)
   back(cur, viaPop) {
     if (cur === 'planFlat') { renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
-    if (cur === 'planRoom') { P.room = null; P.hold = null; P.op = null; P.thInput = null; P.rect = null; P.fan = null; P.wantDiag = false; P.wantRh = false; P.remeasure = null; renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
+    if (cur === 'planRoom') { P.trash = []; P.room = null; P.hold = null; P.op = null; P.thInput = null; P.rect = null; P.fan = null; P.wantDiag = false; P.wantRh = false; P.remeasure = null; renderPlan(); A().show('plan', viaPop); A().keepAwake(true); return true; }
     if (cur === 'plan') { P.plan = null; A().show('home', viaPop); setTab('gr'); return true; }
     return false;
   },
