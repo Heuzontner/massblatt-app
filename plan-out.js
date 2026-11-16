@@ -4,7 +4,7 @@ const fmtA = m2 => m2.toFixed(2).replace('.', ',') + ' m²';
 const fmtM = cm => (cm / 100).toFixed(2).replace('.', ',') + ' m';
 // Wandfläche eines Raums: Umfang × Raumhöhe; abzüglich Öffnungen mit angenommenen Höhen (Tür 2,00 m, Fenster 1,30 m), solange keine Höhen gemessen werden
 export const DOOR_H = 200, WIN_H = 130;
-export function wallArea(r) { if (!r.rh) return null; const s = G.summary(r), gross = s.perimeter * r.rh / 10000, minus = (r.ops || []).reduce((t, op) => t + op.w * Math.min(r.rh, op.type === 'T' ? DOOR_H : WIN_H), 0) / 10000; return { gross, net: Math.max(0, gross - minus) }; }
+export function wallArea(r) { if (!r.rh) return null; const s = G.summary(r), gross = s.perimeter * r.rh / 10000, minus = (r.ops || []).reduce((t, op) => t + op.w * Math.min(r.rh, op.h || (op.type === 'T' ? DOOR_H : WIN_H)), 0) / 10000; return { gross, net: Math.max(0, gross - minus) }; }
 const areaOf = r => G.summary(r).area;
 const inner = t => Math.round((180 - Math.abs(t)) * 10) / 10;          // Innenwinkel der Ecke
 export const fileBase = plan => ('Grundriss ' + (plan.name || 'ohne Adresse')).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -163,7 +163,7 @@ export async function buildPlanPdf(PDFLib, fontkit, fontBytes, plan, msgs = []) 
     const ops = r.ops || [];
     if (ops.length && y > F + SB + 60) { y -= 8; row('Öffnung', 'Wand, ab Ecke', 'Breite', grey);
       for (const op of ops) { if (y < F + SB + 30) break; const to = op.to && plan.rooms.find(q => q.id === op.to); row(op.type === 'T' ? 'Tür' : 'Fenster', `Wand ${op.wall + 1}, ${Math.round(op.pos)} cm`, `${Math.round(op.w)} cm`);
-        const extra = [to ? 'führt nach ' + to.name : '', op.type === 'T' && op.hinge ? `Anschlag ${op.hinge === 'a' ? 'links' : 'rechts'}, geht ${op.swing === 'out' ? 'hinaus' : 'herein'}` : '', op.thick ? `Wandstärke ${Math.round(op.thick)} cm` : ''].filter(Boolean);
+        const extra = [to ? 'führt nach ' + to.name : '', op.type === 'T' && op.hinge ? `Anschlag ${op.hinge === 'a' ? 'links' : 'rechts'}, geht ${op.swing === 'out' ? 'hinaus' : 'herein'}` : '', op.h ? `Höhe ${Math.round(op.h)} cm` : '', op.par != null ? `Parapet ${Math.round(op.par)} cm` : '', op.thick ? `${op.type === 'T' ? 'Wandstärke' : 'Laibungstiefe'} ${Math.round(op.thick)} cm` : ''].filter(Boolean);
         for (const e of extra) { T(pg, fitText(e, 7.5, tw - 54), x + 50, y + 2, 7.5, grey); y -= 9.5; } y -= 1; } }
     T(pg, 'Blauer Punkt = Start, Wände im Uhrzeigersinn nummeriert', F + 12, F + SB - 13, 7.5, grey);
   });
@@ -176,7 +176,7 @@ export async function buildPlanPdf(PDFLib, fontkit, fontBytes, plan, msgs = []) 
     for (const r of done) { if (y < F + SB + 40) break; const s2 = G.summary(r), wa = wallArea(r); tA += s2.area; if (wa) { tW += wa.net; tG += wa.gross; anyW = true; }
       cell(fitText(r.name, 10, 250), cols[0], y); cell(fmtA(s2.area), cols[1], y); cell(fmtM(s2.perimeter), cols[2], y); cell(r.rh ? fmtM(r.rh) : '–', cols[3], y); cell(wa ? fmtA(wa.net) : '–', cols[4], y); cell(wa ? fmtA(wa.gross) : '–', cols[5], y); y -= 15; }
     y += 6; L(pg, { x: F + 24, y }, { x: W - F - 24, y }, 0.5, grey); y -= 15; cell('Gesamt', cols[0], y, 10.5); cell(fmtA(tA), cols[1], y, 10.5); if (anyW) { cell(fmtA(tW), cols[4], y, 10.5); cell(fmtA(tG), cols[5], y, 10.5); }
-    T(pg, `Wandfläche = Umfang × Raumhöhe, abzüglich Öffnungen mit angenommener Höhe (Tür ${fmtM(DOOR_H)}, Fenster ${fmtM(WIN_H)}).`, F + 12, F + SB - 13, 7.5, grey);
+    T(pg, `Wandfläche = Umfang × Raumhöhe, abzüglich Öffnungen mit gemessener Höhe – ohne Messung angenommen: Tür ${fmtM(DOOR_H)}, Fenster ${fmtM(WIN_H)}.`, F + 12, F + SB - 13, 7.5, grey);
     T(pg, 'Säulen, Kamine und Schächte sind von der Raumfläche abgezogen.', F + 12, F + SB - 23, 7.5, grey);
   }
   if (!done.length) { const pg = doc.addPage([W, H]); sheet(pg, plan.name || 'Ohne Adresse', 0, 1); T(pg, 'Noch kein Raum fertig gemessen.', F + 30, H / 2, 12, grey); }

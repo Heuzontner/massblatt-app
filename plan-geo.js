@@ -185,9 +185,10 @@ export function gfx(plan, room, poly, o = {}) {
     }
     const innerWall = (room.ops || []).some(q => q.wall === i && q.type === 'T' && partnerOf(plan, room, q));
     if (o.chains && !(o.outerOnly && innerWall)) { // Maßkette außen: Teilmaße (Abstand – Öffnung – Rest) und darüber das Gesamtmaß
-      const cmL = room.walls[i].cm, k = wp.L / (cmL || wp.L), segs = wp.parts.map(p => ({ p0: p.p0, p1: p.p1, cm: p.kind === 'W' ? Math.hypot(p.p1.x - p.p0.x, p.p1.y - p.p0.y) / k : p.op.w }));
+      const cmL = room.walls[i].cm, k = wp.L / (cmL || wp.L), segs = wp.parts.map(p => ({ p0: p.p0, p1: p.p1, cm: p.kind === 'W' ? Math.hypot(p.p1.x - p.p0.x, p.p1.y - p.p0.y) / k : p.op.w, op: p.op }));
       const a = poly[i], b = poly[(i + 1) % n], mk = (off, list) => { const line = [add(a, nn, off), add(b, nn, off)], ticks = [], labels = [];
-        for (const s of list) { ticks.push([add(s.p0, nn, off - 3 * u), add(s.p0, nn, off + 3 * u)]); labels.push({ p: add({ x: (s.p0.x + s.p1.x) / 2, y: (s.p0.y + s.p1.y) / 2 }, nn, off + 7 * u), t: String(Math.round(s.cm)), d: wp.d, len: Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) }); }
+        for (const s of list) { ticks.push([add(s.p0, nn, off - 3 * u), add(s.p0, nn, off + 3 * u)]); labels.push({ p: add({ x: (s.p0.x + s.p1.x) / 2, y: (s.p0.y + s.p1.y) / 2 }, nn, off + 7 * u), t: String(Math.round(s.cm)) + (s.op && s.op.h ? '/' + Math.round(s.op.h) : ''), d: wp.d, len: Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) });
+          if (s.op && s.op.par != null) labels.push({ p: add({ x: (s.p0.x + s.p1.x) / 2, y: (s.p0.y + s.p1.y) / 2 }, nn, off - 7 * u), t: 'P ' + Math.round(s.op.par), d: wp.d, len: Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) }); }
         const last = list[list.length - 1]; ticks.push([add(last.p1, nn, off - 3 * u), add(last.p1, nn, off + 3 * u)]); out.ext.push(add(a, nn, off + 13 * u), add(b, nn, off + 13 * u)); return { line, ticks, labels }; };
       let off = wOut + 10 * u; for (const d of out.doors) if (d.leaf && d.op.wall === i && d.op.swing === 'out') off = Math.max(off, opDepth(plan, room, d.op) + d.arc.r + 8 * u); // nach außen aufgehende Tür: Kette dahinter
       if (segs.length > 1) { out.chains.push(mk(off, segs)); off += 17 * u; }

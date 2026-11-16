@@ -352,8 +352,8 @@ function opWizard(type) {
   const r = P.room; if (!r || !r.closed) return;
   P.op = null; P.wantDiag = false; P.wantRh = false;
   const T = type === 'T', der = T ? 'die Tür' : 'das Fenster', Der = T ? 'Die Tür' : 'Das Fenster', zur = T ? 'zur Tür' : 'zum Fenster', others = P.plan.rooms.filter(x => x !== r), def = P.plan.wall || 15;
-  const steps = T ? ['wall', 'pos', 'w', ...(others.length ? ['to'] : []), 'how'] : ['wall', 'pos', 'w', 'done'];
-  const st = { step: 'wall', wall: null, from: 'a', d: null, w: null, to: null, hinge: 'a', swing: 'in', noLeaf: false, thick: null, touched: false, hints: [] };
+  const steps = T ? ['wall', 'pos', 'w', 'h', ...(others.length ? ['to'] : []), 'how'] : ['wall', 'pos', 'w', 'par', 'h', 'th', 'done']; // h = Höhe, par = Parapet, th = Laibungstiefe – alle drei überspringbar
+  const st = { step: 'wall', wall: null, from: 'a', d: null, w: null, to: null, hinge: 'a', swing: 'in', noLeaf: false, thick: null, h: null, par: null, hFloor: false, touched: false, hints: [] };
   const bg = sheet(`<div class="grwiz"><div class="grwiz-top"><span data-no></span><button class="ghost" data-x aria-label="Abbrechen">✕</button></div>
     <h2 data-title></h2><p class="grwiz-hint" data-hint></p><canvas data-cv></canvas><div data-body></div>
     <div class="grwiz-nav"><button class="ghost" data-prev>‹ Zurück</button><button class="pri" data-next>✓ Fertig</button></div></div>`);
@@ -369,10 +369,15 @@ function opWizard(type) {
     if (st.step === 'wall') return fail('Erst die Wand antippen');
     if (st.step === 'pos') { if (!(cm >= 0) || cm >= L() - 5) return fail(`Passt nicht: die Wand ist nur ${Math.round(L())} cm lang`); st.d = cm; A().beep(true); return next(); }
     if (st.step === 'w') { if (!(cm > 5)) return fail('Breite zu klein'); if (st.d + cm > L() + 2) return fail(`Passt nicht: ${Math.round(st.d)} + ${Math.round(cm)} cm ist länger als die Wand (${Math.round(L())} cm)`); st.w = Math.min(cm, L() - st.d); A().beep(true); return next(); }
+    if (st.step === 'par') { if (!(cm >= 0 && cm <= 250)) return fail('Das passt nicht als Parapet (0–250 cm)'); st.par = cm; A().beep(true); return next(); }
+    if (st.step === 'h') { let h = cm; if (!T && st.hFloor && st.par != null) h = cm - st.par;
+      if (!(h >= (T ? 100 : 20) && h <= (T ? 350 : 350))) return fail(T ? 'Das passt nicht als Türhöhe (100–350 cm)' : 'Das passt nicht als Fensterhöhe (20–350 cm)');
+      if (r.rh && (st.par || 0) + h > r.rh + 2) return fail(`Passt nicht: höher als der Raum (${Math.round(r.rh)} cm)`); st.h = h; A().beep(true); return next(); }
+    if (st.step === 'th') { if (!(cm >= 5 && cm <= 150)) return fail('Das passt nicht als Laibungstiefe (5–150 cm)'); st.thick = cm; A().beep(true); return next(); }
     if (st.step === 'how') { if (cm > 0 && cm < 200) { st.thick = cm; A().beep(true); paint(); } return; }
   };
   const finish = async again => {
-    const o = { id: uid(), type, wall: st.wall, pos: Math.max(0, pos()), w: st.w, to: null };
+    const o = { id: uid(), type, wall: st.wall, pos: Math.max(0, pos()), w: st.w, to: null }; if (st.h) o.h = st.h; if (!T && st.par != null) o.par = st.par; if (!T && st.thick) o.thick = st.thick;
     if (T) { o.to = st.to; o.hinge = st.hinge; o.swing = st.swing; if (st.noLeaf) o.noLeaf = true; if (st.thick) o.thick = st.thick;
       (r.ops = r.ops || []).push(o); const pr = G.partnerOf(P.plan, r, o); if (pr) { pr.hinge = o.hinge === 'a' ? 'b' : 'a'; pr.swing = o.swing === 'out' ? 'in' : 'out'; if (o.noLeaf) pr.noLeaf = true; else delete pr.noLeaf; } }
     else (r.ops = r.ops || []).push(o);
@@ -389,11 +394,15 @@ function opWizard(type) {
       html = `<div class="grwiz-wait">📏 Warte auf den Laser …</div>${inputRow('cm')}<div class="row2" style="margin-top:8px"><button class="ghost" data-flip>⇄ Andere Ecke nehmen</button><button class="ghost" data-zero>Direkt an der Ecke</button></div>`; }
     else if (st.step === 'w') { title = `Miss die Breite ${T ? 'der Tür' : 'des Fensters'}`; hint = `Von Kante zu Kante der Öffnung – im Bild orange. (Abstand ${Math.round(st.d)} cm ✓)`;
       html = `<div class="grwiz-wait">📏 Warte auf den Laser …</div>${inputRow('cm')}${st.hints.length ? `<div class="grwiz-chips"><span>aus dem Massblatt:</span>${st.hints.map(v => `<button class="ghost" data-hint="${v}">${v} cm</button>`).join('')}</div>` : ''}`; }
+    else if (st.step === 'par') { title = 'Miss vom Boden bis zur Fensterbank'; hint = 'Das ist das Parapet: Laser auf den Boden stellen und bis zur Unterkante des Fensters messen.'; html = `<div class="grwiz-wait">📏 Warte auf den Laser …</div>${inputRow('cm')}<button class="ghost" data-skip style="width:100%;margin-top:8px">Überspringen</button>`; }
+    else if (st.step === 'h') { title = `Miss die Höhe ${T ? 'der Tür' : 'des Fensters'}`; hint = T ? 'Vom Boden bis zur Oberkante der Türöffnung.' : st.hFloor ? 'Vom Boden bis zur Oberkante des Fensters – das Parapet zieht die App ab.' : 'Von der Fensterbank bis zur Oberkante des Fensters.';
+      html = `<div class="grwiz-wait">📏 Warte auf den Laser …</div>${inputRow('cm')}<div class="row2" style="margin-top:8px">${!T && st.par != null ? `<button class="ghost" data-hfloor>⇄ ${st.hFloor ? 'Ab Fensterbank messen' : 'Vom Boden messen'}</button>` : ''}<button class="ghost" data-skip>Überspringen</button></div>`; }
+    else if (st.step === 'th') { title = 'Miss die Tiefe der Laibung'; hint = 'Wie dick ist die Wand am Fenster? Von der Innenkante der Wand bis zur Außenkante.'; html = `<div class="grwiz-wait">📏 Warte auf den Laser …</div>${inputRow('cm')}<button class="ghost" data-skip style="width:100%;margin-top:8px">Überspringen</button>`; }
     else if (st.step === 'to') { title = 'Wohin führt die Tür?'; hint = 'Den Raum auf der anderen Seite antippen.'; html = `<div class="grgrid2">${others.map(x => `<button class="ghost" data-to="${x.id}">${esc(x.name)}</button>`).join('')}</div><button class="ghost" data-to="" style="width:100%;margin-top:8px">Nach außen / weiß ich noch nicht</button>`; }
     else if (st.step === 'how') { title = 'Wie geht die Tür auf?'; hint = 'Antippen, bis das Bild so aussieht wie die echte Tür. Dann „✓ Fertig“.';
       html = `<div class="row2"><button data-h="a">◧ Anschlag links</button><button data-h="b">Anschlag rechts ◨</button></div><div class="row2" style="margin-top:8px"><button data-sw="in">geht herein</button><button data-sw="out">geht hinaus</button></div>
         <button data-noleaf style="width:100%;margin-top:8px">Durchgang ohne Türblatt</button><p class="grwiz-th">Wandstärke hier: <b>${st.thick ? Math.round(st.thick) : def} cm</b>${st.thick ? '' : ' (Standard)'} – anders? Einfach an der Laibung messen.</p>`; }
-    else { title = 'Passt das so?'; hint = `${Der} sitzt ${Math.round(st.d)} cm von der Ecke mit dem orangen Punkt und ist ${Math.round(st.w)} cm breit.`; html = `<button class="ghost" data-again style="width:100%">✓ Fertig und noch ein Fenster</button>`; }
+    else { title = 'Passt das so?'; hint = `${Der} sitzt ${Math.round(st.d)} cm von der Ecke mit dem orangen Punkt: ${Math.round(st.w)} cm breit${st.h ? `, ${Math.round(st.h)} cm hoch` : ''}${st.par != null ? `, Parapet ${Math.round(st.par)} cm` : ''}${st.thick ? `, Laibung ${Math.round(st.thick)} cm` : ''}.`; html = `<button class="ghost" data-again style="width:100%">✓ Fertig und noch ein Fenster</button>`; }
     q('[data-title]').textContent = title; q('[data-hint]').textContent = hint; body.innerHTML = html; wireInput();
     body.querySelectorAll('[data-w]').forEach(b => { b.onclick = () => pickWall(+b.dataset.w); });
     const f = q('[data-flip]'); if (f) f.onclick = () => { st.from = st.from === 'a' ? 'b' : 'a'; draw(); }; const z = q('[data-zero]'); if (z) z.onclick = () => value(0);
@@ -403,6 +412,8 @@ function opWizard(type) {
     body.querySelectorAll('[data-sw]').forEach(b => { b.className = b.dataset.sw === st.swing && !st.noLeaf ? 'pri' : 'ghost'; b.onclick = () => { st.swing = b.dataset.sw; st.noLeaf = false; st.touched = true; paint(); }; });
     const nl = q('[data-noleaf]'); if (nl) { nl.className = st.noLeaf ? 'pri' : 'ghost'; nl.onclick = () => { st.noLeaf = !st.noLeaf; paint(); }; }
     const ag = q('[data-again]'); if (ag) ag.onclick = () => finish(true);
+    const sk = q('[data-skip]'); if (sk) sk.onclick = () => { if (st.step === 'par') st.par = null; else if (st.step === 'h') st.h = null; else st.thick = null; next(); };
+    const hf = q('[data-hfloor]'); if (hf) hf.onclick = () => { st.hFloor = !st.hFloor; paint(); };
     draw();
   }
   const pickWall = k => { st.wall = k; st.d = st.w = null; st.from = 'a'; next(); if (T) wizHints(); };
@@ -422,7 +433,22 @@ function opWizard(type) {
     const ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc, S = p => ({ x: ox + p.x * sc, y: oy + p.y * sc }), sp = pts.map(S); view = sp;
     const line = (a, b, c, w, dash) => { g.strokeStyle = c; g.lineWidth = w; g.setLineDash(dash || []); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); g.setLineDash([]); };
     const dot = (p, c, rad) => { g.fillStyle = c; g.beginPath(); g.arc(p.x, p.y, rad, 0, 7); g.fill(); };
-    g.lineCap = 'round'; g.beginPath(); sp.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath(); g.fillStyle = col('--acc-soft'); g.fill();
+    g.lineCap = 'round'; g.font = `600 13px ${mono}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (st.step === 'h' || st.step === 'par' || st.step === 'th') { // Höhen: Ansicht der Wand von vorne; Laibung: Schnitt durch die Wand von oben
+      const tag = (p, t, c) => { const w = g.measureText(t).width + 10; g.fillStyle = col('--panel'); g.fillRect(p.x - w / 2, p.y - 10, w, 20); g.fillStyle = c; g.fillText(t, p.x, p.y + 1); };
+      const P2 = (x, y) => ({ x, y }), cx = W / 2;
+      if (st.step === 'th') { const y0 = 70, y1 = 140, gap = 110; g.fillStyle = ink; g.fillRect(cx - 150, y0, 150 - gap / 2, y1 - y0); g.fillRect(cx + gap / 2, y0, 150 - gap / 2, y1 - y0);
+        line(P2(cx - gap / 2, y0 + 30), P2(cx + gap / 2, y0 + 30), acc, 3); g.fillStyle = col('--mute'); g.fillText('außen', cx, y0 - 22); g.fillText('innen (Raum)', cx, y1 + 24);
+        const x = cx + gap / 2 - 16; line(P2(x, y0), P2(x, y1), warn, 3, [7, 6]); dot(P2(x, y0), warn, 4); dot(P2(x, y1), warn, 4); tag(P2(x - 44, (y0 + y1) / 2), '? cm', warn); return; }
+      const fl = H - 26, top = 22, k = (fl - top) / (r.rh || 260), ow = Math.min(150, Math.max(60, (st.w || 80) * k)), par = T ? 0 : (st.par != null ? st.par : 85), hh = st.h || (T ? 200 : 130), y1 = fl - par * k, y0 = Math.max(top + 10, y1 - hh * k);
+      g.fillStyle = col('--acc-soft'); g.fillRect(30, top, W - 60, fl - top); line(P2(20, fl), P2(W - 20, fl), ink, 4); line(P2(30, top), P2(W - 30, top), ink, 2);
+      g.fillStyle = col('--panel'); g.fillRect(cx - ow / 2, y0, ow, y1 - y0); g.strokeStyle = T ? warn : acc; g.lineWidth = 3; g.strokeRect(cx - ow / 2, y0, ow, y1 - y0);
+      g.fillStyle = col('--mute'); g.fillText('Boden', 58, fl + 13); g.fillText('Wand von vorne', cx, top - 11);
+      const x = cx + ow / 2 + 18, a = st.step === 'par' ? fl : (T || st.hFloor ? fl : y1), b = st.step === 'par' ? y1 : y0;
+      line(P2(x, a), P2(x, b), warn, 3, [7, 6]); dot(P2(x, a), warn, 5); dot(P2(x, b), warn, 5); tag(P2(x + 34, (a + b) / 2), '? cm', warn);
+      if (st.step === 'h' && !T && st.par != null && !st.hFloor) { const x2 = cx - ow / 2 - 18; line(P2(x2, fl), P2(x2, y1), ink, 2); tag(P2(x2 - 24, (fl + y1) / 2), String(Math.round(st.par)), ink); }
+      return; }
+    g.beginPath(); sp.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.closePath(); g.fillStyle = col('--acc-soft'); g.fill();
     for (let i = 0; i < n; i++) line(sp[i], sp[(i + 1) % n], st.wall === i ? warn : ink, st.wall === i ? 7 : 5);
     // vorhandene Türen/Fenster als helle Stücke, damit man sieht, was schon da ist
     const along = (i, cm) => { const a = sp[i], b = sp[(i + 1) % n], t = cm / (r.walls[i].cm || 1); return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }; };
@@ -475,13 +501,17 @@ function doorTarget(o) {
 }
 function editOp(o) {
   const r = P.room, kind = o.type === 'T' ? 'Tür' : 'Fenster';
-  const bg = sheet(`<h2>${kind} an Wand ${o.wall + 1}</h2><p class="mute" style="margin:-4px 0 10px">Abstand von der Ecke ${Math.round(o.pos)} cm · Breite ${Math.round(o.w)} cm${o.thick ? ` · Wand ${Math.round(o.thick)} cm` : ''}</p>
+  const bg = sheet(`<h2>${kind} an Wand ${o.wall + 1}</h2><p class="mute" style="margin:-4px 0 10px">Abstand von der Ecke ${Math.round(o.pos)} cm · Breite ${Math.round(o.w)} cm${o.h ? ` · Höhe ${Math.round(o.h)} cm` : ''}${o.par != null ? ` · Parapet ${Math.round(o.par)} cm` : ''}${o.thick ? ` · Wand ${Math.round(o.thick)} cm` : ''}</p>
     <div class="row2"><button class="ghost" data-pos>✎ Abstand</button><button class="ghost" data-w>✎ Breite</button></div>
-    ${o.type === 'T' ? '<button class="ghost" data-to style="width:100%;margin-top:8px">Ziel-Raum / Wandstärke</button>' : ''}
+    <div class="row2" style="margin-top:8px"><button class="ghost" data-h>✎ Höhe${o.h ? ' ' + Math.round(o.h) : ''}</button>${o.type === 'F' ? `<button class="ghost" data-par>✎ Parapet${o.par != null ? ' ' + Math.round(o.par) : ''}</button>` : '<span></span>'}</div>
+    ${o.type === 'T' ? '<button class="ghost" data-to style="width:100%;margin-top:8px">Ziel-Raum / Wandstärke</button>' : `<button class="ghost" data-lb style="width:100%;margin-top:8px">✎ Laibungstiefe${o.thick ? ' ' + Math.round(o.thick) + ' cm' : ''}</button>`}
     <button class="danger" data-del style="width:100%;margin-top:8px">Löschen</button><button class="ghost" data-close style="width:100%;margin-top:8px">Schließen</button>`);
   const num = async (title, cur) => { const v = await A().promptBox(title, '', String(Math.round(cur))); if (v == null) return null; const cm = parseFloat(String(v).replace(',', '.')); return cm >= 0 && cm < 10000 ? cm : null; };
   bg.querySelector('[data-pos]').onclick = async () => { bg.remove(); const v = await num('Abstand von der Ecke in cm', o.pos); if (v == null) return; if (v + o.w > r.walls[o.wall].cm + 2) { A().toast('Passt nicht auf die Wand'); return; } o.pos = v; await save(); roomUi(); };
   bg.querySelector('[data-w]').onclick = async () => { bg.remove(); const v = await num('Breite in cm', o.w); if (!v) return; if (o.pos + v > r.walls[o.wall].cm + 2) { A().toast('Passt nicht auf die Wand'); return; } o.w = v; await save(); roomUi(); };
+  const opt = async (title, key, lo, hi) => { bg.remove(); const v = await A().promptBox(title + ' (leer = keine Angabe)', '', o[key] != null ? String(Math.round(o[key])) : ''); if (v == null) return; if (!String(v).trim()) delete o[key]; else { const cm = parseFloat(String(v).replace(',', '.')); if (!(cm >= lo && cm <= hi)) { A().toast(`Bitte ${lo}–${hi} cm`); return; } o[key] = cm; } await save(); roomUi(); };
+  bg.querySelector('[data-h]').onclick = () => opt(`Höhe ${o.type === 'T' ? 'der Tür' : 'des Fensters'} in cm`, 'h', 20, 350);
+  if (o.type === 'F') { bg.querySelector('[data-par]').onclick = () => opt('Parapet in cm (Boden bis Fensterbank)', 'par', 0, 250); bg.querySelector('[data-lb]').onclick = () => opt('Laibungstiefe in cm', 'thick', 5, 150); }
   if (o.type === 'T') bg.querySelector('[data-to]').onclick = () => { bg.remove(); doorTarget(o); };
   bg.querySelector('[data-del]').onclick = async () => { bg.remove(); r.ops = r.ops.filter(x => x !== o); await save(); roomUi(); };
 }
