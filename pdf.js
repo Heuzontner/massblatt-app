@@ -101,18 +101,20 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
   if (headLogo) drawContain(p0, headLogo, 600, 28, 205, 34, 'right');
 
   box(p0, 20, 95, 801, 160);
-  const L = 46, R = 400, top = 117, lh = 17;
-  text(p0, 'Projekt: ' + fit(project.name, 13, 300), L, top, 13);
-  text(p0, 'Kontakt: ' + (project.kontakt || ''), L, top + lh, 13);
-  text(p0, project.firma || '', L, top + 2 * lh, 13);
-  text(p0, project.strasse || '', L, top + 3 * lh, 13);
-  text(p0, project.ort || '', L, top + 4 * lh, 13);
-  text(p0, 'Datum: ' + fmtDate(project.datum ? new Date(project.datum) : new Date()), R, top, 13);
-  text(p0, 'Land: ' + (project.land || ''), R, top + lh, 13);
-  text(p0, 'Telefon: ' + (project.telefon || ''), R, top + 2 * lh, 13);
-  // Postleitzahl und Ort der Wohnung (Manuel 19.11.) – eigene Zeile rechts; die Zeile „Projekt:“ bleibt für RBEM unverändert
-  { const objOrt = [project.plz, project.ortName].map(v => (v || '').trim()).filter(Boolean).join(' '); if (objOrt) text(p0, 'Ort: ' + fit(objOrt, 13, 175), R, top + 3 * lh, 13); }
-  if (project.note) text(p0, 'Notiz: ' + fit(project.note, 10, 200), R, top + 4 * lh, 10, rgb(0.3, 0.3, 0.3));
+  // Deckblatt (Manuel 19.11.): links die Baustelle (Projekt, PLZ + Ort der Wohnung, Datum), rechts getrennt der Auftraggeber
+  // (Kontakt, Firma, Anschrift, Land, Telefon). Für RBEM bleibt „Projekt: <Objekt>“ eine eigene Zeile und die Firma steht
+  // direkt unter „Kontakt:“ an derselben x-Position.
+  const L = 46, R = 400, top = 122, lh = 17, GREY = rgb(0.45, 0.45, 0.45);
+  text(p0, 'BAUSTELLE', L, top - 15, 7.5, GREY); text(p0, 'AUFTRAGGEBER', R, top - 15, 7.5, GREY);
+  p0.drawLine({ start: { x: R - 18, y: PAGE_H - 106 }, end: { x: R - 18, y: PAGE_H - 244 }, thickness: 0.5, color: rgb(0.8, 0.8, 0.8) });
+  text(p0, 'Projekt: ' + fit(project.name, 13, 270), L, top, 13);
+  { const objOrt = [project.plz, project.ortName].map(v => (v || '').trim()).filter(Boolean).join(' '); let r = 1;
+    if (objOrt) text(p0, fit(objOrt, 13, 320), L, top + (r++) * lh, 13);
+    text(p0, 'Datum: ' + fmtDate(project.datum ? new Date(project.datum) : new Date()), L, top + r * lh, 13); }
+  { let r = 0; const row = (t, always) => { if (t || always) text(p0, fit(t, 13, 205), R, top + (r++) * lh, 13); };
+    row('Kontakt: ' + (project.kontakt || ''), true); row(project.firma || ''); row(project.strasse || ''); row(project.ort || '');
+    row(project.land ? 'Land: ' + project.land : ''); row(project.telefon ? 'Telefon: ' + project.telefon : ''); }
+  if (project.note) text(p0, 'Notiz: ' + fit(project.note, 10, 320), L, top + 4 * lh + 4, 10, rgb(0.3, 0.3, 0.3));
   const custLogo = await embedImg(project.kundenLogo);
   if (custLogo) drawContain(p0, custLogo, 615, 112, 110, 118);
 
