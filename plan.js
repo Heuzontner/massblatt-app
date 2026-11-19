@@ -37,7 +37,7 @@ async function renderList() {
   if (!nArch) showArch = false; $('#grArch').style.display = nArch ? '' : 'none'; $('#grArch').textContent = showArch ? '‹ Aktive Grundrisse' : `📦 Archiv (${nArch})`;
   const all = every.filter(p => !!p.archived === showArch && (!q || [p.name, p.kunde, p.plz, p.ortName].some(v => String(v || '').toLowerCase().includes(q)))); el.innerHTML = '';
   const evs = showArch ? [] : await A().planEvents().catch(() => []), open = evs.filter(e => !every.some(p => p.gcalId === e.id)); $('#grCal').style.display = open.length ? '' : 'none'; $('#grCal').textContent = `📅 Termine heute (${open.length})`; $('#grCal').onclick = () => calSheet(open);
-  if (!all.length) { el.innerHTML = `<p class="mute" style="text-align:center;margin:40px 12px">${q ? 'Nichts gefunden.' : showArch ? 'Das Archiv ist leer.' : 'Noch kein Grundriss.<br>Unten auf „+ Neuer Grundriss“ tippen, dann Raum für Raum mit dem Laser ablaufen.'}</p>`; return; }
+  if (!all.length) { el.innerHTML = `<p class="mute" style="text-align:center;margin:40px 12px">${q ? 'Nichts gefunden.' : showArch ? 'Das Archiv ist leer.' : 'Noch kein Grundriss.<br>Unten auf „+ Neuer Grundriss“ tippen, dann Raum für Raum mit dem Laser ablaufen.<br><br>Zum ersten Mal hier? Oben „🎓 Üben“ zeigt dir Schritt für Schritt, wie es geht.'}</p>`; return; }
   for (const p of all) {
     const c = document.createElement('div'); c.className = 'card'; const n = (p.rooms || []).length, done = (p.rooms || []).filter(r => r.closed).length;
     c.innerHTML = `<div class="t"><b>${esc(p.name || 'Ohne Adresse')}</b><small>${esc([p.kunde, [p.plz, p.ortName].filter(Boolean).join(' ')].filter(Boolean).join(' · '))}${p.kunde || p.plz ? ' · ' : ''}${n} ${n === 1 ? 'Raum' : 'Räume'}${n ? ` (${done} fertig)` : ''}${planArea(p) ? ' · ' + fmtA(planArea(p)) : ''}</small></div><span class="mute">›</span>`;
@@ -56,6 +56,40 @@ $('#grNew').onclick = async () => {
   const p = { id: uid(), name: '', plz: '', ortName: '', kunde: '', rooms: [], created: Date.now(), updated: Date.now() };
   await store.put(p); await openPlan(p.id);
 };
+// ---------- Übungs-Grundriss mit Anleitung (Manuel 19.11., wie das Übungsprojekt im Massblatt) ----------
+// Blaue Zeile #coach sagt je nach Stand, was als Nächstes zu tun ist. Geht ohne Laser (⌨). Beim Zurück zur Liste: löschen oder behalten.
+const COACH = 'Übung Grundriss'; let coachT = 0;
+function coachStep() {
+  const c = $('#coach'); if (!P.coach) return;
+  const on = id => $('#' + id).classList.contains('on'), mine = P.plan && P.plan.id === P.coach; let t = '', n = '';
+  if (document.querySelector('.sheet-bg.on')) { c.classList.remove('on'); return; } // Fenster offen (z. B. Tür einsetzen) – das führt selbst
+  if (on('plan') && mine) { const rs = P.plan.rooms, done = rs.filter(r => r.closed).length;
+    if (!rs.length) { t = 'Tippe unten auf „＋ Raum“ und wähle einen Raum, z. B. Wohnzimmer.'; n = 'Schritt 1'; }
+    else if (!done) { t = 'Tippe den Raum an und miss ihn fertig.'; n = 'Schritt 2'; }
+    else { t = 'Tippe auf das Bild der Wohnung (ansehen, Räume schieben) oder auf „Ausgeben“ für PDF und DXF. Beenden: „‹“ oben links.'; n = 'Schritt 6'; } }
+  else if (on('planRoom') && mine && P.room) { const r = P.room, k = r.walls.length, ops = r.ops || [];
+    if (r.closed) { if (!ops.some(o => o.type === 'T')) { t = 'Raum fertig ✓ – tippe „＋ Tür“ und folge dem Fenster Schritt für Schritt.'; n = 'Schritt 4'; }
+      else if (!ops.some(o => o.type === 'F')) { t = 'Super. Jetzt noch „＋ Fenster“.'; n = 'Schritt 5'; }
+      else { t = 'Geschafft! Tippe eine Wand an für die Wandansicht – oder „✓ Weiter“ zurück zur Wohnung.'; n = 'Schritt 5'; } }
+    else if (P.hold || pending()) { t = 'Wohin geht es an der Ecke weiter? Im Uhrzeigersinn gehen und „↱ rechts“ tippen (bei einer Ecke nach außen „↰ links“).'; n = 'Schritt 3'; }
+    else if (!k) { t = 'Stell dich in eine Ecke und miss die erste Wand mit dem Laser – oder tippe ⌨ und gib z. B. 400 ein. Für einen rechteckigen Raum geht auch „▭ Rechteck“.'; n = 'Schritt 2'; }
+    else if (k < 3) { t = `${k} ${k === 1 ? 'Wand' : 'Wände'} – weiter im Uhrzeigersinn: nächste Wand messen, dann wieder die Richtung tippen.`; n = 'Schritt 3'; }
+    else { t = 'Letzte Wand messen – oder „✓ Raum fertig“ tippen, dann rechnet die App die letzte Wand selbst.'; n = 'Schritt 3'; } }
+  else if (on('planFlat') && mine) { t = 'Zwei Finger = zoomen. Ein Raum ohne Tür lässt sich mit dem Finger an eine Wand schieben und dockt an. Zurück mit „‹“.'; n = 'Schritt 6'; }
+  else { c.classList.remove('on'); if (on('home')) coachEnd(); return; }
+  const key = 'gr' + n + t; if (c.dataset.k !== key) { c.dataset.k = key; c.innerHTML = '<small></small><span></span>'; c.querySelector('small').textContent = 'Übung · ' + n; c.querySelector('span').textContent = t; }
+  c.classList.add('on'); c.classList.add('top'); // oben über dem Bild – unten liegen im Grundriss die Knöpfe
+}
+async function coachEnd() {
+  const id = P.coach; if (!id) return; P.coach = null; clearInterval(coachT); $('#coach').classList.remove('on'); $('#coach').classList.remove('top');
+  if (!await store.get(id)) return;
+  if (await A().confirmBox('Übung beendet – Übungs-Grundriss löschen?', 'Löschen', 'Behalten')) { await store.del(id); renderList(); }
+}
+async function coachStart() {
+  const p = { id: uid(), name: COACH, plz: '', ortName: '', kunde: '', rooms: [], created: Date.now(), updated: Date.now(), uebung: true };
+  await store.put(p); await openPlan(p.id); P.coach = p.id; clearInterval(coachT); coachT = setInterval(coachStep, 500); coachStep();
+}
+$('#grCoach').onclick = coachStart;
 async function openPlan(id) {
   P.plan = await store.get(id); if (!P.plan) return; P.room = null;
   $('#grStr').value = P.plan.name || ''; $('#grPlz').value = P.plan.plz || ''; $('#grOrt').value = P.plan.ortName || ''; $('#grKunde').value = P.plan.kunde || ''; $('#grWall').value = P.plan.wall || ''; $('#grWallOut').value = P.plan.wallOut || '';
@@ -905,7 +939,7 @@ function draw() {
 window.addEventListener('resize', () => { if ($('#planRoom').classList.contains('on')) draw(); if ($('#planFlat').classList.contains('on')) drawFlat($('#grFlatCv'), true); });
 
 // ---------- Andockstellen für app.js ----------
-window.__planX = { photoAdd };
+window.__planX = { photoAdd, coachStep };
 window.__plan = {
   // Messwert: nur wenn der Raum-Bildschirm offen ist; sonst bekommt ihn das Massblatt wie bisher
   measure(cm) {
