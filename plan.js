@@ -162,7 +162,7 @@ function roomUi() {
   else if (!n) { txt = 'Erste Wand messen'; sub = 'In einer Ecke beginnen und im Uhrzeigersinn Wand für Wand messen.'; }
   else if (pending()) { txt = `Wand ${n}: ${Math.round(lastW().cm)} cm · Wohin geht es weiter?`; sub = 'Links oder rechts antippen.'; }
   else { txt = `Wand ${n + 1} messen`; sub = n >= 2 ? (s.gap < 5 ? 'Der Raum geht auf – „✓ Raum fertig“ antippen.' : `Bis zum Anfang fehlen noch ${Math.round(s.gap)} cm.`) : ''; }
-  $('#grInfo').textContent = txt; $('#grSub').textContent = sub;
+  $('#grInfo').textContent = txt; $('#grSub').textContent = sub; extraUi();
   const turnMode = !r.closed && (pending() || !!P.hold);
   $('#grTurnBar').style.display = turnMode ? 'flex' : 'none'; $('#grMeasBar').style.display = !r.closed && !turnMode ? 'flex' : 'none';
   $('#grDoneBar').style.display = r.closed && !op ? 'flex' : 'none'; $('#grMini').style.display = r.closed && !op ? 'flex' : 'none'; $('#grOpBar').style.display = op ? 'flex' : 'none';
@@ -528,8 +528,8 @@ function flatInfo() {
   const p = P.plan, res = G.placeRooms(p.rooms, p.wall || 15), name = id => (p.rooms.find(r => r.id === id) || {}).name || '?', msgs = [];
   for (const m of res.missing) msgs.push(m.why === 'offen' ? `„${name(m.to)}“ ist noch nicht fertig gemessen (Tür von „${name(m.from)}“ führt dorthin).` : `In „${name(m.to)}“ fehlt die Tür zu „${name(m.from)}“.`);
   for (let gi = 1; gi < (res.groups || 0); gi++) { const ids = p.rooms.filter(r => res.T.has(r.id) && res.T.get(r.id).g === gi).map(r => r.id);
-    if (ids.length > 1) msgs.push(`${ids.map(i => `„${name(i)}“`).join(' und ')} hängen zusammen, aber noch nicht an der übrigen Wohnung.`);
-    else if (!res.missing.some(m => m.to === ids[0] || m.from === ids[0])) msgs.push(`„${name(ids[0])}“ hängt noch an keiner Tür.`); }
+    if (ids.length > 1) msgs.push(`${ids.map(i => `„${name(i)}“`).join(' und ')} hängen zusammen, aber noch nicht an der übrigen Wohnung – mit dem Finger an die richtige Wand schieben, sie docken von selbst an.`);
+    else if (!res.missing.some(m => m.to === ids[0] || m.from === ids[0])) msgs.push(`„${name(ids[0])}“ hängt noch an keiner Tür – mit dem Finger an die richtige Wand schieben, der Raum dockt von selbst an.`); }
   for (const i of res.issues) msgs.push(`Zwischen „${name(i.a)}“ und „${name(i.b)}“ geht es nicht auf: ${Math.round(i.off)} cm Versatz – eine Türposition, Wandlänge oder Wandstärke stimmt nicht.`);
   const oks = []; if ((p.checks || []).length) { const lay = G.layout(p.rooms, p.wall || 15);
     for (const c of p.checks) { const d = G.checkDist(lay, c.a, c.wa, c.b, c.wb), nm = `Kontrollmaß ${name(c.a)} W${c.wa + 1} – ${name(c.b)} W${c.wb + 1}`;
@@ -579,7 +579,8 @@ function drawFlat(cv, big, exp) {
   else { const box = cv.parentElement.getBoundingClientRect(); dpr = Math.min(2, window.devicePixelRatio || 1); W = Math.max(50, box.width); H = Math.max(50, box.height); cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px'; }
   const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H); if (exp) { g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H); }
   if (big && !exp && P.fv) { g.translate(W / 2 + P.fv.x, H / 2 + P.fv.y); g.scale(P.fv.z, P.fv.z); g.translate(-W / 2, -H / 2); }   // Zoomen und Verschieben mit den Fingern
-  const pad = big ? 30 : 8, sc = Math.min((W - 2 * pad) / Math.max(1, bb.x1 - bb.x0), (H - 2 * pad) / Math.max(1, bb.y1 - bb.y0)), ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc;
+  const pad = big ? 30 : 8; let sc = Math.min((W - 2 * pad) / Math.max(1, bb.x1 - bb.x0), (H - 2 * pad) / Math.max(1, bb.y1 - bb.y0)), ox = (W - (bb.x1 - bb.x0) * sc) / 2 - bb.x0 * sc, oy = (H - (bb.y1 - bb.y0) * sc) / 2 - bb.y0 * sc;
+  if (big && !exp) { if (P.drag && P.drag.view) ({ sc, ox, oy } = P.drag.view); P.flat = { sc, ox, oy, W, H, lay }; } // beim Schieben eines Raums bleibt der Maßstab stehen
   const X = q => ox + q.x * sc, Y = q => oy + q.y * sc, css = getComputedStyle(document.documentElement), col = n => (exp ? PRINT[n] : css.getPropertyValue(n).trim()) || '#888', mono = css.getPropertyValue('--mono') || 'monospace', display = css.getPropertyValue('--display') || 'sans-serif';
   // 3.18: Wände auf eigener Ebene zeichnen und die Rauminnenflächen + Öffnungen herausschneiden (wie im PDF/DXF).
   // Sonst ragt die Außenwand eines Raums in den Nachbarraum, die Zwischenwand wirkt doppelt so dick und liegt quer über der Türöffnung.
@@ -594,6 +595,7 @@ function drawFlat(cv, big, exp) {
   for (const { it } of gfs) { const pl = it.poly, n = pl.length, c = pl.reduce((s, q) => ({ x: s.x + X(q) / n, y: s.y + Y(q) / n }), { x: 0, y: 0 }), wpx = (Math.max(...pl.map(q => q.x)) - Math.min(...pl.map(q => q.x))) * sc;
     const fs = Math.min(big ? 15 : 10, (wpx - 8) / Math.max(3, it.room.name.length * 0.6)); if (fs < 6) continue; g.fillStyle = col('--text'); g.textAlign = 'center'; g.textBaseline = 'middle';
     if (big && fs > 10) stamp(g, it.room, c.x, c.y, { ink: col('--text'), mute: col('--mute'), display, mono, size: fs, name: true, maxW: wpx - 6 }); else { g.font = `700 ${fs}px ${display}`; g.fillText(it.room.name, c.x, c.y); } }
+  if (big && !exp && P.selSeed) for (const { it } of gfs) if (it.loose && lay.items.find(q => q.g === it.g).room.id === P.selSeed) { g.strokeStyle = col('--acc'); g.lineWidth = 3 / (P.fv ? P.fv.z : 1); g.setLineDash([8, 6]); g.beginPath(); it.poly.forEach((q, i) => i ? g.lineTo(X(q), Y(q)) : g.moveTo(X(q), Y(q))); g.closePath(); g.stroke(); g.setLineDash([]); }
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (big && p.north != null) northArrow(g, W - 52, 60, p.north, col('--text'), mono);
 }
@@ -618,17 +620,37 @@ function flatUi() {
   if ((p.checks || []).length) { const b = document.createElement('button'); b.className = 'ghost'; b.id = 'grCheckDel'; b.style.cssText = 'margin-top:6px;padding:7px 10px;font-size:13px'; b.textContent = `Kontrollmaße löschen (${p.checks.length})`;
     b.onclick = async () => { if (await A().confirmBox('Alle Kontrollmaße löschen?', 'Löschen')) { delete p.checks; await save(); flatUi(); } }; el.appendChild(b); }
   drawFlat($('#grFlatCv'), true);
+  $('#grRot').style.display = P.selSeed && p.rooms.some(r => r.id === P.selSeed) ? '' : 'none';
 }
-$('#grFlatCard').onclick = () => { P.fv = { z: 1, x: 0, y: 0 }; A().show('planFlat'); A().keepAwake(true); flatUi(); };
+// ---------- Lose Räume von Hand hinschieben; sie docken an der nächsten Wand an (Manuel 19.11.) ----------
+// Die Lage steht am ersten Raum der Gruppe (room.at = Mitte in cm + Vierteldrehungen). Beim Loslassen nahe an einer Wand entsteht eine
+// „Wand an Wand“-Verbindung (room.links) – ab dann hängt der Raum fest und wird wie jeder verbundene Raum gerechnet.
+const flatCm = e => { const f = P.flat, b = $('#grFlatCv').getBoundingClientRect(), z = P.fv.z, x = (e.clientX - b.left - f.W / 2 - P.fv.x) / z + f.W / 2, y = (e.clientY - b.top - f.H / 2 - P.fv.y) / z + f.H / 2; return { x: (x - f.ox) / f.sc, y: (y - f.oy) / f.sc }; };
+const inPoly = (q, pl) => { let c = false; for (let i = 0, j = pl.length - 1; i < pl.length; j = i++) if ((pl[i].y > q.y) !== (pl[j].y > q.y) && q.x < (pl[j].x - pl[i].x) * (q.y - pl[i].y) / (pl[j].y - pl[i].y) + pl[i].x) c = !c; return c; };
+function looseAt(e) { if (!P.flat) return null; const q = flatCm(e), it = P.flat.lay.items.find(i => i.loose && inPoly(q, i.poly)); if (!it) return null;
+  const grp = P.flat.lay.items.filter(i => i.g === it.g), bb = bboxOf(grp.flatMap(i => i.poly)); return { seed: grp[0].room, g: it.g, c: { x: (bb.x0 + bb.x1) / 2, y: (bb.y0 + bb.y1) / 2 }, q }; }
+async function dockDrop(seed) {
+  const p = P.plan, lay = G.layout(p.rooms, p.wall || 15), me = lay.items.find(i => i.room === seed); if (!me) return;
+  const hit = G.dockFind(lay, me.g, (p.wall || 15) + 75);
+  if (hit) { (hit.room.links = hit.room.links || []).push({ id: uid(), wall: hit.wall, to: hit.to.id, toWall: hit.toWall, off: hit.off, thick: p.wall || 15, dock: true });
+    for (const i of lay.items) if (i.g === me.g) delete i.room.at; P.selSeed = null; A().beep(true); A().toast(`„${hit.room.name}“ hängt jetzt an „${hit.to.name}“ (Wand ${hit.wall + 1} an Wand ${hit.toWall + 1})`, 3500); }
+  await save(); flatUi();
+}
+$('#grRot').onclick = async () => { const p = P.plan, seed = p.rooms.find(r => r.id === P.selSeed); if (!seed || !P.flat) return; const grp = P.flat.lay.items.filter(i => i.g === (P.flat.lay.items.find(q => q.room === seed) || {}).g); if (!grp.length) return;
+  const bb = bboxOf(grp.flatMap(i => i.poly)); seed.at = { x: (bb.x0 + bb.x1) / 2, y: (bb.y0 + bb.y1) / 2, r: (((seed.at || {}).r || 0) + 1) % 4 }; await save(); flatUi(); };
+$('#grFlatCard').onclick = () => { P.selSeed = null; P.drag = null; P.fv = { z: 1, x: 0, y: 0 }; A().show('planFlat'); A().keepAwake(true); flatUi(); };
 $('#grFlatBack').onclick = () => A().goBack(false);
 { // zwei Finger = zoomen, ein Finger = verschieben, Doppeltipp = zurücksetzen
   const cv = $('#grFlatCv'), pt = new Map(); let last = 0, d0 = 0, z0 = 1;
   const redraw = () => drawFlat(cv, true), dist = () => { const [a, b] = [...pt.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
-  cv.addEventListener('pointerdown', e => { pt.set(e.pointerId, { x: e.clientX, y: e.clientY }); try { cv.setPointerCapture(e.pointerId); } catch (x) { } if (pt.size === 2) { d0 = dist(); z0 = P.fv.z; }
+  cv.addEventListener('pointerdown', e => { pt.set(e.pointerId, { x: e.clientX, y: e.clientY }); try { cv.setPointerCapture(e.pointerId); } catch (x) { } if (pt.size === 2) { d0 = dist(); z0 = P.fv.z; if (P.drag) { P.drag = null; redraw(); } }
+    if (pt.size === 1) { const h = looseAt(e); if (h) { P.drag = { seed: h.seed, q0: h.q, c0: h.c, r: (h.seed.at || {}).r || 0, view: { sc: P.flat.sc, ox: P.flat.ox, oy: P.flat.oy }, moved: false }; last = 0; return; } }
     if (pt.size === 1) { const t = Date.now(); if (t - last < 320) { P.fv = { z: 1, x: 0, y: 0 }; redraw(); } last = t; } });
   cv.addEventListener('pointermove', e => { const q = pt.get(e.pointerId); if (!q) return; const dx = e.clientX - q.x, dy = e.clientY - q.y; q.x = e.clientX; q.y = e.clientY;
+    if (P.drag && pt.size === 1) { const q = flatCm(e), d = P.drag; if (!d.moved && Math.hypot(q.x - d.q0.x, q.y - d.q0.y) * d.view.sc * P.fv.z < 8) return; d.moved = true; d.seed.at = { x: d.c0.x + q.x - d.q0.x, y: d.c0.y + q.y - d.q0.y, r: d.r }; redraw(); return; }
     if (pt.size === 1) { P.fv.x += dx; P.fv.y += dy; } else if (pt.size === 2 && d0 > 0) P.fv.z = Math.max(1, Math.min(10, z0 * dist() / d0)); if (P.fv.z === 1 && pt.size === 2) { P.fv.x = 0; P.fv.y = 0; } redraw(); });
-  for (const ev of ['pointerup', 'pointercancel']) cv.addEventListener(ev, e => { pt.delete(e.pointerId); d0 = 0; });
+  for (const ev of ['pointerup', 'pointercancel']) cv.addEventListener(ev, e => { pt.delete(e.pointerId); d0 = 0;
+    if (P.drag) { const d = P.drag; P.drag = null; if (d.moved && ev === 'pointerup') dockDrop(d.seed); else { P.selSeed = P.selSeed === d.seed.id ? null : d.seed.id; flatUi(); } } });
   cv.addEventListener('wheel', e => { e.preventDefault(); P.fv.z = Math.max(1, Math.min(10, P.fv.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); if (P.fv.z === 1) { P.fv.x = 0; P.fv.y = 0; } redraw(); }, { passive: false });
 }
 // Nordpfeil: wohin zeigt Norden im Bild?
@@ -642,12 +664,40 @@ $('#grWall').addEventListener('input', () => { if (!P.plan) return; const v = pa
 
 // ---------- 3.17: Objekte, Nachbarraum Wand an Wand, Kopie, Nische, Kontrollmaß ----------
 $('#grMore').onclick = () => {
-  const bg = sheet('<h2>Mehr im Raum</h2><label class="f">Einbauten und Ausstattung</label><div class="grgrid" data-objs></div><label class="f">Raum</label><button class="ghost grpick" data-link><b>↔ Nachbarraum Wand an Wand</b><small>Räume ohne Tür dazwischen aneinanderhängen</small></button><button class="ghost grpick" data-niche><b>⊓ Nische oder Vorsprung</b><small>nachträglich in eine Wand einfügen</small></button><div class="row2"><button class="ghost" data-copy>⧉ Kopie</button><button class="ghost" data-mirror>⧉ Spiegelkopie</button></div><button class="ghost" data-close style="width:100%;margin-top:10px">Schließen</button>');
+  const bg = sheet('<h2>Mehr im Raum</h2><label class="f">Einbauten und Ausstattung</label><div class="grgrid" data-objs></div><label class="f">Raum</label><div class="row2" style="margin-bottom:8px"><button class="ghost" data-photo>📷 Foto zum Raum</button><button class="ghost" data-note>📝 Notiz zum Raum</button></div><button class="ghost grpick" data-link><b>↔ Nachbarraum Wand an Wand</b><small>Räume ohne Tür dazwischen aneinanderhängen</small></button><button class="ghost grpick" data-niche><b>⊓ Nische oder Vorsprung</b><small>nachträglich in eine Wand einfügen</small></button><div class="row2"><button class="ghost" data-copy>⧉ Kopie</button><button class="ghost" data-mirror>⧉ Spiegelkopie</button></div><button class="ghost" data-close style="width:100%;margin-top:10px">Schließen</button>');
   for (const [k, v] of Object.entries(G.OBJ)) { const b = document.createElement('button'); b.className = 'ghost'; b.dataset.kind = k; b.innerHTML = `<b style="font-size:14px">${esc(v[0])}</b>`; b.onclick = () => { bg.remove(); objAdd(k); }; bg.querySelector('[data-objs]').appendChild(b); }
+  bg.querySelector('[data-photo]').onclick = () => { bg.remove(); photoAdd(); }; bg.querySelector('[data-note]').onclick = () => { bg.remove(); noteEdit(); };
   bg.querySelector('[data-link]').onclick = () => { bg.remove(); linkAdd(); }; bg.querySelector('[data-niche]').onclick = () => { bg.remove(); nicheAdd(); };
   const cp = async m => { bg.remove(); const c = G.copyRoom(P.room, m, uid); let nm = P.room.name + (m ? ' (gespiegelt)' : ' 2'), i = 2; while (P.plan.rooms.some(x => x.name === nm)) nm = `${P.room.name} ${++i}`; c.name = nm; P.plan.rooms.push(c); await save(); A().toast(`„${nm}“ angelegt`, 2500); openRoom(c.id); };
   bg.querySelector('[data-copy]').onclick = () => cp(false); bg.querySelector('[data-mirror]').onclick = () => cp(true);
 };
+// ---------- Foto und Notiz je Raum (Manuel 19.11.) – liegen im Grundriss, kommen ins PDF ----------
+// Bild wählen oder aufnehmen (Android zeigt Kamera/Dateien zur Wahl), verkleinert als Daten-URL zurück
+function pickImage(max, type = 'image/jpeg', q = 0.82) {
+  return new Promise(res => { const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.style.display = 'none'; document.body.appendChild(inp);
+    inp.onchange = () => { const f = inp.files && inp.files[0]; inp.remove(); if (!f) return res(null); const img = new Image(), url = URL.createObjectURL(f);
+      img.onload = () => { const k = Math.min(1, max / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); const g = c.getContext('2d'); if (type === 'image/jpeg') { g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); } g.drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res({ data: c.toDataURL(type, q), w: c.width, h: c.height }); };
+      img.onerror = () => { URL.revokeObjectURL(url); res(null); }; img.src = url; };
+    inp.click(); });
+}
+async function photoAdd(given) {
+  const r = P.room; if (!r) return; if ((r.photos || []).length >= 12) { A().toast('Höchstens 12 Fotos je Raum'); return; }
+  const im = given || await pickImage(1600); if (!im) return; (r.photos = r.photos || []).push({ id: uid(), data: im.data, w: im.w, h: im.h, t: Date.now() }); await save(); roomUi(); A().toast('Foto beim Raum gespeichert', 1800);
+}
+async function noteEdit() {
+  const r = P.room; if (!r) return; const v = await A().promptBox(`Notiz zu „${r.name}“`, 'z. B. Boden Parkett, Wand feucht …', r.note || ''); if (v == null) return;
+  if (String(v).trim()) r.note = String(v).trim().slice(0, 400); else delete r.note; await save(); roomUi();
+}
+function photoView(id) {
+  const r = P.room, ph = (r.photos || []).find(x => x.id === id); if (!ph) return;
+  const bg = sheet(`<img src="${ph.data}" alt="" style="width:100%;max-height:60vh;object-fit:contain;border-radius:6px;background:#000"><div class="row2" style="margin-top:10px"><button class="danger" data-del>🗑 Foto löschen</button><button class="ghost" data-close>Schließen</button></div>`);
+  bg.querySelector('[data-del]').onclick = async () => { r.photos = r.photos.filter(x => x.id !== id); if (!r.photos.length) delete r.photos; await save(); bg.remove(); roomUi(); };
+}
+function extraUi() {
+  const r = P.room, el = $('#grExtra'); if (!el) return; el.innerHTML = ''; if (!r || (!r.note && !(r.photos || []).length)) { el.style.display = 'none'; return; } el.style.display = '';
+  for (const ph of r.photos || []) { const i = document.createElement('img'); i.src = ph.data; i.alt = 'Foto'; i.onclick = () => photoView(ph.id); el.appendChild(i); }
+  if (r.note) { const b = document.createElement('button'); b.className = 'ghost grnote'; b.textContent = '📝 ' + r.note; b.onclick = noteEdit; el.appendChild(b); }
+}
 async function objAdd(kind, old) {
   const r = P.room, def = G.OBJ[kind], ds = kind === 'DS', o = old || { id: uid(), kind, wall: 0, pos: 0, w: def[1], d: def[2], gap: 0 };
   const rows = [{ k: 'wall', label: 'An welcher Wand?', type: 'sel', opts: wallOpts(r), val: o.wall }];
@@ -691,9 +741,11 @@ $('#grCheck').onclick = async () => {
 
 // ---------- Stufe 3: PDF + DXF, Dropbox ----------
 let fontBytes = null;
+// Eigenes Logo im Schriftfeld des PDF (optional, je Gerät): PNG als Daten-URL in localStorage, Schalter mb_grLogoOn
+const logoGet = () => { try { return localStorage.getItem('mb_grLogoOn') === '1' ? localStorage.getItem('mb_grLogo') : null; } catch (e) { return null; } };
 async function planFiles() {
   if (!fontBytes) fontBytes = new Uint8Array(await (await fetch('vendor/NotoSans.woff')).arrayBuffer());
-  const base = O.fileBase(P.plan), pdf = await O.buildPlanPdf(window.PDFLib, window.fontkit, fontBytes, P.plan, flatInfo().msgs), dxf = O.buildDxf(P.plan);
+  const base = O.fileBase(P.plan), pdf = await O.buildPlanPdf(window.PDFLib, window.fontkit, fontBytes, P.plan, flatInfo().msgs, { logo: logoGet() }), dxf = O.buildDxf(P.plan);
   const cv = document.createElement('canvas'); drawFlat(cv, true, { px: 6400 }); const png = await new Promise(r => cv.toBlob(r, 'image/png'));   // höchste Auflösung, die Geräte sicher schaffen (max. 16 Mio. Bildpunkte)
   return { pdf: new File([pdf], base + '.pdf', { type: 'application/pdf' }), dxf: new File([dxf.text], base + '.dxf', { type: 'application/dxf' }), png: png ? new File([png], base + '.png', { type: 'image/png' }) : null, pngSize: [cv.width, cv.height] };
 }
@@ -710,7 +762,13 @@ $('#grExport').onclick = async () => {
   const bg = sheet(`<h2>Grundriss ausgeben</h2><p class="mute" style="margin:-4px 0 10px;font-size:14px">${n} ${n === 1 ? 'Raum' : 'Räume'} fertig${open ? ` · ${open} noch offen (${open === 1 ? 'fehlt' : 'fehlen'} in der Ausgabe)` : ''} · PDF maßstäblich, DXF in cm für BricsCAD</p>
     <button class="pri" data-dbx style="width:100%">☁ PDF + DXF + Bild in die Dropbox</button><p class="mute" data-where style="margin:4px 0 10px;font-size:13px"></p>
     <div class="row2"><button class="ghost" data-pdf>PDF speichern</button><button class="ghost" data-dxf>DXF speichern</button></div><button class="ghost" data-png style="width:100%;margin-top:8px">Bild (PNG) speichern</button>
-    <button class="ghost" data-share style="width:100%;margin-top:8px">Teilen …</button><button class="ghost" data-close style="width:100%;margin-top:8px">Schließen</button>`);
+    <button class="ghost" data-share style="width:100%;margin-top:8px">Teilen …</button>
+    <label style="display:flex;gap:10px;align-items:center;margin:12px 0 0;font-size:14px"><input type="checkbox" data-logoon style="width:auto"> Eigenes Logo im Schriftfeld (PDF)</label><div data-logobox style="display:none;align-items:center;gap:10px;margin-top:6px"><img data-logoimg alt="" style="max-height:34px;max-width:140px;background:#fff;border:1px solid var(--line);border-radius:4px;padding:2px"><button class="ghost" data-logopick style="padding:8px 12px">Logo wählen</button></div><button class="ghost" data-close style="width:100%;margin-top:8px">Schließen</button>`);
+  { const on = bg.querySelector('[data-logoon]'), box = bg.querySelector('[data-logobox]'), img = bg.querySelector('[data-logoimg]'), ls = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+    const upd = () => { const d = ls('mb_grLogo'); on.checked = ls('mb_grLogoOn') === '1' && !!d; box.style.display = on.checked || d ? 'flex' : 'none'; img.style.display = d ? '' : 'none'; if (d) img.src = d; };
+    const pick = async () => { const im = await pickImage(480, 'image/png'); if (!im) return false; try { localStorage.setItem('mb_grLogo', im.data); localStorage.setItem('mb_grLogoOn', '1'); } catch (e) { A().toast('Logo ist zu groß', 3000); return false; } return true; };
+    on.onchange = async () => { if (on.checked && !ls('mb_grLogo')) { if (!await pick()) on.checked = false; } else { try { localStorage.setItem('mb_grLogoOn', on.checked ? '1' : '0'); } catch (e) { } } upd(); };
+    bg.querySelector('[data-logopick]').onclick = async () => { await pick(); upd(); }; upd(); }
   bg.querySelector('[data-where]').textContent = dbx ? 'Ordner: ' + A().dropbox.pathFor(planSub()) : 'Dropbox ist nicht verbunden (⚙ → Dropbox).';
   bg.querySelector('[data-dbx]').disabled = !dbx;
   const make = async () => { A().toast('Grundriss wird erstellt …', 8000); return planFiles(); };
@@ -730,12 +788,44 @@ $('#grExport').onclick = async () => {
 };
 
 // Wand bearbeiten: Länge ändern, Ecke umdrehen
+// ---------- Wandansicht: die Wand von innen gesehen, mit Tür, Fenster, Parapet, Raumhöhe und Dachschräge ----------
+function drawElev(cv, e, wallNo) {
+  const W = cv.clientWidth || 320, H = 240, dpr = window.devicePixelRatio || 1; cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim() || '#888', ink = col('--text'), mute = col('--mute'), acc = col('--acc'), warn = '#e8590c', mono = css.getPropertyValue('--mono') || 'monospace';
+  const pl = 46, pr = 16, pt = 16, pb = 58, k = Math.min((W - pl - pr) / e.L, (H - pt - pb) / e.H), ox = pl + (W - pl - pr - e.L * k) / 2, oy = H - pb, X = x => ox + x * k, Y = y => oy - y * k;
+  g.beginPath(); e.outline.forEach((q, i) => i ? g.lineTo(X(q.x), Y(q.y)) : g.moveTo(X(q.x), Y(q.y))); g.closePath(); g.fillStyle = col('--acc-soft'); g.fill(); g.strokeStyle = ink; g.lineWidth = 2.5; g.lineJoin = 'round'; g.stroke();
+  g.font = `600 12px ${mono}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const txt = (t, x, y, c = ink, rot = 0) => { g.save(); g.translate(x, y); g.rotate(rot); g.fillStyle = c; g.fillText(t, 0, 0); g.restore(); };
+  for (const o of e.ops) { const T = o.type === 'T', c = T ? warn : acc; g.fillStyle = col('--panel'); g.fillRect(X(o.x), Y(o.y + o.h), o.w * k, o.h * k); g.strokeStyle = c; g.lineWidth = 2; g.setLineDash(o.guessH ? [5, 4] : []); g.strokeRect(X(o.x), Y(o.y + o.h), o.w * k, o.h * k); g.setLineDash([]);
+    if (!T) { g.beginPath(); g.moveTo(X(o.x + o.w / 2), Y(o.y)); g.lineTo(X(o.x + o.w / 2), Y(o.y + o.h)); g.moveTo(X(o.x), Y(o.y + o.h / 2)); g.lineTo(X(o.x + o.w), Y(o.y + o.h / 2)); g.lineWidth = 1; g.stroke(); }
+    if (o.w * k > 34) txt(`${Math.round(o.w)}/${o.guessH ? '?' : Math.round(o.h)}`, X(o.x + o.w / 2), Y(o.y + o.h / 2) + (T ? 0 : -9), c);
+    if (!T && o.w * k > 34) txt(o.guessY ? 'P ?' : `P ${Math.round(o.y)}`, X(o.x + o.w / 2), Y(o.y / 2), mute); }
+  // Maße: Länge unten, Höhe links, Kniestock
+  g.strokeStyle = mute; g.lineWidth = 1; const dim = (x0, y0, x1, y1) => { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); };
+  dim(X(0), oy + 16, X(e.L), oy + 16); dim(X(0), oy + 11, X(0), oy + 21); dim(X(e.L), oy + 11, X(e.L), oy + 21); txt(`${Math.round(e.L)} cm`, X(e.L / 2), oy + 30);
+  const hl = e.top[0].y; dim(ox - 14, Y(0), ox - 14, Y(hl)); dim(ox - 19, Y(0), ox - 9, Y(0)); dim(ox - 19, Y(hl), ox - 9, Y(hl)); txt(e.hasRh || hl < e.H ? String(Math.round(hl)) : '?', ox - 28, Y(hl / 2), ink, -Math.PI / 2);
+  if (e.slope && e.knee == null) { const hi = e.top.reduce((m, q) => Math.max(m, q.y), 0); const fl = e.top.filter(q => q.y >= hi - 1e-6), fx = (fl[0].x + fl[fl.length - 1].x) / 2; if (hi > hl + 1 || e.top[e.top.length - 1].y < hi - 1) txt(`${e.hasRh ? Math.round(hi) : '?'}`, X(fx), Y(hi) + 13, mute); }
+  if (e.knee != null) txt('Kniestock – darüber Dachschräge', X(e.L / 2), Y(e.knee) - 10, mute);
+  txt(`Wand ${wallNo} von innen`, W / 2, H - 6, mute);
+}
+function wallView(i) {
+  const r = P.room, n = r.walls.length; let k = i;
+  const bg = sheet(`<h2 data-t></h2><canvas data-cv style="width:100%;display:block;border:1px solid var(--line);border-radius:6px;background:var(--bg)"></canvas><p class="mute" data-info style="margin:8px 0 0;font-size:14px"></p>
+    <div class="row2" style="margin-top:10px"><button class="ghost" data-prev>‹ Wand davor</button><button class="ghost" data-next>Wand danach ›</button></div><button class="ghost" data-close style="width:100%;margin-top:8px">Schließen</button>`);
+  const show = () => { const e = G.elev(r, k); bg.querySelector('[data-t]').textContent = `Wandansicht · Wand ${k + 1} von ${n}`; drawElev(bg.querySelector('[data-cv]'), e, k + 1);
+    const miss = [!r.rh && 'Raumhöhe fehlt (angenommen 2,50 m)', e.ops.some(o => o.guessH || o.guessY) && 'gestrichelt = Höhe noch nicht gemessen'].filter(Boolean);
+    bg.querySelector('[data-info]').textContent = `Wandfläche ${fmtA(e.net / 10000)}${e.ops.length ? ` (ohne Abzug ${fmtA(e.gross / 10000)})` : ''}${miss.length ? ' · ' + miss.join(' · ') : ''}`; };
+  bg.querySelector('[data-prev]').onclick = () => { k = (k - 1 + n) % n; show(); }; bg.querySelector('[data-next]').onclick = () => { k = (k + 1) % n; show(); }; show();
+}
 function editWall(i) {
   const r = P.room, w = r.walls[i];
   const bg = sheet(`<h2>Wand ${i + 1}: ${Math.round(w.cm)} cm</h2><div class="row2"><button class="ghost" data-len>✎ Länge ändern</button><button class="ghost" data-re>📏 Neu messen</button></div>
     <label class="f">Ecke nach dieser Wand</label><div class="row2"><button class="${w.turn != null && w.turn < 0 ? 'pri' : 'ghost'}" data-t="-90">↰ links</button><button class="${w.turn > 0 ? 'pri' : 'ghost'}" data-t="90">↱ rechts</button></div>
+    ${r.closed ? '<button class="ghost" data-elev style="width:100%;margin-top:8px">▦ Wandansicht</button>' : ''}
     <button class="danger" data-delw style="width:100%;margin-top:14px">🗑 Wand löschen</button>
     <button class="ghost" data-close style="width:100%;margin-top:10px">Schließen</button>`);
+  if (r.closed) bg.querySelector('[data-elev]').onclick = () => { bg.remove(); wallView(i); };
   const reclose = async () => { if (r.closed) { const g = G.gap(r.walls); r.adjust = g.len > 0.5 ? g.len : 0; delete r.diag; } await save(); roomUi(); };
   bg.querySelector('[data-len]').onclick = async () => { bg.remove(); const v = await A().promptBox(`Wand ${i + 1} in cm`, '', String(Math.round(w.cm))); if (v == null) return; const cm = parseFloat(String(v).replace(',', '.')); if (!(cm > 0 && cm < 10000)) return; w.cm = cm; delete w.calc; reclose(); };
   bg.querySelector('[data-delw]').onclick = () => { bg.remove(); deleteWall(i); };
@@ -815,6 +905,7 @@ function draw() {
 window.addEventListener('resize', () => { if ($('#planRoom').classList.contains('on')) draw(); if ($('#planFlat').classList.contains('on')) drawFlat($('#grFlatCv'), true); });
 
 // ---------- Andockstellen für app.js ----------
+window.__planX = { photoAdd };
 window.__plan = {
   // Messwert: nur wenn der Raum-Bildschirm offen ist; sonst bekommt ihn das Massblatt wie bisher
   measure(cm) {

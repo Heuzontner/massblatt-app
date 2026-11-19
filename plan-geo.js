@@ -120,10 +120,49 @@ export function layout(rooms, defThick = 15) {
   const grow = q => { bb = bb ? { x0: Math.min(bb.x0, q.x), y0: Math.min(bb.y0, q.y), x1: Math.max(bb.x1, q.x), y1: Math.max(bb.y1, q.y) } : { x0: q.x, y0: q.y, x1: q.x, y1: q.y }; };
   for (let gi = 0; gi < (res.groups || 0); gi++) { // Gruppe 0 an ihrem Platz, jede weitere als Block rechts daneben
     const part = rooms.filter(r => res.T.has(r.id) && res.T.get(r.id).g === gi).map(r => ({ room: r, poly: res.poly.get(r.id).map(q => applyT(res.T.get(r.id), q)), loose: gi > 0, g: gi }));
-    if (gi > 0 && bb) { const all = part.flatMap(i => i.poly), mnx = Math.min(...all.map(q => q.x)), mny = Math.min(...all.map(q => q.y)), dx = bb.x1 + 150 - mnx, dy = bb.y0 - mny; for (const i of part) i.poly = i.poly.map(q => ({ x: q.x + dx, y: q.y + dy })); }
+    if (gi > 0 && bb) { const all = part.flatMap(i => i.poly), mnx = Math.min(...all.map(q => q.x)), mny = Math.min(...all.map(q => q.y)), mxx = Math.max(...all.map(q => q.x)), mxy = Math.max(...all.map(q => q.y));
+      const at = part[0].room.at; // von Hand hingeschoben: Mitte der Gruppe (cm) + Vierteldrehungen; sonst als Block rechts daneben
+      if (at && isFinite(at.x) && isFinite(at.y)) { const cx = (mnx + mxx) / 2, cy = (mny + mxy) / 2, k = ((at.r || 0) % 4 + 4) % 4, c = [1, 0, -1, 0][k], s = [0, 1, 0, -1][k]; for (const i of part) i.poly = i.poly.map(q => ({ x: at.x + c * (q.x - cx) - s * (q.y - cy), y: at.y + s * (q.x - cx) + c * (q.y - cy) })); }
+      else { const dx = bb.x1 + 150 - mnx, dy = bb.y0 - mny; for (const i of part) i.poly = i.poly.map(q => ({ x: q.x + dx, y: q.y + dy })); } }
     for (const i of part) { i.poly.forEach(grow); items.push(i); }
   }
   return { items, bb: bb || { x0: 0, y0: 0, x1: 1, y1: 1 }, res };
+}
+// ---------- Wandansicht (3.21): eine Wand von innen gesehen, x ab Wandanfang nach rechts, y ab Boden nach oben (cm) ----------
+// Dachschräge (Objekt DS an einer Wand = Kniestockwand): diese Wand ist nur so hoch wie der Kniestock; die beiden Nachbarwände
+// zeigen die Schräge als Profil (vom Kniestock an der Ecke bis zur Raumhöhe nach der Tiefe der Schräge).
+// Fehlende Höhen sind angenommen (guess): Raum 250, Tür 200, Fenster 130 ab Parapet 85.
+export const ELEV_DEF = { rh: 250, door: 200, win: 130, par: 85, knee: 100 };
+export function elev(room, i) {
+  const n = room.walls.length, L = room.walls[i].cm, H = room.rh || ELEV_DEF.rh, ds = (room.objs || []).filter(o => o.kind === 'DS');
+  const own = ds.find(o => o.wall === i), prev = ds.find(o => o.wall === (i - 1 + n) % n), next = ds.find(o => o.wall === (i + 1) % n), kn = o => Math.min(H, o.knee || ELEV_DEF.knee), dp = o => Math.max(1, Math.min(L, o.d || 100));
+  let top; // obere Kante von links nach rechts
+  if (own) top = [{ x: 0, y: kn(own) }, { x: L, y: kn(own) }];
+  else { top = []; if (prev && n > 2) top.push({ x: 0, y: kn(prev) }, { x: dp(prev), y: H }); else top.push({ x: 0, y: H });
+    if (next && n > 2) { const x = Math.max(top[top.length - 1].x, L - dp(next)); top.push({ x, y: H }, { x: L, y: kn(next) }); } else top.push({ x: L, y: H }); }
+  const outline = [{ x: 0, y: 0 }, { x: L, y: 0 }, ...[...top].reverse()], topAt = x => { for (let k = 0; k + 1 < top.length; k++) { const a = top[k], b = top[k + 1]; if (x >= a.x - 1e-6 && x <= b.x + 1e-6) return b.x - a.x < 1e-6 ? Math.min(a.y, b.y) : a.y + (b.y - a.y) * (x - a.x) / (b.x - a.x); } return H; };
+  let gross = 0; for (let k = 0; k < outline.length; k++) { const a = outline[k], b = outline[(k + 1) % outline.length]; gross += a.x * b.y - b.x * a.y; } gross = Math.abs(gross) / 2;
+  const ops = (room.ops || []).filter(o => o.wall === i).sort((a, b) => a.pos - b.pos).map(o => { const T = o.type === 'T', y = T ? 0 : (o.par != null ? o.par : ELEV_DEF.par), lim = Math.min(topAt(o.pos), topAt(o.pos + o.w)), h = Math.max(5, Math.min(o.h || (T ? ELEV_DEF.door : ELEV_DEF.win), lim - y));
+    return { op: o, type: o.type, x: o.pos, w: o.w, y, h, guessH: !o.h, guessY: !T && o.par == null, noLeaf: !!o.noLeaf }; });
+  const minus = ops.reduce((s, o) => s + o.w * o.h, 0);
+  return { L, H, hasRh: !!room.rh, outline, top, ops, knee: own ? kn(own) : null, slope: !!(own || prev || next), gross, net: Math.max(0, gross - minus) };
+}
+
+// Andocken: Welche Wand einer losen Gruppe liegt einer Wand eines anderen Raums gegenüber (fast parallel, nah, mit Überdeckung)?
+// Ergebnis ist eine „Wand an Wand“-Verbindung (wie room.links): Anfang der eigenen Wand + off liegt dem Ende der Nachbarwand gegenüber.
+// Liegen die Wandenden fast bündig (≤ snap cm), wird bündig gesetzt.
+export function dockFind(lay, gi, reach = 90, snap = 25) {
+  const mov = lay.items.filter(i => i.g === gi), fix = lay.items.filter(i => i.g !== gi); let best = null;
+  for (const m of mov) for (let i = 0; i < m.poly.length; i++) { const gm = wallGeo(m.poly, i);
+    for (const f of fix) for (let j = 0; j < f.poly.length; j++) { const gf = wallGeo(f.poly, j);
+      if (gm.n.x * gf.n.x + gm.n.y * gf.n.y > -0.94) continue;                         // müssen sich ansehen (±20°)
+      const gap = (gf.a.x - gm.a.x) * gm.n.x + (gf.a.y - gm.a.y) * gm.n.y; if (gap < -40 || gap > reach) continue;
+      const t = q => (q.x - gm.a.x) * gm.d.x + (q.y - gm.a.y) * gm.d.y, tE = t(gf.b), tS = t(gf.a), over = Math.min(gm.L, Math.max(tE, tS)) - Math.max(0, Math.min(tE, tS)); if (over < 30) continue;
+      const score = Math.abs(gap) - over * 0.05; if (best && score >= best.score) continue;
+      let off = tE; const Lm = m.room.walls[i].cm, Lf = f.room.walls[j].cm; if (Math.abs(off) <= snap) off = 0; else if (Math.abs(off - (Lm - Lf)) <= snap) off = Lm - Lf;
+      best = { score, room: m.room, wall: i, to: f.room, toWall: j, off: Math.round(off * 10) / 10, gap };
+    } }
+  return best;
 }
 // Eine Wand in Stücke teilen: massive Abschnitte und Öffnungen (in Reihenfolge entlang der Wand)
 export function wallParts(room, poly, i) {
@@ -228,7 +267,7 @@ export function insertNiche(room, i, a, b, t, inward) {
 }
 // Kopie eines Raums, auf Wunsch gespiegelt (Drehungen und Türanschläge umgekehrt); Verbindungen werden nicht mitkopiert
 export function copyRoom(room, mirror, uid) {
-  const r = JSON.parse(JSON.stringify(room)); r.id = uid(); delete r.links;
+  const r = JSON.parse(JSON.stringify(room)); r.id = uid(); delete r.links; delete r.at;
   for (const w of r.walls) if (mirror && w.turn != null) w.turn = -w.turn;
   for (const o of r.ops || []) { o.id = uid(); o.to = null; if (mirror && o.hinge) o.hinge = o.hinge === 'a' ? 'b' : 'a'; }
   for (const o of r.objs || []) o.id = uid();

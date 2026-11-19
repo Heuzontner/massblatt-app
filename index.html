@@ -330,6 +330,8 @@ body:has(#undoBar.top.on) #toast { top:calc(env(safe-area-inset-top) + 124px); }
 .grwiz-chips { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:8px; font-size:13px; color:var(--mute); } .grwiz-chips button { padding:8px 12px; }
 .grwiz .grgrid2 button, .grwiz .row2 button { min-height:52px; font-size:16px; } .grwiz-th { margin:10px 0 0; font-size:14px; color:var(--mute); }
 .grwiz-nav { display:flex; gap:8px; margin-top:12px; } .grwiz-nav button { height:56px; font-size:17px; } .grwiz-nav .ghost { flex:1; } .grwiz-nav .pri { flex:2; }
+.grextra { display:flex; gap:8px; align-items:center; overflow-x:auto; padding:2px 0 8px; } .grextra img { height:54px; width:72px; object-fit:cover; border-radius:6px; border:1px solid var(--line); flex:none; }
+.grextra .grnote { flex:none; max-width:78vw; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding:8px 12px; font-size:14px; text-align:left; }
 #toast.warn, #toast.err { font-size:18px; font-weight:600; padding:16px 20px; width:min(92vw, 560px); box-shadow:0 8px 28px rgba(0,0,0,.45); }
 #toast.warn { background:#f5c400 !important; color:#16202a !important; border:2px solid #b38f00; } #toast.warn::before { content:'⚠ '; }
 #toast.err { background:#b3261e !important; color:#fff !important; border:2px solid #ff8a80; } #toast.err::before { content:'✕ '; }
@@ -522,6 +524,7 @@ input.gract { outline:3px solid var(--yellow); }
   <header class="top">
     <button class="ghost" id="grFlatBack">‹</button>
     <h1 id="grFlatTitle">Wohnung</h1>
+    <button class="ghost" id="grRot" aria-label="Raum drehen" style="display:none">↻</button>
     <button class="ghost" id="grCheck" aria-label="Kontrollmaß">📏</button>
     <button class="ghost" id="grNorth" aria-label="Norden setzen">🧭</button>
   </header>
@@ -538,6 +541,7 @@ input.gract { outline:3px solid var(--yellow); }
   <div class="grstage"><canvas id="grCv"></canvas></div>
   <div class="grpanel">
     <div class="grinfo"><b id="grInfo"></b><small id="grSub"></small></div>
+    <div class="grextra" id="grExtra" style="display:none"></div>
     <div class="grwalls" id="grWalls"></div>
     <div class="grbar" id="grMeasBar"><button class="ghost" id="grKey" aria-label="Eintippen">⌨</button><button class="ghost" id="grRect">▭ Rechteck</button><button class="ghost" id="grUndo">↶ zurück</button><button class="ghost grRedo" aria-label="Wiederholen" style="display:none">↷</button><button class="pri" id="grClose">✓ Raum fertig</button></div>
     <div class="grbar" id="grTurnBar"><button class="pri" id="grL">↰ links</button><button class="pri" id="grR">↱ rechts</button><button class="ghost" id="grAng">∠</button><button class="ghost" id="grUndo2">↶ Wand weg</button><button class="ghost grRedo" aria-label="Wiederholen" style="display:none">↷</button></div>
@@ -825,6 +829,7 @@ input.gract { outline:3px solid var(--yellow); }
     <p class="mute" id="sLasers" style="margin:0 0 6px"></p>
     <div id="sLaserList"></div>
     <label style="display:flex;gap:8px;align-items:center;margin:8px 0 0;font-size:14px"><input type="checkbox" id="sLaserAuto" style="width:auto"> Laser automatisch verbinden, sobald beide eingeschaltet sind</label>
+    <button class="ghost" id="sLaserHint" style="margin-top:8px">ℹ Tipps zum Laser</button>
     <p class="mute" id="sLaserAutoHint" style="margin:4px 0 0;font-size:13px"></p>
     <button class="ghost" id="sLaserLearn" style="width:100%;margin-top:8px">🔍 Unbekannter Laser: Protokoll aufzeichnen</button>
     <p class="mute" style="margin:4px 0 6px">Unterstützt: Bosch GLM/PLR (C-Modelle), Leica DISTO, Mileseey/Hersch/Suaoki, Stanley TLM99s. Andere Marken: Lernmodus, dann Fehlerbericht an Claude.</p>
