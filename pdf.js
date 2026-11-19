@@ -110,6 +110,8 @@ export async function buildPdf(PDFLib, fontkit, fontBytes, project, shots, opts 
   text(p0, 'Datum: ' + fmtDate(project.datum ? new Date(project.datum) : new Date()), R, top, 13);
   text(p0, 'Land: ' + (project.land || ''), R, top + lh, 13);
   text(p0, 'Telefon: ' + (project.telefon || ''), R, top + 2 * lh, 13);
+  // Postleitzahl und Ort der Wohnung (Manuel 19.11.) – eigene Zeile rechts; die Zeile „Projekt:“ bleibt für RBEM unverändert
+  { const objOrt = [project.plz, project.ortName].map(v => (v || '').trim()).filter(Boolean).join(' '); if (objOrt) text(p0, 'Ort: ' + fit(objOrt, 13, 175), R, top + 3 * lh, 13); }
   if (project.note) text(p0, 'Notiz: ' + fit(project.note, 10, 200), R, top + 4 * lh, 10, rgb(0.3, 0.3, 0.3));
   const custLogo = await embedImg(project.kundenLogo);
   if (custLogo) drawContain(p0, custLogo, 615, 112, 110, 118);
