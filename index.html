@@ -65,6 +65,8 @@ header.top h1.marke span { font-family:var(--mono); font-weight:400; font-size:1
 .nethint { display:none; border-left:3px solid var(--warn); padding:6px 10px; margin:10px 0 0; font-size:14px; } .nethint.on { display:block; }
 @keyframes bl { 50% { opacity:.2 } }
 .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:12px; margin-bottom:10px; box-shadow:var(--shadow); }
+.swrap { position:relative; margin-bottom:10px; border-radius:var(--radius); } .swrap > .card { margin-bottom:0; position:relative; touch-action:pan-y; }
+.swbg { position:absolute; inset:0; display:none; align-items:center; padding-left:18px; border-radius:var(--radius); background:#b3261e; color:#fff; font-weight:600; opacity:.55; } .swrap.sw .swbg { display:flex; } .swrap.go .swbg { opacity:1; }
 .plist .card { display:flex; align-items:center; gap:10px; }
 .plist .card .t { flex:1; min-width:0; }
 .plist .card .t b { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
