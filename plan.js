@@ -192,6 +192,7 @@ function roomUi() {
   else if (op && op.step === 'pos') { txt = `${kind} an Wand ${op.wall + 1}: Abstand von der Ecke`; sub = `Vom orangen Punkt bis zur ersten Kante der ${kind === 'Tür' ? 'Tür' : 'Fensteröffnung'} messen (oder ⌨). Wand: ${Math.round(r.walls[op.wall].cm)} cm.`; }
   else if (op && op.step === 'w') { txt = `${kind} an Wand ${op.wall + 1}: Breite`; sub = `Abstand ${Math.round(op.pos)} cm ✓ – jetzt die Breite messen (oder ⌨).`; }
   else if (r.closed) { txt = `✓ Raum fertig · ${fmtA(s.area)}`; sub = `${n} Wände · Umfang ${fmtM(s.perimeter)}${r.adjust ? ` · ${Math.round(r.adjust)} cm ausgeglichen` : ''}`; }
+  else if (fillIdx(r) >= 0) { const k = fillIdx(r), left = r.walls.filter(x => x.sk).length; txt = `Wand ${k + 1} messen – im Bild orange`; sub = `Laser drücken oder ⌨. Noch ${left} von ${n} ${n === 1 ? 'Wand' : 'Wänden'} offen – die Richtung kommt aus deiner Zeichnung.`; }
   else if (P.hold) { txt = 'Wohin ging es vor dieser Wand?'; sub = `${Math.round(P.hold.cm)} cm gemessen – links oder rechts antippen`; }
   else if (!n) { txt = 'Erste Wand messen'; sub = 'In einer Ecke beginnen und im Uhrzeigersinn Wand für Wand messen.'; }
   else if (pending()) { txt = `Wand ${n}: ${Math.round(lastW().cm)} cm · Wohin geht es weiter?`; sub = 'Links oder rechts antippen.'; }
@@ -202,15 +203,15 @@ function roomUi() {
   $('#grDoneBar').style.display = r.closed && !op ? 'flex' : 'none'; $('#grMini').style.display = r.closed && !op ? 'flex' : 'none'; $('#grOpBar').style.display = op ? 'flex' : 'none';
   $('#grOpKey').style.display = op && op.step !== 'wall' ? '' : 'none';
   const hb = $('#grHints'); hb.innerHTML = ''; if (op && op.step === 'w' && (P.hints || []).length) for (const v of P.hints) { const b = document.createElement('button'); b.className = 'ghost'; b.dataset.hint = v; b.textContent = `${v} cm`; b.title = 'aus dem Massblatt'; b.onclick = () => opValue(v); hb.appendChild(b); }
-  $('#grUndo').disabled = !n; $('#grClose').disabled = n < 2; $('#grRect').style.display = !n && !P.rect ? '' : 'none';
-  $('#grUndo').textContent = n && lastW().turn != null ? '↶ Richtung ändern' : '↶ zurück'; $('#grUndo2').textContent = P.hold ? '↶ Wert weg' : '↶ Wand weg';
+  $('#grUndo').disabled = !n; $('#grClose').disabled = n < 2 || fillIdx(r) >= 0; $('#grRect').style.display = !n && !P.rect ? '' : 'none'; $('#grSketch').style.display = !n && !P.rect ? '' : 'none'; $('#grUndo').style.display = n || P.rect ? '' : 'none'; $('#grClose').style.display = n || P.rect ? '' : 'none'; // am Anfang nur ⌨ · Rechteck · Zeichnen
+  $('#grUndo').textContent = n && lastW().turn != null && !sketched(r) ? '↶ Richtung ändern' : '↶ zurück'; $('#grUndo2').textContent = P.hold ? '↶ Wert weg' : '↶ Wand weg';
   if ((P.trash || []).length && P.trash[P.trash.length - 1].after !== sig(r)) P.trash = []; // seither etwas anderes geändert → Wiederholen verfällt
   document.querySelectorAll('.grRedo').forEach(b => { b.style.display = (P.trash || []).length && !op ? '' : 'none'; });
   $('#grRh').textContent = r.rh ? `Rh ${Math.round(r.rh)} cm` : '＋ Raumhöhe';
   $('#grDiag').style.display = r.closed && n >= 4 ? '' : 'none'; $('#grDiag').textContent = r.diag ? `Diagonale ${Math.round(r.diag)} cm` : r.diags ? 'Diagonalen ✓' : n > 4 ? '＋ Diagonalen' : '＋ Diagonale';
   // Wand-Leiste
   const ch = $('#grWalls'); ch.innerHTML = '';
-  r.walls.forEach((w, i) => { const b = document.createElement('button'); b.dataset.i = i; b.innerHTML = `<i>${i + 1}</i>${Math.round(w.cm)}<small>${turnIcon(w.turn)}</small>`; if (op && op.wall === i) b.classList.add('pick');
+  r.walls.forEach((w, i) => { const b = document.createElement('button'); b.dataset.i = i; b.innerHTML = `<i>${i + 1}</i>${w.sk ? '?' : Math.round(w.cm)}<small>${turnIcon(w.turn)}</small>`; if ((op && op.wall === i) || (!r.closed && fillIdx(r) === i)) b.classList.add('pick');
     b.onclick = () => (P.op && P.op.step === 'wall' ? opWall(i) : editWall(i)); ch.appendChild(b); });
   (r.ops || []).forEach(o => { const b = document.createElement('button'); b.className = 'op'; b.dataset.op = o.id; const to = o.to && P.plan.rooms.find(x => x.id === o.to);
     b.innerHTML = `<i>${o.type === 'T' ? 'Tür' : 'Fe'} W${o.wall + 1}</i>${Math.round(o.w)}${to ? `<small>→ ${esc(to.name)}</small>` : ''}`; b.onclick = () => editOp(o); ch.appendChild(b); });
@@ -240,6 +241,7 @@ async function measure(cm) {
   if (P.wantRh) { if (!(cm >= 150 && cm <= 700)) { A().toast(`${Math.round(cm)} cm passt nicht als Raumhöhe (150–700)`, 3000); A().beep(false); return; } P.wantRh = false; r.rh = cm; A().beep(true); await save(); roomUi(); A().toast(`Raumhöhe ${Math.round(cm)} cm ✓`, 2000); return; }
   if (r.closed && P.op) return opValue(cm);
   if (r.closed) { if (P.wantDiag) { P.wantDiag = false; return applyDiag(cm); } A().toast('Raum ist fertig – „Wieder öffnen“, um weiterzumessen', 2600); A().beep(false); return; }
+  if (fillIdx(r) >= 0) return fillValue(cm);
   if (P.hold) { P.hold = { cm }; A().toast('Erst links oder rechts antippen'); roomUi(); return; }
   if (pending()) { P.hold = { cm }; A().beep(true); roomUi(); return; } // Richtung wird immer getippt; der Wert wartet solange
   await addWall(cm);
@@ -291,6 +293,9 @@ async function deleteWall(i) {
 async function undoStep() {
   const r = P.room; if (P.hold) { P.hold = null; roomUi(); return; }
   if (!r.walls.length) return;
+  if (sketched(r) && !r.closed) { const o = snap(); let k = -1; r.walls.forEach((x, j) => { if (!x.sk) k = j; });
+    if (k >= 0) { r.walls[k].sk = true; rescaleSketch(r); } else r.walls = [];   // letzte Messung zurück – ist nichts gemessen, die Zeichnung verwerfen
+    pushTrash(o); await save(); roomUi(); return; }
   const w = lastW(), i = r.walls.length - 1;
   if (w.turn != null && !r.closed) { const o = snap(); w.turn = null; delete w.auto; pushTrash(o); await save(); roomUi(); return; }
   await deleteWall(i);
@@ -363,6 +368,60 @@ async function opValue(cm) {
 $('#grRh').onclick = () => { P.wantRh = true; P.wantDiag = false; A().toast('Raumhöhe messen (Boden → Decke) – oder ⌨', 4000); $('#grKey2').style.display = ''; };
 // Schnellstart Rechteck: zwei Seiten messen → vier Wände, Raum fertig
 $('#grRect').onclick = () => { P.rect = {}; roomUi(); };
+// ---------- Raum zeichnen (Manuel 23.11., Vorbild Leica „Sketch Plan“): erst die Form mit dem Finger, dann Wand für Wand messen ----------
+// Ecken der Reihe nach antippen; Linien rasten waagrecht/senkrecht/45° und an schon gesetzten Ecken ein; Ecken lassen sich verschieben.
+// Ergebnis: Wände mit Richtung aus der Zeichnung (turn), Länge noch offen (w.sk, w.px = gezeichnete Länge). Gemessen wird in fillValue –
+// die Richtung muss nicht mehr getippt werden. Ungemessene Längen werden im Verhältnis der schon gemessenen angezeigt (rescaleSketch).
+const fillIdx = r => (r.closed ? -1 : r.walls.findIndex(w => w.sk)), sketched = r => r.walls.some(w => w.px != null);
+function rescaleSketch(r) { const m = r.walls.filter(w => !w.sk && w.px), f = m.length ? m.reduce((s, w) => s + w.cm, 0) / m.reduce((s, w) => s + w.px, 0) : 2; for (const w of r.walls) if (w.sk) w.cm = Math.max(5, Math.round(w.px * f)); }
+async function fillValue(cm) {
+  const r = P.room, k = fillIdx(r); if (k < 0) return; if (!(cm > 2 && cm < 10000)) { A().toast('Das passt nicht als Wandlänge', 2500); A().beep(false); return; }
+  const w = r.walls[k]; w.cm = cm; delete w.sk; rescaleSketch(r); A().beep(true); await save();
+  if (fillIdx(r) < 0) { roomUi(); $('#grClose').onclick(); } else roomUi();   // alle gemessen → schließen (prüft, ob der Raum aufgeht)
+}
+function sketchRoom() {
+  const r = P.room; if (!r || r.walls.length) return;
+  const bg = sheet(`<div class="grwiz"><div class="grwiz-top"><span>Raum zeichnen</span><button class="ghost" data-x aria-label="Abbrechen">✕</button></div>
+    <h2 data-title></h2><p class="grwiz-hint" data-hint></p><canvas data-cv style="touch-action:none"></canvas>
+    <div class="grwiz-nav"><button class="ghost" data-undo>↶ Ecke zurück</button><button class="pri" data-ok>✓ So passt die Form</button></div></div>`);
+  const q = k => bg.querySelector(k), cv = q('[data-cv]'), pts = []; let closed = false, drag = -1, moved = false, down = null, W = 320, H = 300; const GRID = 24;
+  const near = (p, x, y, d) => Math.hypot(p.x - x, p.y - y) <= d, sn = v => Math.round(v / GRID) * GRID;
+  // neuer Punkt: aufs Raster, dann gerade zur letzten Ecke (waagrecht/senkrecht), sonst 45°, und an Fluchten früherer Ecken
+  const place = (x, y, skip = -1) => { let px = sn(x), py = sn(y); const prev = skip < 0 ? pts[pts.length - 1] : null;
+    if (prev) { const dx = px - prev.x, dy = py - prev.y; if (Math.abs(dy) <= GRID * 0.6 || Math.abs(dy) < Math.abs(dx) * 0.22) py = prev.y; else if (Math.abs(dx) <= GRID * 0.6 || Math.abs(dx) < Math.abs(dy) * 0.22) px = prev.x; }
+    return { x: Math.max(GRID, Math.min(W - GRID, px)), y: Math.max(GRID, Math.min(H - GRID, py)) }; };
+  function paint() {
+    const n = pts.length; q('[data-title]').textContent = closed ? 'Passt die Form?' : n ? 'Nächste Ecke antippen' : 'Erste Ecke antippen';
+    q('[data-hint]').textContent = closed ? 'Ecken kannst du noch mit dem Finger verschieben. Die Größe ist egal – gemessen wird danach.' : n < 3 ? 'Geh in Gedanken an der Wand entlang und tippe jede Ecke an. Die Linien werden von selbst gerade.' : 'Zum Schließen wieder die erste Ecke (blau) antippen.';
+    q('[data-ok]').disabled = !closed; q('[data-undo]').disabled = !n;
+    const dpr = window.devicePixelRatio || 1; W = cv.clientWidth || 320; H = Math.max(260, Math.min(420, Math.round(window.innerHeight * 0.42))); H = sn(H); cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const css = getComputedStyle(document.documentElement), col = k => css.getPropertyValue(k).trim() || '#888', ink = col('--text'), acc = col('--acc');
+    g.fillStyle = col('--line'); for (let x = GRID; x < W; x += GRID) for (let y = GRID; y < H; y += GRID) g.fillRect(x - 1, y - 1, 2, 2);
+    if (n) { g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); if (closed) { g.closePath(); g.fillStyle = col('--acc-soft'); g.fill(); } g.strokeStyle = ink; g.lineWidth = 4; g.lineJoin = 'round'; g.lineCap = 'round'; g.stroke(); }
+    pts.forEach((p, i) => { g.fillStyle = i === 0 ? acc : ink; g.beginPath(); g.arc(p.x, p.y, i === 0 && !closed && n >= 3 ? 11 : 7, 0, 7); g.fill(); });
+    if (closed) { g.font = `600 13px ${css.getPropertyValue('--mono') || 'monospace'}`; g.textAlign = 'center'; g.textBaseline = 'middle'; pts.forEach((p, i) => { const b = pts[(i + 1) % n]; g.fillStyle = col('--panel'); g.beginPath(); g.arc((p.x + b.x) / 2, (p.y + b.y) / 2, 11, 0, 7); g.fill(); g.fillStyle = ink; g.fillText(String(i + 1), (p.x + b.x) / 2, (p.y + b.y) / 2 + 1); }); }
+  }
+  const at = e => { const b = cv.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+  cv.addEventListener('pointerdown', e => { const p = at(e); down = p; moved = false; drag = pts.findIndex(o => near(o, p.x, p.y, 22)); try { cv.setPointerCapture(e.pointerId); } catch (x) { } });
+  cv.addEventListener('pointermove', e => { if (!down || drag < 0) return; const p = at(e); if (!moved && Math.hypot(p.x - down.x, p.y - down.y) < 8) return; moved = true; pts[drag] = place(p.x, p.y, drag); paint(); });
+  cv.addEventListener('pointerup', e => { const p = at(e), d = drag, m = moved; down = null; drag = -1; if (m) return;
+    if (closed) return;
+    if (d === 0 && pts.length >= 3) { closed = true; paint(); return; }          // erste Ecke angetippt = schließen
+    if (d >= 0) return; const np = place(p.x, p.y); const last = pts[pts.length - 1]; if (last && near(last, np.x, np.y, 4)) return; pts.push(np); paint(); });
+  q('[data-undo]').onclick = () => { if (closed) closed = false; else pts.pop(); paint(); };
+  q('[data-x]').onclick = () => bg.remove();
+  q('[data-ok]').onclick = async () => {
+    let P2 = pts.filter((p, i) => { const a = pts[(i - 1 + pts.length) % pts.length], b = pts[(i + 1) % pts.length]; return Math.abs((p.x - a.x) * (b.y - p.y) - (p.y - a.y) * (b.x - p.x)) > 1; }); // Punkte auf einer Geraden weglassen
+    if (P2.length < 3) { A().toast('Ein Raum braucht mindestens 3 Ecken'); return; }
+    let ar = 0; P2.forEach((p, i) => { const b = P2[(i + 1) % P2.length]; ar += p.x * b.y - b.x * p.y; }); if (ar < 0) P2 = [P2[0], ...P2.slice(1).reverse()]; // immer im Uhrzeigersinn (Bildschirm: y nach unten)
+    const n = P2.length, dir = i => { const a = P2[i], b = P2[(i + 1) % n], L = Math.hypot(b.x - a.x, b.y - a.y) || 1; return { x: (b.x - a.x) / L, y: (b.y - a.y) / L, L }; };
+    r.walls = P2.map((p, i) => { const d = dir(i), e = dir((i + 1) % n); let t = Math.atan2(d.x * e.y - d.y * e.x, d.x * e.x + d.y * e.y) * 180 / Math.PI; for (const s of [90, -90, 45, -45, 135, -135]) if (Math.abs(t - s) < 1.5) t = s; return { cm: Math.round(d.L * 2), turn: Math.round(t * 10) / 10, sk: true, px: d.L }; });
+    bg.remove(); await save(); roomUi(); A().toast('Jetzt Wand für Wand messen – die orange zuerst', 3000);
+  };
+  paint(); setTimeout(paint, 60);
+}
+$('#grSketch').onclick = sketchRoom;
 async function rectValue(cm) {
   const r = P.room; if (r.walls.length || r.closed) { P.rect = null; return measure(cm); }
   if (!P.rect.a) { P.rect.a = cm; A().beep(true); roomUi(); return; }
@@ -861,7 +920,7 @@ function editWall(i) {
     <button class="ghost" data-close style="width:100%;margin-top:10px">Schließen</button>`);
   if (r.closed) bg.querySelector('[data-elev]').onclick = () => { bg.remove(); wallView(i); };
   const reclose = async () => { if (r.closed) { const g = G.gap(r.walls); r.adjust = g.len > 0.5 ? g.len : 0; delete r.diag; } await save(); roomUi(); };
-  bg.querySelector('[data-len]').onclick = async () => { bg.remove(); const v = await A().promptBox(`Wand ${i + 1} in cm`, '', String(Math.round(w.cm))); if (v == null) return; const cm = parseFloat(String(v).replace(',', '.')); if (!(cm > 0 && cm < 10000)) return; w.cm = cm; delete w.calc; reclose(); };
+  bg.querySelector('[data-len]').onclick = async () => { bg.remove(); const v = await A().promptBox(`Wand ${i + 1} in cm`, '', String(Math.round(w.cm))); if (v == null) return; const cm = parseFloat(String(v).replace(',', '.')); if (!(cm > 0 && cm < 10000)) return; w.cm = cm; delete w.calc; if (w.sk) { delete w.sk; rescaleSketch(P.room); } reclose(); };
   bg.querySelector('[data-delw]').onclick = () => { bg.remove(); deleteWall(i); };
   bg.querySelector('[data-re]').onclick = () => { bg.remove(); P.remeasure = i; A().toast(`Wand ${i + 1} neu messen …`, 3000); };
   bg.querySelectorAll('[data-t]').forEach(b => { b.onclick = () => { bg.remove(); w.turn = +b.dataset.t; delete w.auto; reclose(); }; });
@@ -914,19 +973,20 @@ function draw() {
     let mxw = (a.x + b.x) / 2, myw = (a.y + b.y) / 2; if (r.closed && (r.ops || []).some(o => o.wall === i)) { const an = G.dimAnchor(G.wallParts(r, pts, i)); mxw = an.x; myw = an.y; } // nicht über eine Öffnung schreiben
     const mx = X({ x: mxw, y: myw }), my = Y({ x: mxw, y: myw }), dx = X(b) - X(a), dy = Y(b) - Y(a), L = Math.hypot(dx, dy) || 1;
     const nx = dy / L, ny = -dx / L;                              // im Uhrzeigersinn gelaufen → links der Laufrichtung ist außen
-    const t = `${Math.round(w[i].cm)}`, tw = g.measureText(t).width + 10;
+    if (!r.closed && w[i].sk) { const cur = fillIdx(r) === i; g.strokeStyle = cur ? '#e8590c' : col('--panel'); g.lineWidth = cur ? 7 : 3; g.setLineDash(cur ? [] : [3, 7]); g.beginPath(); g.moveTo(X(a), Y(a)); g.lineTo(X(b), Y(b)); g.stroke(); g.setLineDash([]); }
+    const t = !r.closed && w[i].sk ? (fillIdx(r) === i ? 'messen' : '?') : `${Math.round(w[i].cm)}`, tw = g.measureText(t).width + 10;
     const lx = mx + nx * 16, ly = my + ny * 16;
-    g.fillStyle = col('--panel'); g.fillRect(lx - tw / 2, ly - 10, tw, 20); g.fillStyle = w[i].calc ? mute : ink; g.fillText(t, lx, ly);
+    g.fillStyle = col('--panel'); g.fillRect(lx - tw / 2, ly - 10, tw, 20); g.fillStyle = !r.closed && w[i].sk ? (fillIdx(r) === i ? '#e8590c' : mute) : w[i].calc ? mute : ink; g.fillText(t, lx, ly);
   }
   // Startpunkt
   g.fillStyle = acc; g.beginPath(); g.arc(X(pts[0]), Y(pts[0]), 6, 0, 7); g.fill();
   if (!r.closed) {
     const e = { x: X(end), y: Y(end) };
-    if (n >= 2) { const gp = G.gap(w); if (gp.len > 5) { g.setLineDash([6, 6]); g.strokeStyle = red; g.lineWidth = 2; g.beginPath(); g.moveTo(e.x, e.y); g.lineTo(X(pts[0]), Y(pts[0])); g.stroke(); g.setLineDash([]); } }
+    if (n >= 2 && !sketched(r)) { const gp = G.gap(w); if (gp.len > 5) { g.setLineDash([6, 6]); g.strokeStyle = red; g.lineWidth = 2; g.beginPath(); g.moveTo(e.x, e.y); g.lineTo(X(pts[0]), Y(pts[0])); g.stroke(); g.setLineDash([]); } }
     if (pending()) for (const o of opts) {
       g.setLineDash([4, 5]); g.strokeStyle = acc; g.lineWidth = 3; g.beginPath(); g.moveTo(e.x, e.y); g.lineTo(X(o), Y(o)); g.stroke(); g.setLineDash([]);
       g.fillStyle = acc; g.font = `600 13px ${mono}`; g.fillText(o.t < 0 ? 'links' : 'rechts', X(o) + (X(o) - e.x) * 0.28, Y(o) + (Y(o) - e.y) * 0.28);
-    } else { // Pfeil: hier geht es weiter
+    } else if (!sketched(r)) { // Pfeil: hier geht es weiter
       const L = 34; g.strokeStyle = acc; g.fillStyle = acc; g.lineWidth = 3; g.beginPath(); g.moveTo(e.x, e.y); g.lineTo(e.x + L * Math.cos(hd), e.y + L * Math.sin(hd)); g.stroke();
       const tx = e.x + L * Math.cos(hd), ty = e.y + L * Math.sin(hd); g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx - 10 * Math.cos(hd - 0.5), ty - 10 * Math.sin(hd - 0.5)); g.lineTo(tx - 10 * Math.cos(hd + 0.5), ty - 10 * Math.sin(hd + 0.5)); g.closePath(); g.fill();
     }
