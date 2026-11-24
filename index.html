@@ -180,7 +180,9 @@ details.card summary { font-weight:700; cursor:pointer; }
 #camRoomGrid button:active { background:#222b34; }
 #camRoomGrid button, #roomGrid button { overflow:hidden; touch-action:manipulation; -webkit-touch-callout:none; user-select:none; -webkit-user-select:none; }
 #camRoomGrid button::after, #roomGrid button::after { content:''; position:absolute; left:0; bottom:0; height:4px; width:0; background:#f5c400; }
-#camRoomGrid button.holding::after, #roomGrid button.holding::after { width:100%; transition:width 2s linear .25s; }
+#camRoomGrid button.holding::after, #roomGrid button.holding::after { width:100%; transition:width 1.75s linear .25s; }
+#camRoomGrid button.armed, #roomGrid button.armed { outline:3px solid #f5c400; outline-offset:-3px; } #camRoomGrid button.dragging, #roomGrid button.dragging { opacity:.9; box-shadow:0 10px 26px rgba(0,0,0,.5); transition:none; }
+#camRoomGrid button.drop, #roomGrid button.drop { outline:3px dashed #13aeff; outline-offset:-3px; }
 #roomGrid button { position:relative; }
 #camRoomGrid button b { font-family:var(--display); font-size:24px; line-height:1.1; }
 #camRoomGrid button small { font-family:var(--mono); font-size:11px; margin-top:4px; color:#9fb0bc; }
