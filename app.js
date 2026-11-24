@@ -10,9 +10,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.23.1';
+const VERSION = '3.23.2';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['„Standort wird gesucht“ steht jetzt gut sichtbar auf heller Fläche', 'Raumliste: das erste Kinderzimmer heißt „Kz“ statt „Kz1“ (das zweite bleibt „Kz2“)', 'Grundriss: „✏ Zeichnen“ – erst die Form des Raums mit dem Finger antippen (Linien werden von selbst gerade, Ecken lassen sich verschieben), dann zeigt die App Wand für Wand in Orange, was zu messen ist. Die Richtung musst du nicht mehr tippen', 'Projektliste: Projekt nach rechts wischen = löschen – immer mit Rückfrage, es landet im Papierkorb', 'Grundriss: „🎓 Üben“ – Übungs-Grundriss mit Anleitung, die Schritt für Schritt sagt, was zu tun ist (geht auch ohne Laser)', 'Massblatt-PDF, Deckblatt neu geordnet: links die Baustelle (Projekt, PLZ + Ort, Datum), rechts getrennt der Auftraggeber (Kontakt, Firma, Anschrift)', 'Massblatt-PDF: Postleitzahl und Ort der Wohnung stehen am Deckblatt (Zeile „Ort:“). Fehlen sie, wird die Ampel gelb und die App fragt vor PDF und Dropbox nach', 'Laser verbunden zeigt nur noch der grüne Punkt – keine Meldung, kein Fenster mehr (Tipps zum Laser unter ⚙ Laser)', 'Grundriss: Räume ohne Tür mit dem Finger an die richtige Wand schieben – sie docken von selbst an (↻ dreht)', 'Grundriss: Wandansicht – jede Wand von vorne mit Tür, Fenster, Parapet und Dachschräge (Wand antippen → Wandansicht; eigenes Blatt im PDF, Layer ANSICHT im DXF)', 'Grundriss: Foto und Notiz je Raum (unter „＋ Mehr“), beides kommt ins PDF; eigenes Logo im Schriftfeld als Option beim Ausgeben', 'Grundriss: Tür- und Fensterhöhen, Parapet und Laibungstiefe messen – als zusätzliche Schritte beim Einsetzen (jeder überspringbar). Im Plan steht dann z. B. „80/200“, die Wandflächen rechnen mit den echten Höhen', 'Grundriss: Tür und Fenster einsetzen geht jetzt Schritt für Schritt in einem Fenster – es sagt dir mit Bild, was du als Nächstes misst, bis die Tür oder das Fenster in der Wand sitzt', 'Grundriss: jede Wand antippen (im Bild oder in der Leiste) und löschen – auch mitten im Raum und im fertigen Raum', 'Grundriss: „↶“ nimmt Wand für Wand zurück, „↷“ holt die zuletzt gelöschte wieder her', 'Meldungen farbig: grün = in der Dropbox, gelb = kein Netz (wird später hochgeladen), rot = Fehler', 'Neuer Knopf „Netz“ im Projekt (neben „Laser“): zeigt, ob wirklich Internet da ist, merkt sich den Namen deines Hotspots und versucht am Android-Tablet die WLAN-Einstellungen zu öffnen. Ehrlich: selbst mit dem Hotspot verbinden darf keine Web-App – im Knopf stehen Tipps, damit das Tablet von selbst verbindet', 'Kommt das Netz zurück, laden wartende PDFs wie bisher von selbst in die Dropbox', 'Grundriss-Ansicht: Zwischenwände so dick wie eingestellt (nicht mehr doppelt), Tür- und Fensteröffnungen gehen ganz durch die Wand – wie schon im PDF und DXF', 'Dropbox-Upload geschafft: die Bestätigung erscheint jetzt groß auf grüner Fläche', 'Grundriss: Durchgang ohne Tür, Räume Wand an Wand, Kontrollmaß, Rechteck-Schnellstart, Diagonalen bei mehr als vier Wänden', 'Grundriss: Kopie/Spiegelkopie, Nische/Vorsprung, Säulen, Kamine, Schächte, Heizkörper, Sanitär, Treppe, Dachschräge', 'Grundriss: Raumliste und Wandflächen im PDF, schraffierte Wände im DXF, Bild in hoher Auflösung, Zoomen mit zwei Fingern', 'Grundriss: Suche und Archiv, aus Massblatt-Projekt oder Kalendertermin anlegen, Türbreiten aus dem Massblatt als Vorschlag', 'Grundriss-DXF: jede Wand ist nur noch einmal bemaßt', 'Grundriss-DXF: Wände verbundener Räume sind zu einer Wandfläche verschmolzen, Tür- und Fensteröffnungen gehen ganz durch die Wand', 'Grundriss: Wände mit Stärke, Maßketten, Nordpfeil; PDF mit Planrahmen, Schriftfeld und Maßstabsbalken', 'Grundriss: richtige Tür- und Fenstersymbole (Türblatt mit Aufschlag, Fensterrahmen), Raumhöhe je Raum, Raumstempel mit Fläche, Umfang und Rh – auch in PDF und DXF', 'Fotoliste: das erste Foto eines Raums heißt nur „Kz1“, erst das zweite „Kz1-2“', 'Grundriss Stufe 3: maßstäbliches PDF und DXF für BricsCAD, Ablage in der Dropbox unter Grundrisse/Kunde; Grundrisse sind jetzt in der Gesamt-Sicherung', 'Grundriss Stufe 2: Türen und Fenster auf die Wand setzen, Räume hängen sich über ihre Türen zur ganzen Wohnung zusammen (mit Kontrolle, ob es aufgeht)', 'Grundriss: Richtung nur noch per Tippen (links/rechts); „↶ Richtung ändern“ nimmt die letzte Richtung zurück', 'Neuer Reiter „Grundriss“: Raum für Raum mit dem Laser ablaufen, die App zeichnet mit und rechnet die Fläche (getrennt vom Massblatt)', 'Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
+const NEWS = ['Raumliste: einen Raum 2 Sekunden halten – dann lassen sich Raumname und Kürzel ändern (in der Kamera und bei „Raum ändern“)', 'Kamera läuft flüssiger: kleineres Sucherbild, und die PDF-Vorbereitung rechnet nicht mehr, während die Kamera offen ist', '„Standort wird gesucht“ steht jetzt gut sichtbar auf heller Fläche', 'Raumliste: das erste Kinderzimmer heißt „Kz“ statt „Kz1“ (das zweite bleibt „Kz2“)', 'Grundriss: „✏ Zeichnen“ – erst die Form des Raums mit dem Finger antippen (Linien werden von selbst gerade, Ecken lassen sich verschieben), dann zeigt die App Wand für Wand in Orange, was zu messen ist. Die Richtung musst du nicht mehr tippen', 'Projektliste: Projekt nach rechts wischen = löschen – immer mit Rückfrage, es landet im Papierkorb', 'Grundriss: „🎓 Üben“ – Übungs-Grundriss mit Anleitung, die Schritt für Schritt sagt, was zu tun ist (geht auch ohne Laser)', 'Massblatt-PDF, Deckblatt neu geordnet: links die Baustelle (Projekt, PLZ + Ort, Datum), rechts getrennt der Auftraggeber (Kontakt, Firma, Anschrift)', 'Massblatt-PDF: Postleitzahl und Ort der Wohnung stehen am Deckblatt (Zeile „Ort:“). Fehlen sie, wird die Ampel gelb und die App fragt vor PDF und Dropbox nach', 'Laser verbunden zeigt nur noch der grüne Punkt – keine Meldung, kein Fenster mehr (Tipps zum Laser unter ⚙ Laser)', 'Grundriss: Räume ohne Tür mit dem Finger an die richtige Wand schieben – sie docken von selbst an (↻ dreht)', 'Grundriss: Wandansicht – jede Wand von vorne mit Tür, Fenster, Parapet und Dachschräge (Wand antippen → Wandansicht; eigenes Blatt im PDF, Layer ANSICHT im DXF)', 'Grundriss: Foto und Notiz je Raum (unter „＋ Mehr“), beides kommt ins PDF; eigenes Logo im Schriftfeld als Option beim Ausgeben', 'Grundriss: Tür- und Fensterhöhen, Parapet und Laibungstiefe messen – als zusätzliche Schritte beim Einsetzen (jeder überspringbar). Im Plan steht dann z. B. „80/200“, die Wandflächen rechnen mit den echten Höhen', 'Grundriss: Tür und Fenster einsetzen geht jetzt Schritt für Schritt in einem Fenster – es sagt dir mit Bild, was du als Nächstes misst, bis die Tür oder das Fenster in der Wand sitzt', 'Grundriss: jede Wand antippen (im Bild oder in der Leiste) und löschen – auch mitten im Raum und im fertigen Raum', 'Grundriss: „↶“ nimmt Wand für Wand zurück, „↷“ holt die zuletzt gelöschte wieder her', 'Meldungen farbig: grün = in der Dropbox, gelb = kein Netz (wird später hochgeladen), rot = Fehler', 'Neuer Knopf „Netz“ im Projekt (neben „Laser“): zeigt, ob wirklich Internet da ist, merkt sich den Namen deines Hotspots und versucht am Android-Tablet die WLAN-Einstellungen zu öffnen. Ehrlich: selbst mit dem Hotspot verbinden darf keine Web-App – im Knopf stehen Tipps, damit das Tablet von selbst verbindet', 'Kommt das Netz zurück, laden wartende PDFs wie bisher von selbst in die Dropbox', 'Grundriss-Ansicht: Zwischenwände so dick wie eingestellt (nicht mehr doppelt), Tür- und Fensteröffnungen gehen ganz durch die Wand – wie schon im PDF und DXF', 'Dropbox-Upload geschafft: die Bestätigung erscheint jetzt groß auf grüner Fläche', 'Grundriss: Durchgang ohne Tür, Räume Wand an Wand, Kontrollmaß, Rechteck-Schnellstart, Diagonalen bei mehr als vier Wänden', 'Grundriss: Kopie/Spiegelkopie, Nische/Vorsprung, Säulen, Kamine, Schächte, Heizkörper, Sanitär, Treppe, Dachschräge', 'Grundriss: Raumliste und Wandflächen im PDF, schraffierte Wände im DXF, Bild in hoher Auflösung, Zoomen mit zwei Fingern', 'Grundriss: Suche und Archiv, aus Massblatt-Projekt oder Kalendertermin anlegen, Türbreiten aus dem Massblatt als Vorschlag', 'Grundriss-DXF: jede Wand ist nur noch einmal bemaßt', 'Grundriss-DXF: Wände verbundener Räume sind zu einer Wandfläche verschmolzen, Tür- und Fensteröffnungen gehen ganz durch die Wand', 'Grundriss: Wände mit Stärke, Maßketten, Nordpfeil; PDF mit Planrahmen, Schriftfeld und Maßstabsbalken', 'Grundriss: richtige Tür- und Fenstersymbole (Türblatt mit Aufschlag, Fensterrahmen), Raumhöhe je Raum, Raumstempel mit Fläche, Umfang und Rh – auch in PDF und DXF', 'Fotoliste: das erste Foto eines Raums heißt nur „Kz1“, erst das zweite „Kz1-2“', 'Grundriss Stufe 3: maßstäbliches PDF und DXF für BricsCAD, Ablage in der Dropbox unter Grundrisse/Kunde; Grundrisse sind jetzt in der Gesamt-Sicherung', 'Grundriss Stufe 2: Türen und Fenster auf die Wand setzen, Räume hängen sich über ihre Türen zur ganzen Wohnung zusammen (mit Kontrolle, ob es aufgeht)', 'Grundriss: Richtung nur noch per Tippen (links/rechts); „↶ Richtung ändern“ nimmt die letzte Richtung zurück', 'Neuer Reiter „Grundriss“: Raum für Raum mit dem Laser ablaufen, die App zeichnet mit und rechnet die Fläche (getrennt vom Massblatt)', 'Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -466,10 +466,10 @@ function swipeRight(card, wrap, allowed, fn) {
   card.addEventListener('pointercancel', e => { if (e.pointerId === id) end(false); });
 }
 // langes Drücken (Idee 3): 550 ms ohne Bewegung → Aktion, der folgende Klick wird verschluckt
-function longPress(el, fn) {
+function longPress(el, fn, ms = 550) {
   let t = 0, x0 = 0, y0 = 0;
   const stop = () => { clearTimeout(t); t = 0; };
-  el.addEventListener('pointerdown', e => { if (e.button !== 0 && e.pointerType === 'mouse') return; x0 = e.clientX; y0 = e.clientY; stop(); t = setTimeout(() => { t = 0; el._lp = true; try { navigator.vibrate && navigator.vibrate(20); } catch (err) { } fn(); }, 550); });
+  el.addEventListener('pointerdown', e => { if (e.button !== 0 && e.pointerType === 'mouse') return; x0 = e.clientX; y0 = e.clientY; stop(); t = setTimeout(() => { t = 0; el._lp = true; try { navigator.vibrate && navigator.vibrate(20); } catch (err) { } fn(); }, ms); });
   el.addEventListener('pointermove', e => { if (t && Math.hypot(e.clientX - x0, e.clientY - y0) > 8) stop(); });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => el.addEventListener(ev, stop));
   el.addEventListener('contextmenu', e => e.preventDefault());
@@ -1267,7 +1267,8 @@ function pickRoom() {
     if (sug) { nx.textContent = `Als Nächstes meist: ${sug} ›`; nx.onclick = () => { sh.classList.remove('on'); res(sug); }; }
     list.forEach(([k, t]) => {
       const b = document.createElement('button'); b.innerHTML = `${k}<small>${t}</small>`; if (k === sug) b.classList.add('sug');
-      b.onclick = () => { sh.classList.remove('on'); res(k); }; g.appendChild(b);
+      b.onclick = () => { if (b._lp) { b._lp = false; return; } sh.classList.remove('on'); res(k); }; g.appendChild(b);
+      roomHold(b, k, t, async () => { sh.classList.remove('on'); res(await pickRoom()); });
     });
     $('#roomCustom').value = '';
     // 3.9.1: ein hier eingetippter Raum wird wie in der Kamera mit Name + Kürzel in die Raumliste übernommen (Manuel 12.11.)
@@ -1354,6 +1355,16 @@ async function addRoom(k, t) {
   if (i >= 0) { if (t) list[i][1] = t; } else list.push([k, t || '']);
   await db.setting('rooms', list);
 }
+// Raum in der Auswahl 2 s halten → Name und Kürzel ändern (Manuel 24.11.). Während des Haltens füllt sich der Knopf (CSS .holding).
+// Gilt für die Raumliste in der Kamera und für „Raum ändern“ im Foto. Schon gemachte Fotos behalten ihr Kürzel.
+function roomHold(b, k, t, after) {
+  const off = () => b.classList.remove('holding');
+  b.addEventListener('pointerdown', () => b.classList.add('holding')); ['pointerup', 'pointercancel', 'pointerleave', 'pointermove'].forEach(ev => b.addEventListener(ev, e => { if (ev !== 'pointermove' || Math.abs(e.movementX) + Math.abs(e.movementY) > 6) off(); }));
+  longPress(b, async () => { off(); const v = await roomBox(k, t, 'Raum ändern'); setTimeout(() => { b._lp = false; }, 50); if (!v) return;
+    const list = (await rooms()).map(x => [...x]), i = list.findIndex(x => x[0] === k); if (i < 0) return;
+    if (v.k !== k && list.some(x => x[0].toLowerCase() === v.k.toLowerCase())) { toast(`Das Kürzel „${v.k}“ gibt es schon`, 3000); return; }
+    list[i] = [v.k, v.t]; await db.setting('rooms', list); toast(`Raum geändert: ${v.k}${v.t ? ' · ' + v.t : ''}`, 2200); after(v.k); }, 2000);
+}
 async function camRoomsUi() {
   const g = $('#camRoomGrid'); g.innerHTML = '';
   for (const [k, t] of await rooms()) {
@@ -1361,7 +1372,8 @@ async function camRoomsUi() {
     b.innerHTML = `<b></b><small></small>`; b.querySelector('b').textContent = k; b.querySelector('small').textContent = t || '';
     const n = (S.shots || []).filter(x => x.room === k).length; // schon fotografiert → grün mit ✓ (weiter antippbar)
     if (n) { b.classList.add('done'); const i = document.createElement('i'); i.textContent = n > 1 ? '✓ ' + n : '✓'; b.appendChild(i); }
-    b.onclick = () => setCamRoom(k);
+    b.onclick = () => { if (b._lp) { b._lp = false; return; } setCamRoom(k); };
+    roomHold(b, k, t, () => camRoomsUi());
     g.appendChild(b);
   }
   const o = document.createElement('button'); o.type = 'button'; o.className = 'other'; o.innerHTML = '<b>＋</b><small>Raum hinzufügen</small>';
@@ -1376,7 +1388,9 @@ async function openCam(viaPop = false) {
   $('#camFallback').style.display = 'none';
   show('cam', viaPop);
   try {
-    const base = { width: { ideal: 3000 }, height: { ideal: 4000 } };
+    // 3.23.2 (Manuel 24.11.: Kamera ruckelt): das Sucherbild lief mit bis zu 3000 × 4000 – das überlastet Tablets. Gespeichert wird ohnehin
+    // höchstens 1600 px, darum reichen 1920 × 2560 (auch für 2× aus dem Bild geschnitten) bei höchstens 30 Bildern/s.
+    const base = { width: { ideal: 1920 }, height: { ideal: 2560 }, frameRate: { ideal: 30, max: 30 } };
     if (opt.cam) {
       try { S.stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: opt.cam }, ...base }, audio: false }); }
       catch (e) { log('gewählte Kamera nicht verfügbar', e.name); toast('Gewählte Kamera nicht verfügbar – nehme Rückkamera', 2500); }
@@ -2315,15 +2329,18 @@ async function shotJpg(s, maxPx, jq) {
     drawArrows(g, c.width, c.height, s.arrows.filter(a => a.cm != null), null, 1, true, null, { lbl: LBL[opt.lbl] || 1 });
     return new Uint8Array(await (await canvasToBlob(c, 'image/jpeg', jq)).arrayBuffer());
   })();
-  jpgCache.set(s.id, { key, jpg: job }); if (jpgCache.size > 80) jpgCache.delete(jpgCache.keys().next().value);
+  jpgCache.set(s.id, { key, jpg: job }); if (jpgCache.size > 40) jpgCache.delete(jpgCache.keys().next().value); // weniger im Speicher halten (3.23.2)
   job.catch(() => { if ((jpgCache.get(s.id) || {}).jpg === job) jpgCache.delete(s.id); });
   return job;
 }
-function prewarmShot(s) {
+// 3.23.2: nicht rechnen, solange die Kamera läuft – das Rechnen (Foto entpacken, Pfeile zeichnen, JPEG packen) ließ das Sucherbild
+// direkt nach jedem Foto ruckeln. Es wird nachgeholt, sobald die Kamera zu ist; fehlt es beim PDF, wird es dort gerechnet wie früher.
+function prewarmShot(s, tries = 0) {
   if (!s || !s.photo) return;
   setTimeout(async () => {
+    if ($('#cam').classList.contains('on')) { if (tries < 400) prewarmShot(s, tries + 1); return; }
     try { const q = (await db.setting('pdfQuality')) || 'normal'; await shotJpg(s, q === 'klein' ? 1000 : q === 'druck' ? 2400 : 1600, q === 'klein' ? 0.72 : q === 'druck' ? 0.92 : 0.85); if (!fontBytesCache) fontBytesCache = new Uint8Array(await (await fetch('vendor/NotoSans.woff')).arrayBuffer()); } catch (e) { }
-  }, 1200);
+  }, tries ? 3000 : 1200);
 }
 async function makePdfFileFor(p, allShots) {
   const bytes = await pdfBytesFor(p, allShots);

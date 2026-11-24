@@ -193,7 +193,7 @@ export class Laser extends EventTarget {
     this._set('getrennt');
     this._log('getrennt');
     for (let i = 0; this.device === d; i++) {
-      await new Promise(r => setTimeout(r, Math.min(1500 * (i + 1), 5000)));
+      await new Promise(r => setTimeout(r, i > 12 ? 12000 : Math.min(1500 * (i + 1), 5000))); // nach einer Minute seltener probieren – schont Funk und Akku, während die Kamera läuft
       while (this.device === d && typeof document !== 'undefined' && document.visibilityState === 'hidden') await new Promise(r => setTimeout(r, 1000));
       if (this.device !== d) return;
       try { await this._open(); return; } catch (e) { if (i < 3 || i % 20 === 0) this._log('Neuverbindung fehlgeschlagen: ' + e.message); }
