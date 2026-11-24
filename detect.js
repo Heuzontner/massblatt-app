@@ -1,9 +1,12 @@
-// Tür-/Fenster-Erkennung am Gerät: kleines YOLOv8n-Modell (Open Images, 14 MB, liegt im Repo → kein Fremd-Download),
+// Tür-/Fenster-Erkennung am Gerät: kleines YOLOv8n-Modell (Open Images, mit eigenen Massblatt-Fotos nachgelernt, 14 MB, liegt im Repo → kein Fremd-Download),
 // direkt über onnxruntime-web (WASM). Ersetzt seit 3.5 das 150-MB-OWL-ViT, das am Tablet „ewig“ brauchte.
 // Ergebnis nur Türen und Fenster des Raums – Fenster, die man DURCH ein Fenster sieht (Nachbarhaus), werden verworfen.
 const SIZE = 480, DOOR = 164, WINDOW = 587, NC = 601;
-const MODEL_URL = new URL('./model/dw480.onnx', import.meta.url).href;
-const CACHE = 'mbmodel-1';
+const MODEL_URL = new URL('./model/dw480-2.onnx', import.meta.url).href;
+const CACHE = 'mbmodel-2';
+// Mindest-Sicherheit eines Treffers. Seit dem Nachlernen mit den eigenen Massblatt-Fotos (3.24.0) 0,3 statt 0,1:
+// an 40 Prüf-Fotos findet das Modell damit 49 von 54 Türen/Fenstern, vorher 31.
+const MIN = 0.3;
 let sessP = null, ortMod = null;
 export let lastMs = 0, backend = '';
 
@@ -13,9 +16,9 @@ export function modelState() {
 
 async function modelBytes(onProgress) {
   let c = null;
-  try { c = await caches.open(CACHE); const hit = await c.match(MODEL_URL); if (hit) return await hit.arrayBuffer(); } catch (e) { }
+  try { caches.delete('mbmodel-1'); c = await caches.open(CACHE); const hit = await c.match(MODEL_URL); if (hit) return await hit.arrayBuffer(); } catch (e) { }
   const r = await fetch(MODEL_URL); if (!r.ok) throw new Error('Modell nicht ladbar (' + r.status + ')');
-  const total = +r.headers.get('content-length') || 14149299, rd = r.body.getReader(), parts = []; let got = 0;
+  const total = +r.headers.get('content-length') || 14149262, rd = r.body.getReader(), parts = []; let got = 0;
   for (;;) { const { done, value } = await rd.read(); if (done) break; parts.push(value); got += value.length; onProgress && onProgress(Math.min(1, got / total), got, total); }
   const buf = new Uint8Array(got); let o = 0; for (const p of parts) { buf.set(p, o); o += p.length; }
   try { if (c) await c.put(MODEL_URL, new Response(buf, { headers: { 'content-type': 'application/octet-stream' } })); } catch (e) { }
@@ -73,8 +76,8 @@ export function pick(cand) {
   objs.sort((a, b) => b.score - a.score);
   const keep = [];
   for (const o of objs) if (!keep.some(k => iou(k.box, o.box) > 0.45)) keep.push(o); // gleiche Stelle nur einmal (auch Tür/Fenster-Doppel)
-  const doors = keep.filter(o => o.type === 'door' && o.score > 0.1 && (o.box.y1 - o.box.y0) > 0.35).slice(0, 1);
-  let wins = keep.filter(o => o.type === 'window' && o.score > 0.1 && !(doors[0] && iou(doors[0].box, o.box) > 0.5));
+  const doors = keep.filter(o => o.type === 'door' && o.score > MIN && (o.box.y1 - o.box.y0) > 0.35).slice(0, 1);
+  let wins = keep.filter(o => o.type === 'window' && o.score > MIN && !(doors[0] && iou(doors[0].box, o.box) > 0.5));
   // „Fenster draußen“: liegt ein Fenster (fast) ganz in einem größeren Fenster, ist es das Nachbarhaus oder eine Sprosse → weg.
   // Ebenso sehr kleine Fenster neben einem deutlich größeren (weniger als ein Achtel der Fläche).
   const big = wins.reduce((m, o) => Math.max(m, area(o.box)), 0);

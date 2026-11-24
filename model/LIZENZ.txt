@@ -1,2 +1,3 @@
-dw480.onnx = Ultralytics YOLOv8n, trainiert auf Open Images V7 (yolov8n-oiv7.pt, github.com/ultralytics/assets),
+dw480-2.onnx = Ultralytics YOLOv8n, trainiert auf Open Images V7 (yolov8n-oiv7.pt, github.com/ultralytics/assets),
+am 24.11.2026 mit 141 eigenen Massblatt-Fotos nachgelernt (Türen und Fenster aus den gesetzten Maßpfeilen),
 als ONNX exportiert (480 × 480, opset 12). Lizenz: AGPL-3.0 (Ultralytics). Genutzt werden nur die Klassen Door (164) und Window (587).
