@@ -248,17 +248,17 @@ async function measure(cm) {
 }
 $('#grL').onclick = () => setTurn(-90); $('#grR').onclick = () => setTurn(90);
 $('#grAng').onclick = async () => {
-  const v = await A().promptBox('Innenwinkel der Ecke in Grad', 'rechter Winkel = 90, flache Ecke z. B. 135'); if (v == null) return;
+  const v = await A().promptBox('Innenwinkel der Ecke in Grad', 'rechter Winkel = 90, flache Ecke z. B. 135', '', true); if (v == null) return;
   const d = parseFloat(String(v).replace(',', '.')); if (!(d > 0 && d < 180)) { A().toast('Bitte einen Wert zwischen 1 und 179'); return; }
   const bg = sheet(`<h2>${d}° – in welche Richtung?</h2><div class="row2"><button class="pri" data-s="-1">↰ links</button><button class="pri" data-s="1">↱ rechts</button></div>`);
   bg.querySelectorAll('[data-s]').forEach(b => { b.onclick = () => { bg.remove(); setTurn((180 - d) * +b.dataset.s); }; });
 };
 $('#grKey').onclick = async () => {
-  const v = await A().promptBox(P.wantRh ? 'Raumhöhe in cm' : P.wantDiag ? 'Diagonale in cm' : 'Wandlänge in cm', P.wantRh ? 'z. B. 255' : 'z. B. 412'); if (v == null) return;
+  const v = await A().promptBox(P.wantRh ? 'Raumhöhe in cm' : P.wantDiag ? 'Diagonale in cm' : 'Wandlänge in cm', P.wantRh ? 'z. B. 255' : 'z. B. 412', '', true); if (v == null) return;
   const cm = parseFloat(String(v).replace(',', '.')); if (!(cm > 0 && cm < 10000)) { A().toast('Bitte eine Länge in cm eingeben'); return; } measure(cm);
 };
 $('#grOpKey').onclick = async () => {
-  const v = await A().promptBox(P.op && P.op.step === 'pos' ? 'Abstand von der Ecke in cm (0 = direkt an der Ecke)' : 'Breite in cm', 'z. B. 80'); if (v == null) return;
+  const v = await A().promptBox(P.op && P.op.step === 'pos' ? 'Abstand von der Ecke in cm (0 = direkt an der Ecke)' : 'Breite in cm', 'z. B. 80', '', true); if (v == null) return;
   const cm = parseFloat(String(v).replace(',', '.')); if (!(cm >= 0 && cm < 10000)) { A().toast('Bitte eine Länge in cm eingeben'); return; } opValue(cm);
 };
 $('#grKey2').onclick = () => $('#grKey').onclick();
@@ -599,10 +599,10 @@ function editOp(o) {
     <div class="row2" style="margin-top:8px"><button class="ghost" data-h>✎ Höhe${o.h ? ' ' + Math.round(o.h) : ''}</button>${o.type === 'F' ? `<button class="ghost" data-par>✎ Parapet${o.par != null ? ' ' + Math.round(o.par) : ''}</button>` : '<span></span>'}</div>
     ${o.type === 'T' ? '<button class="ghost" data-to style="width:100%;margin-top:8px">Ziel-Raum / Wandstärke</button>' : `<button class="ghost" data-lb style="width:100%;margin-top:8px">✎ Laibungstiefe${o.thick ? ' ' + Math.round(o.thick) + ' cm' : ''}</button>`}
     <button class="danger" data-del style="width:100%;margin-top:8px">Löschen</button><button class="ghost" data-close style="width:100%;margin-top:8px">Schließen</button>`);
-  const num = async (title, cur) => { const v = await A().promptBox(title, '', String(Math.round(cur))); if (v == null) return null; const cm = parseFloat(String(v).replace(',', '.')); return cm >= 0 && cm < 10000 ? cm : null; };
+  const num = async (title, cur) => { const v = await A().promptBox(title, '', String(Math.round(cur)), true); if (v == null) return null; const cm = parseFloat(String(v).replace(',', '.')); return cm >= 0 && cm < 10000 ? cm : null; };
   bg.querySelector('[data-pos]').onclick = async () => { bg.remove(); const v = await num('Abstand von der Ecke in cm', o.pos); if (v == null) return; if (v + o.w > r.walls[o.wall].cm + 2) { A().toast('Passt nicht auf die Wand'); return; } o.pos = v; await save(); roomUi(); };
   bg.querySelector('[data-w]').onclick = async () => { bg.remove(); const v = await num('Breite in cm', o.w); if (!v) return; if (o.pos + v > r.walls[o.wall].cm + 2) { A().toast('Passt nicht auf die Wand'); return; } o.w = v; await save(); roomUi(); };
-  const opt = async (title, key, lo, hi) => { bg.remove(); const v = await A().promptBox(title + ' (leer = keine Angabe)', '', o[key] != null ? String(Math.round(o[key])) : ''); if (v == null) return; if (!String(v).trim()) delete o[key]; else { const cm = parseFloat(String(v).replace(',', '.')); if (!(cm >= lo && cm <= hi)) { A().toast(`Bitte ${lo}–${hi} cm`); return; } o[key] = cm; } await save(); roomUi(); };
+  const opt = async (title, key, lo, hi) => { bg.remove(); const v = await A().promptBox(title + ' (leer = keine Angabe)', '', o[key] != null ? String(Math.round(o[key])) : '', true); if (v == null) return; if (!String(v).trim()) delete o[key]; else { const cm = parseFloat(String(v).replace(',', '.')); if (!(cm >= lo && cm <= hi)) { A().toast(`Bitte ${lo}–${hi} cm`); return; } o[key] = cm; } await save(); roomUi(); };
   bg.querySelector('[data-h]').onclick = () => opt(`Höhe ${o.type === 'T' ? 'der Tür' : 'des Fensters'} in cm`, 'h', 20, 350);
   if (o.type === 'F') { bg.querySelector('[data-par]').onclick = () => opt('Parapet in cm (Boden bis Fensterbank)', 'par', 0, 250); bg.querySelector('[data-lb]').onclick = () => opt('Laibungstiefe in cm', 'thick', 5, 150); }
   if (o.type === 'T') bg.querySelector('[data-to]').onclick = () => { bg.remove(); doorTarget(o); };
@@ -685,7 +685,7 @@ function drawFlat(cv, big, exp) {
   for (const x of gfs) { hp(x.gf.inner); for (const c of x.gf.cutsX) hp(c); }
   h.restore(); if (wl) { g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(wl, 0, 0); g.restore(); }
   for (const x of gfs) gfxRest(g, x.gf, X, Y, { fill: col('--acc-soft'), cut: col('--bg'), panel: col('--panel'), win: col('--acc'), door: col('--warn'), dim: col('--mute'), wall: col('--text'), mono });
-  for (const { it } of gfs) { const pl = it.poly, n = pl.length, c = pl.reduce((s, q) => ({ x: s.x + X(q) / n, y: s.y + Y(q) / n }), { x: 0, y: 0 }), wpx = (Math.max(...pl.map(q => q.x)) - Math.min(...pl.map(q => q.x))) * sc;
+  for (const { it } of gfs) { const pl = it.poly, lp = G.labelPoint(pl), c = { x: X(lp), y: Y(lp) }, wpx = lp.w * sc;
     const fs = Math.min(big ? 15 : 10, (wpx - 8) / Math.max(3, it.room.name.length * 0.6)); if (fs < 6) continue; g.fillStyle = col('--text'); g.textAlign = 'center'; g.textBaseline = 'middle';
     if (big && fs > 10) stamp(g, it.room, c.x, c.y, { ink: col('--text'), mute: col('--mute'), display, mono, size: fs, name: true, maxW: wpx - 6 }); else { g.font = `700 ${fs}px ${display}`; g.fillText(it.room.name, c.x, c.y); } }
   if (big && !exp && P.selSeed) for (const { it } of gfs) if (it.loose && lay.items.find(q => q.g === it.g).room.id === P.selSeed) { g.strokeStyle = col('--acc'); g.lineWidth = 3 / (P.fv ? P.fv.z : 1); g.setLineDash([8, 6]); g.beginPath(); it.poly.forEach((q, i) => i ? g.lineTo(X(q), Y(q)) : g.moveTo(X(q), Y(q))); g.closePath(); g.stroke(); g.setLineDash([]); }
@@ -705,7 +705,7 @@ function stamp(g, r, x, y, o) {
 function flatUi() {
   const { res, msgs } = flatInfo(), p = P.plan, n = p.rooms.filter(r => r.closed).length;
   $('#grFlatTitle').textContent = p.name || 'Wohnung';
-  $('#grFlatSum').textContent = `${res.main} von ${n} fertigen Räumen verbunden · ${fmtA(planArea(p))} · Wände innen ${p.wall || 15} / außen ${p.wallOut || 30} cm`;
+  $('#grFlatSum').textContent = `${res.main} von ${n} fertigen Räumen verbunden · ${fmtA(planArea(p))} · Wände innen ${p.wall || 15} / außen ${p.wallOut || 10} cm`;
   const el = $('#grFlatMsgs'); el.innerHTML = '';
   if (!msgs.length && n > 1) el.innerHTML = '<p class="grok">✓ Alle Räume hängen zusammen und es geht auf.</p>';
   for (const m of flatInfo().oks) { const d = document.createElement('p'); d.className = 'grok'; d.textContent = '✓ ' + m; el.appendChild(d); }
@@ -920,7 +920,7 @@ function editWall(i) {
     <button class="ghost" data-close style="width:100%;margin-top:10px">Schließen</button>`);
   if (r.closed) bg.querySelector('[data-elev]').onclick = () => { bg.remove(); wallView(i); };
   const reclose = async () => { if (r.closed) { const g = G.gap(r.walls); r.adjust = g.len > 0.5 ? g.len : 0; delete r.diag; } await save(); roomUi(); };
-  bg.querySelector('[data-len]').onclick = async () => { bg.remove(); const v = await A().promptBox(`Wand ${i + 1} in cm`, '', String(Math.round(w.cm))); if (v == null) return; const cm = parseFloat(String(v).replace(',', '.')); if (!(cm > 0 && cm < 10000)) return; w.cm = cm; delete w.calc; if (w.sk) { delete w.sk; rescaleSketch(P.room); } reclose(); };
+  bg.querySelector('[data-len]').onclick = async () => { bg.remove(); const v = await A().promptBox(`Wand ${i + 1} in cm`, '', String(Math.round(w.cm)), true); if (v == null) return; const cm = parseFloat(String(v).replace(',', '.')); if (!(cm > 0 && cm < 10000)) return; w.cm = cm; delete w.calc; if (w.sk) { delete w.sk; rescaleSketch(P.room); } reclose(); };
   bg.querySelector('[data-delw]').onclick = () => { bg.remove(); deleteWall(i); };
   bg.querySelector('[data-re]').onclick = () => { bg.remove(); P.remeasure = i; A().toast(`Wand ${i + 1} neu messen …`, 3000); };
   bg.querySelectorAll('[data-t]').forEach(b => { b.onclick = () => { bg.remove(); w.turn = +b.dataset.t; delete w.auto; reclose(); }; });
@@ -938,7 +938,7 @@ function drawClosed(g, r, pts, W, H, col, css) {
   if (P.op && P.op.wall != null) { const a = pts[P.op.wall], b = pts[(P.op.wall + 1) % n]; g.strokeStyle = col('--warn'); g.lineWidth = 6; g.beginPath(); g.moveTo(X(a), Y(a)); g.lineTo(X(b), Y(b)); g.stroke(); g.fillStyle = col('--warn'); g.beginPath(); g.arc(X(a), Y(a), 9, 0, 7); g.fill(); }
   if (P.fan && pts[P.fan.k]) { const q = pts[P.fan.k]; g.strokeStyle = col('--warn'); g.lineWidth = 2; g.setLineDash([6, 5]); g.beginPath(); g.moveTo(X(pts[0]), Y(pts[0])); g.lineTo(X(q), Y(q)); g.stroke(); g.setLineDash([]); g.fillStyle = col('--warn'); g.beginPath(); g.arc(X(q), Y(q), 8, 0, 7); g.fill(); }
   g.fillStyle = col('--acc'); g.beginPath(); g.arc(X(pts[0]), Y(pts[0]), 6, 0, 7); g.fill();
-  const c = pts.reduce((s, p) => ({ x: s.x + X(p) / n, y: s.y + Y(p) / n }), { x: 0, y: 0 }), wpx = (Math.max(...pts.map(q => q.x)) - Math.min(...pts.map(q => q.x))) * sc;
+  const lp = G.labelPoint(pts), c = { x: X(lp), y: Y(lp) }, wpx = lp.w * sc;
   stamp(g, r, c.x, c.y, { ink: col('--text'), mute: col('--mute'), display: css.getPropertyValue('--display') || 'sans-serif', mono, size: Math.min(20, wpx / 8), maxW: wpx - 10 });
 }
 function draw() {
@@ -992,7 +992,7 @@ function draw() {
     }
     g.fillStyle = green; g.beginPath(); g.arc(e.x, e.y, 5, 0, 7); g.fill();
   } else {
-    const c = pts.reduce((s, p) => ({ x: s.x + X(p) / n, y: s.y + Y(p) / n }), { x: 0, y: 0 });
+    const lp = G.labelPoint(pts), c = { x: X(lp), y: Y(lp) };
     stamp(g, r, c.x, c.y, { ink, mute, display: css.getPropertyValue('--display') || 'sans-serif', mono, size: 20 });
   }
 }

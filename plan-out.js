@@ -53,7 +53,7 @@ export function buildDxf(plan, PC = globalThis.polygonClipping) {
       { line('TUER', dr.leaf[0], dr.leaf[1]); arc('TUER', dr.arc.c, dr.arc.r, dr.arc.from, dr.arc.to); } }
     for (const ob of gf.objs || []) { if (ob.quad) for (let k = 0; k < 4; k++) line('EINRICHTUNG', ob.quad[k], ob.quad[(k + 1) % 4]); for (const l of ob.lines) for (let k = 0; k + 1 < l.length; k++) line('EINRICHTUNG', l[k], l[k + 1]); if (ob.label) text('EINRICHTUNG', ob.label.p, 7, ob.label.t, rotOf(ob.label.d)); }
     for (const ch of gf.chains) { line('MASSKETTE', ch.line[0], ch.line[1]); for (const t of ch.ticks) line('MASSKETTE', t[0], t[1]); for (const l of ch.labels) text('MASSKETTE', l.p, 7, l.t, rotOf(l.d)); }
-    const c = pl.reduce((s2, q) => ({ x: s2.x + q.x / n, y: s2.y + q.y / n }), { x: 0, y: 0 });
+    const c = G.labelPoint(pl);
     text('RAUMTEXT', { x: c.x, y: c.y - 18 }, 14, r.name); text('RAUMTEXT', { x: c.x, y: c.y + 2 }, 10, fmtA(areaOf(r))); text('RAUMTEXT', { x: c.x, y: c.y + 18 }, 7, `U ${fmtM(G.summary(r).perimeter)}${r.rh ? ` / Rh ${fmtM(r.rh)}` : ''}`);
   }
   // Wandansichten unter dem Plan (Layer ANSICHT): je Raum mit Raumhöhe eine Zeile, Wände nebeneinander, y nach oben
@@ -137,7 +137,7 @@ export async function buildPlanPdf(PDFLib, fontkit, fontBytes, plan, msgs = [], 
     const { sN, k, gfs, bb } = pick, ox = box.x + (box.w - (bb.x1 - bb.x0) * k) / 2 - bb.x0 * k, oy = box.y + box.h - (box.h - (bb.y1 - bb.y0) * k) / 2 + bb.y0 * k;
     for (const x of gfs) render(pg, x.gf, k, ox, oy, { phase: 'band', loose: x.it.loose });
     for (const x of gfs) render(pg, x.gf, k, ox, oy, { phase: 'rest' });
-    for (const { it } of gfs) { const pl = it.poly, n = pl.length, c = pl.reduce((s2, q) => ({ x: s2.x + q.x / n, y: s2.y + q.y / n }), { x: 0, y: 0 }), wpt = (Math.max(...pl.map(q => q.x)) - Math.min(...pl.map(q => q.x))) * k;
+    for (const { it } of gfs) { const pl = it.poly, c = G.labelPoint(pl), wpt = c.w * k;
       stamp(pg, it.room, { x: ox + c.x * k, y: oy - c.y * k }, wpt, Math.min(o.name, wpt / 7)); }
     return { sN, k, ox, oy };
   };
@@ -148,7 +148,7 @@ export async function buildPlanPdf(PDFLib, fontkit, fontBytes, plan, msgs = [], 
     const pl = place(pg, lay.items, box, { pad: 16, chains: false, allLeaf: false, name: 11 });
     sheet(pg, plan.name || 'Ohne Adresse', pl.sN, 1);
     const tot = done.reduce((s2, r) => s2 + areaOf(r), 0), tx = F + 12; let ty = F + SB - 13;
-    T(pg, `Gesamt ${fmtA(tot)}  ·  ${done.length} ${done.length === 1 ? 'Raum' : 'Räume'}  ·  Wände innen ${plan.wall || 15} cm, außen ${plan.wallOut || 30} cm (Standard)`, tx, ty, 8.5); ty -= 11;
+    T(pg, `Gesamt ${fmtA(tot)}  ·  ${done.length} ${done.length === 1 ? 'Raum' : 'Räume'}  ·  Wände innen ${plan.wall || 15} cm, außen ${plan.wallOut || 10} cm (Standard)`, tx, ty, 8.5); ty -= 11;
     const show = msgs.slice(0, 2); for (const m of show) { T(pg, fitText('! ' + m, 7.5, W - 2 * F - TBW - 30), tx, ty, 7.5, red); ty -= 9.5; }
     if (msgs.length > show.length) T(pg, `… und ${msgs.length - show.length} weitere Hinweise in der App`, tx, ty, 7, red);
     else if (lay.items.some(i => i.loose) && ty > F + 22) T(pg, 'Hell gezeichnete Räume sind noch nicht über eine Tür verbunden und liegen nicht an ihrem Platz.', tx, ty, 7, grey);

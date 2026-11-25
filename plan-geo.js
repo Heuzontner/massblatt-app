@@ -198,10 +198,10 @@ export function offsetPoly(poly, d) {
   return out;
 }
 // Wandtiefe an einer Öffnung: Tür mit Gegenstück = gemessene/Standard-Innenwand, sonst Außenwand
-export const opDepth = (plan, room, op) => { const pr = op.type === 'T' ? partnerOf(plan, room, op) : null; return pr ? (op.thick || pr.thick || plan.wall || 15) : Math.max(op.thick || 0, plan.wallOut || 30); }; // ohne Gegenstück mindestens die Außenwand, damit die Öffnung die Wand ganz durchdringt
+export const opDepth = (plan, room, op) => { const pr = op.type === 'T' ? partnerOf(plan, room, op) : null; return pr ? (op.thick || pr.thick || plan.wall || 15) : Math.max(op.thick || 0, plan.wallOut || 10); }; // ohne Gegenstück mindestens die Außenwand, damit die Öffnung die Wand ganz durchdringt
 // Alles, was für einen Raum zu zeichnen ist, als einfache Formen in cm (y nach unten). u = cm je Ausgabe-Einheit (Pixel/Punkt) für Abstände der Maßketten.
 export function gfx(plan, room, poly, o = {}) {
-  const n = poly.length, wOut = plan.wallOut || 30, u = o.u || 1, add = (p, v, k) => ({ x: p.x + v.x * k, y: p.y + v.y * k });
+  const n = poly.length, wOut = plan.wallOut || 10, u = o.u || 1, add = (p, v, k) => ({ x: p.x + v.x * k, y: p.y + v.y * k });
   const out = { band: offsetPoly(poly, wOut), inner: poly, cuts: [], cutsX: [], wins: [], doors: [], chains: [], chained: new Set(), ext: [] };
   out.ext.push(...out.band);
   out.objs = (room.objs || []).filter(q => q.wall < n).map(q => objGfx(room, poly, q));
@@ -301,4 +301,23 @@ export function hatchLines(rings, step = 8) {
     xs.sort((p, q) => p - q); for (let i = 0; i + 1 < xs.length; i += 2) if (xs[i + 1] - xs[i] > 0.5) out.push([B({ x: xs[i], y }), B({ x: xs[i + 1], y })]);
   }
   return out;
+}
+
+// Platz für den Raumstempel (3.25.2, Manuel 25.11.: bei L-Räumen saß der Stempel am Rand in der Wand).
+// Rechteckige Räume: wie bisher die Mitte der Ecken. Sonst der Punkt im Raum mit dem meisten Platz rundherum (Raster-Suche),
+// wobei waagrechter Platz doppelt zählt, weil der Text quer steht. w = freie Breite an dieser Stelle (in Plan-Einheiten).
+export function labelPoint(poly) {
+  const n = poly.length; if (n < 3) return { x: poly[0] ? poly[0].x : 0, y: poly[0] ? poly[0].y : 0, w: 0 };
+  const inside = (x, y) => { let c = false; for (let i = 0, j = n - 1; i < n; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) c = !c; } return c; };
+  const dist = (x, y) => { let m = Infinity; for (let i = 0; i < n; i++) { const a = poly[i], b = poly[(i + 1) % n], dx = b.x - a.x, dy = b.y - a.y, L = dx * dx + dy * dy; let t = L ? ((x - a.x) * dx + (y - a.y) * dy) / L : 0; t = Math.max(0, Math.min(1, t)); m = Math.min(m, Math.hypot(x - a.x - t * dx, y - a.y - t * dy)); } return m; };
+  const span = (x, y) => { let l = -Infinity, r = Infinity; for (let i = 0; i < n; i++) { const a = poly[i], b = poly[(i + 1) % n]; if ((a.y > y) === (b.y > y)) continue; const xi = a.x + (b.x - a.x) * (y - a.y) / (b.y - a.y); if (xi <= x) l = Math.max(l, xi); else r = Math.min(r, xi); } return [x - l, r - x]; };
+  const score = (x, y) => { if (!inside(x, y)) return -1; const [l, r] = span(x, y); return Math.min(dist(x, y), Math.min(l, r) / 2); };
+  const out = (x, y) => { const [l, r] = span(x, y); return { x, y, w: 2 * Math.min(l, r) }; };
+  const mx = poly.reduce((t, q) => t + q.x / n, 0), my = poly.reduce((t, q) => t + q.y / n, 0);
+  const x0 = Math.min(...poly.map(q => q.x)), x1 = Math.max(...poly.map(q => q.x)), y0 = Math.min(...poly.map(q => q.y)), y1 = Math.max(...poly.map(q => q.y));
+  let best = null, bs = -Infinity, br = -1; const N = 24;
+  for (let i = 1; i < N; i++) for (let j = 1; j < N; j++) { const x = x0 + (x1 - x0) * i / N, y = y0 + (y1 - y0) * j / N, raw = score(x, y); if (raw < 0) continue; const sc = raw - 0.1 * Math.hypot(x - mx, y - my); if (sc > bs) { bs = sc; best = [x, y]; br = raw; } }
+  const ms = score(mx, my);
+  if (!best || ms >= br * 0.8) return ms >= 0 ? out(mx, my) : { x: mx, y: my, w: x1 - x0 };
+  return out(best[0], best[1]);
 }
