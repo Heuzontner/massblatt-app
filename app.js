@@ -10,9 +10,9 @@ import { PIN } from './pin.js';
 import { dropbox, DbxError } from './dropbox.js';
 import { gcal, parseAddress } from './gcal.js';
 
-const VERSION = '3.24.0';
+const VERSION = '3.25.0';
 // Neu in dieser Version – wird nach dem Update einmal angezeigt (Idee 15)
-const NEWS = ['Pfeil-Vorschlag „KI Test“ hat aus deinen eigenen Massblatt-Fotos gelernt: an 40 Prüf-Fotos findet er jetzt 49 von 54 Türen und Fenstern (vorher 31) und setzt die Kanten genauer. Das neue Modell lädt beim ersten Mal einmal neu (14 MB)', 'Raumliste: Raum 2 Sekunden halten und loslassen = ändern oder löschen; halten und ziehen = an eine andere Stelle schieben', 'Alle Hinweise oben in der Mitte stehen jetzt auf heller, leicht durchsichtiger Fläche – gut lesbar auch über der Kamera (grün, gelb und rot bleiben)', 'Raumliste: einen Raum 2 Sekunden halten – dann lassen sich Raumname und Kürzel ändern (in der Kamera und bei „Raum ändern“)', 'Kamera läuft flüssiger: kleineres Sucherbild, und die PDF-Vorbereitung rechnet nicht mehr, während die Kamera offen ist', '„Standort wird gesucht“ steht jetzt gut sichtbar auf heller Fläche', 'Raumliste: das erste Kinderzimmer heißt „Kz“ statt „Kz1“ (das zweite bleibt „Kz2“)', 'Grundriss: „✏ Zeichnen“ – erst die Form des Raums mit dem Finger antippen (Linien werden von selbst gerade, Ecken lassen sich verschieben), dann zeigt die App Wand für Wand in Orange, was zu messen ist. Die Richtung musst du nicht mehr tippen', 'Projektliste: Projekt nach rechts wischen = löschen – immer mit Rückfrage, es landet im Papierkorb', 'Grundriss: „🎓 Üben“ – Übungs-Grundriss mit Anleitung, die Schritt für Schritt sagt, was zu tun ist (geht auch ohne Laser)', 'Massblatt-PDF, Deckblatt neu geordnet: links die Baustelle (Projekt, PLZ + Ort, Datum), rechts getrennt der Auftraggeber (Kontakt, Firma, Anschrift)', 'Massblatt-PDF: Postleitzahl und Ort der Wohnung stehen am Deckblatt (Zeile „Ort:“). Fehlen sie, wird die Ampel gelb und die App fragt vor PDF und Dropbox nach', 'Laser verbunden zeigt nur noch der grüne Punkt – keine Meldung, kein Fenster mehr (Tipps zum Laser unter ⚙ Laser)', 'Grundriss: Räume ohne Tür mit dem Finger an die richtige Wand schieben – sie docken von selbst an (↻ dreht)', 'Grundriss: Wandansicht – jede Wand von vorne mit Tür, Fenster, Parapet und Dachschräge (Wand antippen → Wandansicht; eigenes Blatt im PDF, Layer ANSICHT im DXF)', 'Grundriss: Foto und Notiz je Raum (unter „＋ Mehr“), beides kommt ins PDF; eigenes Logo im Schriftfeld als Option beim Ausgeben', 'Grundriss: Tür- und Fensterhöhen, Parapet und Laibungstiefe messen – als zusätzliche Schritte beim Einsetzen (jeder überspringbar). Im Plan steht dann z. B. „80/200“, die Wandflächen rechnen mit den echten Höhen', 'Grundriss: Tür und Fenster einsetzen geht jetzt Schritt für Schritt in einem Fenster – es sagt dir mit Bild, was du als Nächstes misst, bis die Tür oder das Fenster in der Wand sitzt', 'Grundriss: jede Wand antippen (im Bild oder in der Leiste) und löschen – auch mitten im Raum und im fertigen Raum', 'Grundriss: „↶“ nimmt Wand für Wand zurück, „↷“ holt die zuletzt gelöschte wieder her', 'Meldungen farbig: grün = in der Dropbox, gelb = kein Netz (wird später hochgeladen), rot = Fehler', 'Neuer Knopf „Netz“ im Projekt (neben „Laser“): zeigt, ob wirklich Internet da ist, merkt sich den Namen deines Hotspots und versucht am Android-Tablet die WLAN-Einstellungen zu öffnen. Ehrlich: selbst mit dem Hotspot verbinden darf keine Web-App – im Knopf stehen Tipps, damit das Tablet von selbst verbindet', 'Kommt das Netz zurück, laden wartende PDFs wie bisher von selbst in die Dropbox', 'Grundriss-Ansicht: Zwischenwände so dick wie eingestellt (nicht mehr doppelt), Tür- und Fensteröffnungen gehen ganz durch die Wand – wie schon im PDF und DXF', 'Dropbox-Upload geschafft: die Bestätigung erscheint jetzt groß auf grüner Fläche', 'Grundriss: Durchgang ohne Tür, Räume Wand an Wand, Kontrollmaß, Rechteck-Schnellstart, Diagonalen bei mehr als vier Wänden', 'Grundriss: Kopie/Spiegelkopie, Nische/Vorsprung, Säulen, Kamine, Schächte, Heizkörper, Sanitär, Treppe, Dachschräge', 'Grundriss: Raumliste und Wandflächen im PDF, schraffierte Wände im DXF, Bild in hoher Auflösung, Zoomen mit zwei Fingern', 'Grundriss: Suche und Archiv, aus Massblatt-Projekt oder Kalendertermin anlegen, Türbreiten aus dem Massblatt als Vorschlag', 'Grundriss-DXF: jede Wand ist nur noch einmal bemaßt', 'Grundriss-DXF: Wände verbundener Räume sind zu einer Wandfläche verschmolzen, Tür- und Fensteröffnungen gehen ganz durch die Wand', 'Grundriss: Wände mit Stärke, Maßketten, Nordpfeil; PDF mit Planrahmen, Schriftfeld und Maßstabsbalken', 'Grundriss: richtige Tür- und Fenstersymbole (Türblatt mit Aufschlag, Fensterrahmen), Raumhöhe je Raum, Raumstempel mit Fläche, Umfang und Rh – auch in PDF und DXF', 'Fotoliste: das erste Foto eines Raums heißt nur „Kz1“, erst das zweite „Kz1-2“', 'Grundriss Stufe 3: maßstäbliches PDF und DXF für BricsCAD, Ablage in der Dropbox unter Grundrisse/Kunde; Grundrisse sind jetzt in der Gesamt-Sicherung', 'Grundriss Stufe 2: Türen und Fenster auf die Wand setzen, Räume hängen sich über ihre Türen zur ganzen Wohnung zusammen (mit Kontrolle, ob es aufgeht)', 'Grundriss: Richtung nur noch per Tippen (links/rechts); „↶ Richtung ändern“ nimmt die letzte Richtung zurück', 'Neuer Reiter „Grundriss“: Raum für Raum mit dem Laser ablaufen, die App zeichnet mit und rechnet die Fläche (getrennt vom Massblatt)', 'Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
+const NEWS = ['Kamera: Zoom 0,5× / 1× / 2× – 0,5× (Weitwinkel) ist beim Öffnen eingestellt. Zeigt dein Gerät kein 0,5×, unter ⚙ Kamera bei „Weitwinkel-Kamera (0,5×)“ die richtige Kamera wählen', 'Pfeil-Vorschlag „KI Test“ hat aus deinen eigenen Massblatt-Fotos gelernt: an 40 Prüf-Fotos findet er jetzt 49 von 54 Türen und Fenstern (vorher 31) und setzt die Kanten genauer. Das neue Modell lädt beim ersten Mal einmal neu (14 MB)', 'Raumliste: Raum 2 Sekunden halten und loslassen = ändern oder löschen; halten und ziehen = an eine andere Stelle schieben', 'Alle Hinweise oben in der Mitte stehen jetzt auf heller, leicht durchsichtiger Fläche – gut lesbar auch über der Kamera (grün, gelb und rot bleiben)', 'Raumliste: einen Raum 2 Sekunden halten – dann lassen sich Raumname und Kürzel ändern (in der Kamera und bei „Raum ändern“)', 'Kamera läuft flüssiger: kleineres Sucherbild, und die PDF-Vorbereitung rechnet nicht mehr, während die Kamera offen ist', '„Standort wird gesucht“ steht jetzt gut sichtbar auf heller Fläche', 'Raumliste: das erste Kinderzimmer heißt „Kz“ statt „Kz1“ (das zweite bleibt „Kz2“)', 'Grundriss: „✏ Zeichnen“ – erst die Form des Raums mit dem Finger antippen (Linien werden von selbst gerade, Ecken lassen sich verschieben), dann zeigt die App Wand für Wand in Orange, was zu messen ist. Die Richtung musst du nicht mehr tippen', 'Projektliste: Projekt nach rechts wischen = löschen – immer mit Rückfrage, es landet im Papierkorb', 'Grundriss: „🎓 Üben“ – Übungs-Grundriss mit Anleitung, die Schritt für Schritt sagt, was zu tun ist (geht auch ohne Laser)', 'Massblatt-PDF, Deckblatt neu geordnet: links die Baustelle (Projekt, PLZ + Ort, Datum), rechts getrennt der Auftraggeber (Kontakt, Firma, Anschrift)', 'Massblatt-PDF: Postleitzahl und Ort der Wohnung stehen am Deckblatt (Zeile „Ort:“). Fehlen sie, wird die Ampel gelb und die App fragt vor PDF und Dropbox nach', 'Laser verbunden zeigt nur noch der grüne Punkt – keine Meldung, kein Fenster mehr (Tipps zum Laser unter ⚙ Laser)', 'Grundriss: Räume ohne Tür mit dem Finger an die richtige Wand schieben – sie docken von selbst an (↻ dreht)', 'Grundriss: Wandansicht – jede Wand von vorne mit Tür, Fenster, Parapet und Dachschräge (Wand antippen → Wandansicht; eigenes Blatt im PDF, Layer ANSICHT im DXF)', 'Grundriss: Foto und Notiz je Raum (unter „＋ Mehr“), beides kommt ins PDF; eigenes Logo im Schriftfeld als Option beim Ausgeben', 'Grundriss: Tür- und Fensterhöhen, Parapet und Laibungstiefe messen – als zusätzliche Schritte beim Einsetzen (jeder überspringbar). Im Plan steht dann z. B. „80/200“, die Wandflächen rechnen mit den echten Höhen', 'Grundriss: Tür und Fenster einsetzen geht jetzt Schritt für Schritt in einem Fenster – es sagt dir mit Bild, was du als Nächstes misst, bis die Tür oder das Fenster in der Wand sitzt', 'Grundriss: jede Wand antippen (im Bild oder in der Leiste) und löschen – auch mitten im Raum und im fertigen Raum', 'Grundriss: „↶“ nimmt Wand für Wand zurück, „↷“ holt die zuletzt gelöschte wieder her', 'Meldungen farbig: grün = in der Dropbox, gelb = kein Netz (wird später hochgeladen), rot = Fehler', 'Neuer Knopf „Netz“ im Projekt (neben „Laser“): zeigt, ob wirklich Internet da ist, merkt sich den Namen deines Hotspots und versucht am Android-Tablet die WLAN-Einstellungen zu öffnen. Ehrlich: selbst mit dem Hotspot verbinden darf keine Web-App – im Knopf stehen Tipps, damit das Tablet von selbst verbindet', 'Kommt das Netz zurück, laden wartende PDFs wie bisher von selbst in die Dropbox', 'Grundriss-Ansicht: Zwischenwände so dick wie eingestellt (nicht mehr doppelt), Tür- und Fensteröffnungen gehen ganz durch die Wand – wie schon im PDF und DXF', 'Dropbox-Upload geschafft: die Bestätigung erscheint jetzt groß auf grüner Fläche', 'Grundriss: Durchgang ohne Tür, Räume Wand an Wand, Kontrollmaß, Rechteck-Schnellstart, Diagonalen bei mehr als vier Wänden', 'Grundriss: Kopie/Spiegelkopie, Nische/Vorsprung, Säulen, Kamine, Schächte, Heizkörper, Sanitär, Treppe, Dachschräge', 'Grundriss: Raumliste und Wandflächen im PDF, schraffierte Wände im DXF, Bild in hoher Auflösung, Zoomen mit zwei Fingern', 'Grundriss: Suche und Archiv, aus Massblatt-Projekt oder Kalendertermin anlegen, Türbreiten aus dem Massblatt als Vorschlag', 'Grundriss-DXF: jede Wand ist nur noch einmal bemaßt', 'Grundriss-DXF: Wände verbundener Räume sind zu einer Wandfläche verschmolzen, Tür- und Fensteröffnungen gehen ganz durch die Wand', 'Grundriss: Wände mit Stärke, Maßketten, Nordpfeil; PDF mit Planrahmen, Schriftfeld und Maßstabsbalken', 'Grundriss: richtige Tür- und Fenstersymbole (Türblatt mit Aufschlag, Fensterrahmen), Raumhöhe je Raum, Raumstempel mit Fläche, Umfang und Rh – auch in PDF und DXF', 'Fotoliste: das erste Foto eines Raums heißt nur „Kz1“, erst das zweite „Kz1-2“', 'Grundriss Stufe 3: maßstäbliches PDF und DXF für BricsCAD, Ablage in der Dropbox unter Grundrisse/Kunde; Grundrisse sind jetzt in der Gesamt-Sicherung', 'Grundriss Stufe 2: Türen und Fenster auf die Wand setzen, Räume hängen sich über ihre Türen zur ganzen Wohnung zusammen (mit Kontrolle, ob es aufgeht)', 'Grundriss: Richtung nur noch per Tippen (links/rechts); „↶ Richtung ändern“ nimmt die letzte Richtung zurück', 'Neuer Reiter „Grundriss“: Raum für Raum mit dem Laser ablaufen, die App zeichnet mit und rechnet die Fläche (getrennt vom Massblatt)', 'Straßen offline: mehrere Orte auf einmal auswählen und laden; ist der Server ausgelastet, werden Ausweich-Server probiert', 'Foto wird sofort beim Auslösen gemacht – kein Stillhalten mehr danach', 'Nach „Wohnung fertig“ öffnet sich gleich der nächste Kalendertermin', 'Ungewöhnlicher Laserwert: Vibration, nochmal messen (derselbe Wert gilt dann)', '„＋ Foto hier“ für ein weiteres Foto im selben Raum; ohne Pfeil-Vorgabe geht es nach dem letzten Maß von selbst weiter', 'Abschluss schneller: PDF-Bilder werden schon während der Arbeit vorbereitet', 'Neuer Raum unter „Raum ändern“ im Foto wird jetzt auch dauerhaft gespeichert (Name + Kürzel)', 'Wohnung abschließen: „✓ Fertig“ oder „✓ Wohnung fertig“ 3 Sekunden halten – PDF in die Dropbox, neues Projekt', 'Räume selbst hinzufügen (Name + Kürzel), in der Kamera und in den Einstellungen', 'Kalender versteht „Hornikweg 6/EG/1“ und „Top: G 08 - T 049“, Kunde am Anfang des Termins', 'Kamera-Zoom, Bildschirm bleibt an, Größe der Maßzahlen wählbar, Speicher-Warnung', 'Einstellungen mit PIN schützen, Querformat fürs Tablet, Englisch, Übungsprojekt mit Anleitung', 'PDF: Räume immer in fester Reihenfolge'];
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 // Reihenfolge von Manuel (10.11.): Eingang, Raumhöhe, Vorraum, Bad/WC, Bad, WC, Abstellraum, Kinderzimmer 1/2, Schlafzimmer, Küche, Wohnzimmer, Esszimmer
@@ -1408,6 +1408,12 @@ async function openCam(viaPop = false) {
     // 3.23.2 (Manuel 24.11.: Kamera ruckelt): das Sucherbild lief mit bis zu 3000 × 4000 – das überlastet Tablets. Gespeichert wird ohnehin
     // höchstens 1600 px, darum reichen 1920 × 2560 (auch für 2× aus dem Bild geschnitten) bei höchstens 30 Bildern/s.
     const base = { width: { ideal: 1920 }, height: { ideal: 2560 }, frameRate: { ideal: 30, max: 30 } };
+    // Weitwinkel-Linse schon bekannt (ab dem zweiten Öffnen): gleich damit starten, statt erst die Hauptkamera zu öffnen und umzuschalten
+    if (wideId && mainId && wideId !== mainId && opt.camWide !== 'off') {
+      try { S.stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: wideId }, ...base }, audio: false });
+        $('#video').srcObject = S.stream; await $('#video').play().catch(() => { }); onWide = true; camZoom = 0.5; $('#video').style.transform = ''; await camCaps(true); return; }
+      catch (e) { log('weitwinkel', e.name); wideId = ''; S.stream = null; }
+    }
     if (opt.cam) {
       try { S.stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: opt.cam }, ...base }, audio: false }); }
       catch (e) { log('gewählte Kamera nicht verfügbar', e.name); toast('Gewählte Kamera nicht verfügbar – nehme Rückkamera', 2500); }
@@ -1415,7 +1421,9 @@ async function openCam(viaPop = false) {
     if (!S.stream) S.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', ...base }, audio: false });
     $('#video').srcObject = S.stream;
     await $('#video').play().catch(() => { });
-    camCaps();
+    onWide = false; mainId = camDevId();
+    await camCaps();
+    await startWide();
   } catch (e) {
     log('Kamera', e.name, e.message);
     $('#camFallback').style.display = 'flex';
@@ -1432,24 +1440,66 @@ try { Object.assign(camOpt, JSON.parse(localStorage.getItem('mb_cam') || '{}'));
 const saveCamOpt = () => { try { localStorage.setItem('mb_cam', JSON.stringify(camOpt)); } catch (e) { } };
 let caps = {};
 function camTrack() { return S.stream && S.stream.getVideoTracks()[0]; }
-async function camCaps() {
+async function camCaps(keepZoom) {
   const t = camTrack(); caps = {};
   try { caps = t.getCapabilities ? t.getCapabilities() : {}; } catch (e) { }
   // manche Geräte melden Fähigkeiten erst nach kurzer Zeit
   if (!caps.torch && !caps.exposureCompensation) { await new Promise(r => setTimeout(r, 500)); try { caps = t.getCapabilities ? t.getCapabilities() : {}; } catch (e) { } }
   if (camOpt.torch && caps.torch) await setTorch(true);
-  camZoom = 1; $('#video').style.transform = '';
+  if (!keepZoom) { camZoom = 1; $('#video').style.transform = ''; }
   camUi();
 }
-// Zoom 0,5× / 1× / 2×: echter Kamera-Zoom, wo das Gerät ihn meldet; sonst wird 2× aus dem Bild geschnitten. 0,5× nur mit Weitwinkel-Zoom des Geräts.
-let camZoom = 1;
-function zoomLevels() { const z = caps.zoom; const l = [1, 2]; if (z && z.min && z.min <= 0.6) l.unshift(0.5); return l; }
-async function setZoom(z) {
-  camZoom = z; const c = caps.zoom, v = $('#video');
-  if (c && c.max) { try { await camTrack().applyConstraints({ advanced: [{ zoom: Math.min(c.max, Math.max(c.min || 1, z)) }] }); v.style.transform = ''; zoomUi(); return; } catch (e) { log('zoom', e.name); } }
-  v.style.transform = z > 1 ? `scale(${z})` : ''; zoomUi(); // ohne Geräte-Zoom: Ausschnitt
+// Zoom 0,5× / 1× / 2× (Manuel 25.11.: 0,5× Weitwinkel ist Standard, 2× dritte Wahl).
+// 0,5×: echter Kamera-Zoom, wo das Gerät ihn meldet – sonst wird auf die Weitwinkel-Linse umgeschaltet (eigene Kamera des Geräts).
+// 2×: echter Zoom oder Ausschnitt aus dem Bild. Hat das Gerät keine erreichbare Weitwinkel-Linse, gibt es nur 1× und 2×.
+let camZoom = 1, onWide = false, mainId = '', wideId = '';
+const CAM_BASE = { width: { ideal: 1920 }, height: { ideal: 2560 }, frameRate: { ideal: 30, max: 30 } };
+function camDevId() { try { return camTrack().getSettings().deviceId || ''; } catch (e) { return ''; } }
+const nativeWide = () => !onWide && caps.zoom && caps.zoom.min && caps.zoom.min <= 0.6;
+// Weitwinkel-Linse suchen: Einstellung (⚙ Kamera) geht vor, sonst am Namen („Ultra Wide“, „Ultraweitwinkel“). Android nennt oft keine Linsen-Namen.
+async function findWide() {
+  if (opt.camWide === 'off') return '';
+  let devs = [];
+  try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (e) { }
+  if (opt.camWide && devs.some(d => d.deviceId === opt.camWide)) return opt.camWide;
+  const d = devs.find(d => /ultra/i.test(d.label) && !/front|vorder|selfie|user/i.test(d.label));
+  return d ? d.deviceId : '';
 }
-const digitalZoom = () => (caps.zoom && caps.zoom.max) ? 1 : (camZoom > 1 ? camZoom : 1);
+async function switchCam(id) {
+  const old = S.stream;
+  if (old) old.getTracks().forEach(t => t.stop());
+  S.stream = null;
+  S.stream = await navigator.mediaDevices.getUserMedia({ video: id ? { deviceId: { exact: id }, ...CAM_BASE } : { facingMode: 'environment', ...CAM_BASE }, audio: false });
+  if (!$('#cam').classList.contains('on')) { stopCam(); return; } // inzwischen aus der Kamera gegangen
+  $('#video').srcObject = S.stream; await $('#video').play().catch(() => { });
+  await camCaps(true);
+}
+// Beim Öffnen der Kamera: 0,5× einstellen, wenn es geht
+async function startWide() {
+  if (!S.stream) return;
+  if (!nativeWide()) { wideId = await findWide(); if (wideId && wideId === mainId) { onWide = true; camZoom = 0.5; zoomUi(); return; } }
+  if (nativeWide() || wideId) await setZoom(0.5); else zoomUi();
+}
+function zoomLevels() { const l = [1, 2]; if (onWide || nativeWide() || wideId) l.unshift(0.5); return l; }
+let zoomBusy = false;
+async function setZoom(z) {
+  if (zoomBusy) return; zoomBusy = true;
+  try {
+    const v = $('#video');
+    if (z === 0.5 && !nativeWide()) {
+      if (!onWide) {
+        try { await switchCam(wideId); onWide = true; }
+        catch (e) { log('weitwinkel', e.name); wideId = ''; onWide = false; toast('Weitwinkel-Kamera nicht verfügbar – nehme 1×', 3000, 'warn'); try { await switchCam(mainId); } catch (e2) { log('kamera', e2.name); } z = 1; }
+      }
+      camZoom = z; v.style.transform = ''; return;
+    }
+    if (onWide) { try { await switchCam(mainId !== wideId ? mainId : ''); } catch (e) { log('kamera', e.name); } onWide = false; }
+    camZoom = z; const c = caps.zoom;
+    if (c && c.max) { try { await camTrack().applyConstraints({ advanced: [{ zoom: Math.min(c.max, Math.max(c.min || 1, z)) }] }); v.style.transform = ''; return; } catch (e) { log('zoom', e.name); } }
+    v.style.transform = z > 1 ? `scale(${z})` : '';
+  } finally { zoomBusy = false; zoomUi(); }
+}
+const digitalZoom = () => (onWide || (caps.zoom && caps.zoom.max)) ? 1 : (camZoom > 1 ? camZoom : 1);
 function zoomUi() {
   const box = $('#zoomBtns'); if (!box) return; box.innerHTML = '';
   for (const z of zoomLevels()) { const b = document.createElement('button'); b.type = 'button'; b.dataset.z = z; b.textContent = String(z).replace('.', ',') + '×'; b.classList.toggle('on', z === camZoom); b.onclick = () => setZoom(z); box.appendChild(b); }
@@ -1848,7 +1898,7 @@ function setValue(cm, mm, fromLaser = false) {
 // keine Tür-/Fenster-Bezeichnung (Manuel 09.11.): nur Höhe/Breite wie im Bosch-Maßblatt; Raumhöhe bleibt benannt
 const arrowName = a => a.el === 'Raumhöhe' ? 'Raumhöhe' : a.kind === 'H' ? 'Höhe' : 'Breite';
 // Test-Optionen: großer Messmodus, Sprachansage
-const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true, left: false, magnet: true, dash: false, cam: '', shrink: false, remind: true, est: true, grid: false, laserAuto: true, autoBackup: false, bgLock: 0 };
+const opt = { big: false, voice: false, mm: false, nav: '', glove: false, learn: true, left: false, magnet: true, dash: false, cam: '', camWide: '', shrink: false, remind: true, est: true, grid: false, laserAuto: true, autoBackup: false, bgLock: 0 };
 try { Object.assign(opt, JSON.parse(localStorage.getItem('mb_opt') || '{}')); } catch (e) { }
 const applyOptClasses = () => { document.body.classList.toggle('bigmode', !!opt.big); document.body.classList.toggle('glove', !!opt.glove); document.body.classList.toggle('lefty', !!opt.left); };
 const LBL = { s: 0.78, m: 1, l: 1.3 }; // Etikett-Größe der Maßzahlen im Foto und im PDF
@@ -3221,6 +3271,7 @@ $('#sCleanup').onclick = async () => {
 $('#sDash').onchange = () => { opt.dash = $('#sDash').checked; saveOpt(); };
 $('#sLbl').onchange = () => { opt.lbl = $('#sLbl').value; saveOpt(); };
 $('#sCam').onchange = () => { opt.cam = $('#sCam').value; saveOpt(); };
+$('#sWide').onchange = () => { opt.camWide = $('#sWide').value; saveOpt(); };
 // Kameraliste (Namen gibt es erst, wenn die Kamera einmal erlaubt wurde)
 async function fillCamList() {
   const sel = $('#sCam'); const cur = opt.cam || '';
@@ -3228,6 +3279,9 @@ async function fillCamList() {
   try { devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); } catch (e) { }
   sel.innerHTML = '<option value="">Automatisch (Rückkamera)</option>' + devs.map((d, i) => `<option value="${d.deviceId}">${d.label ? d.label.replace(/\(.*?\)/, '').trim() : 'Kamera ' + (i + 1)}</option>`).join('');
   sel.value = devs.some(d => d.deviceId === cur) ? cur : '';
+  const sw = $('#sWide'), cw = opt.camWide || '';
+  sw.innerHTML = '<option value="">Automatisch erkennen</option><option value="off">Aus (nur 1× und 2×)</option>' + devs.map((d, i) => `<option value="${d.deviceId}">${d.label ? d.label.replace(/\(.*?\)/, '').trim() : 'Kamera ' + (i + 1)}</option>`).join('');
+  sw.value = (cw === 'off' || devs.some(d => d.deviceId === cw)) ? cw : '';
   $('#sCamHint').textContent = devs.length ? (devs.some(d => d.label) ? 'Bei verzerrtem Bild (Weitwinkel) hier die Hauptkamera wählen.' : 'Namen erscheinen, sobald die Kamera einmal benutzt wurde.') : 'Keine Kamera gefunden.';
 }
 $('#sLearn').onchange = () => { opt.learn = $('#sLearn').checked; saveOpt(); };
@@ -3242,7 +3296,7 @@ $('#sVoice').onchange = () => { opt.voice = $('#sVoice').checked; saveOpt(); if 
 const DEMO = [
   ['📁', 'Projekt anlegen', 'Unten „+ Neues Projekt“. Straße + Hausnummer, Geschoß und WG eintragen – PLZ und Ort kommen bei bekannten Straßen von selbst. Kunde antippen. Mit Google Kalender: „📅 Termine“ legt das Projekt aus dem Termin an.'],
   ['🚪', 'Raum wählen', '„📷 Foto“ öffnet die Kamera mit der Raumliste. Erst den Raum antippen (Eg, Rh, Vr …), dann ist der Auslöser frei. Erledigte Räume sind grün. Fehlt ein Raum: „＋ Raum hinzufügen“.'],
-  ['📷', 'Fotografieren', 'Tür oder Fenster ganz ins Bild nehmen und auslösen. Oben verbindest du den Laser, mit 1× / 2× zoomst du. Verwackelt? Im Foto rechts unten 📷↻ nimmt es neu auf.'],
+  ['📷', 'Fotografieren', 'Tür oder Fenster ganz ins Bild nehmen und auslösen. Oben verbindest du den Laser, mit 0,5× / 1× / 2× zoomst du. Verwackelt? Im Foto rechts unten 📷↻ nimmt es neu auf.'],
   ['↕️', 'Pfeile setzen', 'Mit dem Finger von Kante zu Kante ziehen oder Anfang und Ende antippen. Senkrecht = Höhe, waagrecht = Breite. Enden lassen sich verschieben, 🗑 löscht den gewählten Pfeil.'],
   ['📏', 'Messen', 'Am Laser messen – der Wert springt in den blinkenden Pfeil. Erst die Tür (Höhe, Breite), dann das Fenster. Ohne Laser: ⌨ antippen und eintippen.'],
   ['✅', 'Nächstes Foto', 'Nach dem letzten Maß geht es von selbst zurück zur Raumliste, oder du tippst „✓ Fertig“. Zwei Fotos im selben Raum heißen Kz und Kz-2.'],
