@@ -146,7 +146,8 @@ details.card summary { font-weight:700; cursor:pointer; }
 #camFallback { position:absolute; inset:0; display:none; align-items:center; justify-content:center; flex-direction:column; gap:12px; color:#fff; padding:30px; text-align:center; background:#000; }
 /* Kamera */
 #cam { background:#000; }
-#cam video { flex:1; width:100%; object-fit:cover; min-height:0; }
+/* 3.25.1: ganzes Kamerabild zeigen (contain) – vorher schnitt „cover“ die Ränder ab, der Sucher sah enger aus als das Foto (Manuel 25.11.) */
+#cam video { flex:1; width:100%; object-fit:contain; background:#000; min-height:0; }
 #cam .camtop { z-index:7; position:absolute; top:0; left:0; right:0; display:flex; gap:8px; align-items:center; padding:calc(env(safe-area-inset-top) + 10px) 12px 10px; background:linear-gradient(rgba(0,0,0,.6), transparent); }
 #cam .camtop .camlaser { font-size:14px; padding:11px 14px; background:rgba(0,0,0,.6); color:#fff; border:1px solid #ffd400; border-radius:6px; }
 #cam .camtop .camlaser.ok { border-color:rgba(255,255,255,.3); }
